@@ -666,6 +666,11 @@ function gravarPontoProcessado(ponto, rua, bairro, cidade, estado) {
 
 // ===================== ENVIO PARA O FIREBASE =====================
 var enviando = false;
+var LIMITE_FALHAS_MESMO_ITEM = 5;
+function mostrarErroSync(msg) {
+    var out = document.getElementById('diagnosticoResultado');
+    if (out) out.textContent = "❌ Erro na sincronização (" + new Date().toLocaleTimeString('pt-BR') + "):\n" + msg;
+}
 function enviarDadosFila() {
     if (enviando || filaPendentes.length === 0) {
         atualizarInterfaceEstado();
@@ -684,7 +689,19 @@ function enviarDadosFila() {
             filaPendentes.shift();
             salvarTudo();
         })
-        .catch((error) => console.warn("Falha ao enviar, mantendo na fila:", error))
+        .catch((error) => {
+            console.warn("Falha ao enviar, mantendo na fila:", error);
+            var mensagem = (error && error.code) ? (error.code + ": " + error.message) : String(error);
+            mostrarErroSync(mensagem);
+
+            pacoteAtual._falhas = (pacoteAtual._falhas || 0) + 1;
+            if (pacoteAtual._falhas >= LIMITE_FALHAS_MESMO_ITEM) {
+                console.warn("Descartando item após " + LIMITE_FALHAS_MESMO_ITEM + " falhas consecutivas:", pacoteAtual);
+                mostrarErroSync(mensagem + "\n\n⚠️ Este ponto falhou " + LIMITE_FALHAS_MESMO_ITEM + " vezes seguidas e foi descartado da fila para não travar os demais.");
+                filaPendentes.shift();
+                salvarTudo();
+            }
+        })
         .finally(() => {
             enviando = false;
             atualizarInterfaceEstado();
