@@ -1,0 +1,65 @@
+name: Build APK
+
+# Roda automaticamente a cada envio de arquivos, e também pode ser
+# disparado manualmente pela aba "Actions" do GitHub (botão "Run workflow").
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código do repositório
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Preparar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Instalar dependências
+        run: npm install
+
+      - name: Criar o projeto Android
+        run: npx cap add android
+
+      - name: Adicionar permissões de localização em segundo plano
+        run: |
+          python3 - <<'EOF'
+          path = "android/app/src/main/AndroidManifest.xml"
+          with open(path) as f:
+              content = f.read()
+          perms = (
+              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n'
+              '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n'
+              '    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />\n'
+              '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n'
+              '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />\n'
+          )
+          if "ACCESS_BACKGROUND_LOCATION" not in content:
+              content = content.replace("<application", perms + "\n    <application", 1)
+          with open(path, "w") as f:
+              f.write(content)
+          print("Permissões adicionadas com sucesso.")
+          EOF
+
+      - name: Sincronizar Capacitor com o projeto Android
+        run: npx cap sync android
+
+      - name: Compilar o APK (versão de teste/instalação direta)
+        working-directory: android
+        run: chmod +x gradlew && ./gradlew assembleDebug
+
+      - name: Disponibilizar o APK para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: rastreador-everton-gps-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
