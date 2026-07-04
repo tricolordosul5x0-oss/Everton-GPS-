@@ -1,0 +1,15 @@
+{
+  "appId": "br.com.evertonleite.gpsrastreador",
+  "appName": "Rastreador Everton GPS",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "BackgroundGeolocation": {
+      "backgroundMessage": "Rastreador Everton GPS está registrando a localização do veículo.",
+      "backgroundTitle": "Rastreador ativo"
+    }
+  }
+}
