@@ -5,8 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Painel Admin - Rastreador Everton GPS</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
-    <!-- Nova biblioteca adicionada para forçar o contorno de ruas de forma nativa -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet-routing-machine/3.2.12/leaflet-routing-machine.css" />
     <style>
         :root {
             --bg-main: #0a0d12;
@@ -19,85 +17,112 @@
             --text: #eef2f6;
             --text-dim: #74808f;
         }
+        * { box-sizing: border-box; }
         body {
             margin: 0; padding: 0; font-family: system-ui, sans-serif;
             background: var(--bg-main); color: var(--text);
             display: flex; height: 100vh; overflow: hidden;
         }
-        
         .sidebar {
-            width: 380px; background: var(--bg-card);
+            width: 400px; background: var(--bg-card);
             border-right: 1px solid var(--border);
             display: flex; flex-direction: column; height: 100%;
+            flex-shrink: 0;
         }
         #map { flex: 1; height: 100%; background: #000; }
+        .header { padding: 14px 16px; border-bottom: 1px solid var(--border); text-align: center; }
+        .header h2 { margin: 0; font-size: 1.1em; color: var(--telemetry); }
+        .content { padding: 12px; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .box { background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 10px 12px; border-radius: 8px; }
+        .box-title { font-size: 0.72em; text-transform: uppercase; color: var(--text-dim); font-weight: bold; margin-bottom: 8px; }
+        select, input { width: 100%; background: #1a212b; border: 1px solid var(--border); padding: 9px; border-radius: 6px; color: white; font-size: 0.92em; }
+        .btn { display: block; width: 100%; background: var(--telemetry); color: #000; font-weight: bold; cursor: pointer; margin-top: 6px; border: none; padding: 10px; border-radius: 6px; font-size: 0.92em; }
+        .btn:hover { opacity: 0.9; }
+        .btn-green { background: var(--signal-on); }
+        .btn-dark { background: #1a212b; color: var(--danger); border: 1px solid var(--border); }
 
-        .header { padding: 16px; border-bottom: 1px solid var(--border); text-align: center; }
-        .header h2 { margin: 0; font-size: 1.2em; color: var(--telemetry); }
-        
-        .content { padding: 16px; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
-        
-        .box { background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 12px; border-radius: 8px; }
-        .box-title { font-size: 0.75em; text-transform: uppercase; color: var(--text-dim); font-weight: bold; margin-bottom: 8px; }
-        
-        select, input, button {
-            width: 100%; background: #1a212b; border: 1px solid var(--border); 
-            padding: 10px; border-radius: 6px; color: white; font-size: 0.95em; box-sizing: border-box;
-        }
-        button { background: var(--telemetry); color: #000; font-weight: bold; cursor: pointer; margin-top: 8px; border: none;}
-        button:hover { opacity: 0.9; }
-
-        .telemetry-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.88em; }
+        /* Telemetria do ponto selecionado */
+        .telemetry-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.85em; gap: 8px; }
         .telemetry-row:last-child { border-bottom: none; }
-        .telemetry-row b { text-align: right; max-width: 60%; }
-
+        .telemetry-row b { text-align: right; max-width: 65%; color: var(--text); }
         .badge { font-size: 0.75em; padding: 3px 8px; border-radius: 4px; font-weight: bold; }
         .badge-movimento { background: rgba(0,255,166,0.15); color: var(--signal-on); }
         .badge-parado { background: rgba(255,176,32,0.15); color: var(--signal-off); }
-        .badge-perigo { background: rgba(255, 84, 112, 0.15); color: var(--danger); }
+        .badge-perigo { background: rgba(255,84,112,0.15); color: var(--danger); }
 
-        .live-indicator { display: inline-block; width: 8px; height: 8px; background: var(--signal-on); border-radius: 50%; margin-right: 6px; }
-        
-        .auth-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center; z-index: 10000; }
-        .auth-card { background: var(--bg-card); border: 1px solid var(--border); padding: 24px; border-radius: 12px; width: 90%; max-width: 360px; display: flex; flex-direction: column; gap: 16px; }
-        .auth-card h3 { margin: 0; color: var(--text); font-size: 1.2em; text-align: center; }
+        /* Status bar */
+        .status-bar { text-align: center; font-weight: bold; font-size: 0.85em; padding: 8px; border-radius: 6px; border: 1px solid var(--signal-off); color: var(--signal-off); background: rgba(255,176,32,0.08); }
+        .status-bar.online { border-color: var(--signal-on); color: var(--signal-on); background: rgba(0,255,166,0.08); }
+        .live-indicator { display: inline-block; width: 7px; height: 7px; background: var(--signal-on); border-radius: 50%; margin-right: 5px; animation: blink 1s infinite; }
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
-        /* Esconder o painel de instruções de texto que o Leaflet Routing cria por padrão */
-        .leaflet-routing-container { display: none !important; }
+        /* Lista de ruas / histórico */
+        .lista-ruas { display: flex; flex-direction: column; gap: 4px; max-height: 280px; overflow-y: auto; }
+        .item-rua {
+            background: #1a212b; border: 1px solid var(--border); border-radius: 6px;
+            padding: 8px 10px; cursor: pointer; transition: border-color 0.15s, background 0.15s;
+            display: flex; flex-direction: column; gap: 2px;
+        }
+        .item-rua:hover { border-color: var(--telemetry); background: rgba(45,212,255,0.06); }
+        .item-rua.ativo { border-color: var(--signal-on); background: rgba(0,255,166,0.08); }
+        .item-rua .rua-nome { font-size: 0.85em; font-weight: bold; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .item-rua .rua-meta { font-size: 0.72em; color: var(--text-dim); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .item-rua .rua-vel { font-size: 0.72em; font-weight: bold; }
+        .item-rua .rua-vel.mov { color: var(--signal-on); }
+        .item-rua .rua-vel.par { color: var(--signal-off); }
+        .item-rua .rua-vel.per { color: var(--danger); }
+
+        .vazio { font-size: 0.82em; color: var(--text-dim); text-align: center; padding: 16px 0; }
+
+        /* Auth overlay */
+        .auth-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.92); display: flex; align-items: center; justify-content: center; z-index: 10000; }
+        .auth-card { background: var(--bg-card); border: 1px solid var(--border); padding: 24px; border-radius: 12px; width: 90%; max-width: 360px; display: flex; flex-direction: column; gap: 14px; }
+        .auth-card h3 { margin: 0; color: var(--text); font-size: 1.1em; text-align: center; }
+
+        /* Popup do mapa */
+        .leaflet-popup-content-wrapper { background: #131820; border: 1px solid rgba(45,212,255,0.3); color: #eef2f6; border-radius: 8px; }
+        .leaflet-popup-tip { background: #131820; }
+        .popup-linha { font-size: 0.82em; padding: 2px 0; }
+        .popup-linha b { color: var(--telemetry); }
 
         @media (max-width: 768px) {
             body { flex-direction: column-reverse; }
-            .sidebar { width: 100%; height: 50vh; }
-            #map { height: 50vh; }
+            .sidebar { width: 100%; height: 55vh; }
+            #map { height: 45vh; }
+            .lista-ruas { max-height: 180px; }
         }
     </style>
 </head>
 <body>
 
+<!-- Auth -->
 <div id="authOverlay" class="auth-overlay">
     <div class="auth-card">
         <h3>🔐 Painel Admin Protegido</h3>
-        <p style="font-size: 0.85em; color: var(--text-dim); text-align: center; margin: 0;">Insira as credenciais de administrador do sistema.</p>
+        <p style="font-size:0.82em;color:var(--text-dim);text-align:center;margin:0;">Credenciais de administrador.</p>
         <div>
-            <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">E-mail</label>
+            <label style="font-size:0.72em;color:var(--text-dim);text-transform:uppercase;font-weight:bold;display:block;margin-bottom:4px;">E-mail</label>
             <input type="email" id="authEmail" placeholder="seu-email@gmail.com">
         </div>
         <div>
-            <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">Senha</label>
+            <label style="font-size:0.72em;color:var(--text-dim);text-transform:uppercase;font-weight:bold;display:block;margin-bottom:4px;">Senha</label>
             <input type="password" id="authSenha" placeholder="******">
         </div>
-        <button id="btnEntrarPainel">Entrar no Painel</button>
-        <div id="erroLogin" style="color: var(--danger); font-size: 0.85em; text-align: center; display: none;"></div>
+        <button class="btn" id="btnEntrarPainel">Entrar no Painel</button>
+        <div id="erroLogin" style="color:var(--danger);font-size:0.82em;text-align:center;display:none;"></div>
     </div>
 </div>
 
+<!-- Sidebar -->
 <div class="sidebar">
     <div class="header">
         <h2>🛠️ Admin Everton GPS</h2>
-        <span id="userLogado" style="font-size: 0.8em; color: var(--signal-on)">Sessão Protegida</span>
+        <span id="userLogado" style="font-size:0.78em;color:var(--signal-on);">Sessão Protegida</span>
     </div>
-    
+
     <div class="content">
+
+        <!-- Veículo -->
         <div class="box">
             <div class="box-title">🚗 Selecionar Veículo</div>
             <select id="selectVeiculo">
@@ -105,48 +130,56 @@
             </select>
         </div>
 
+        <!-- Filtro -->
         <div class="box">
-            <div class="box-title">📅 Filtrar Histórico Passado</div>
-            <div style="display: flex; flex-direction: column; gap: 6px;">
+            <div class="box-title">📅 Filtrar Histórico</div>
+            <div style="display:flex;flex-direction:column;gap:6px;">
                 <input type="date" id="filtroData">
-                <div style="display: flex; gap: 6px;">
+                <div style="display:flex;gap:6px;">
                     <input type="time" id="filtroHoraInicio" value="00:00">
                     <input type="time" id="filtroHoraFim" value="23:59">
                 </div>
-                <button id="btnBuscarHistorico">🔍 Buscar Histórico</button>
-                <button id="btnVoltarTempoReal" style="background: var(--signal-on); display: none;">🟢 Voltar ao Tempo Real</button>
+                <button class="btn" id="btnBuscarHistorico">🔍 Buscar Histórico</button>
+                <button class="btn btn-green" id="btnVoltarTempoReal" style="display:none;">🟢 Voltar ao Tempo Real</button>
             </div>
         </div>
 
-        <div id="statusModo" class="box" style="border-color: var(--signal-off); text-align: center; font-weight: bold; font-size: 0.9em; color: var(--signal-off);">
-            Aguardando seleção...
+        <!-- Status -->
+        <div id="statusModo" class="status-bar">Aguardando seleção...</div>
+
+        <!-- Lista de ruas clicáveis -->
+        <div class="box">
+            <div class="box-title">🗺️ Histórico de Ruas <span id="contadorPontos" style="color:var(--telemetry);"></span></div>
+            <div class="lista-ruas" id="listaRuas">
+                <div class="vazio">Selecione um veículo para ver o histórico.</div>
+            </div>
         </div>
 
+        <!-- Detalhe do ponto selecionado -->
         <div class="box">
-            <div class="box-title">📊 Dados do Ponto Selecionado</div>
+            <div class="box-title">📊 Ponto Selecionado</div>
             <div class="telemetry-row"><span>Situação</span><span id="txtStatus" class="badge badge-parado">—</span></div>
-            <div class="telemetry-row"><span>Velocidade</span><b id="txtVelocidade">0 km/h</b></div>
-            <div class="telemetry-row"><span>Tempo Parado</span><b id="txtTempoParado">00:00:00</b></div>
+            <div class="telemetry-row"><span>Velocidade</span><b id="txtVelocidade">—</b></div>
+            <div class="telemetry-row"><span>Tempo Parado</span><b id="txtTempoParado">—</b></div>
             <div class="telemetry-row"><span>Rua</span><b id="txtRua">—</b></div>
             <div class="telemetry-row"><span>Bairro</span><b id="txtBairro">—</b></div>
-            <div class="telemetry-row"><span>Cidade/UF</span><b id="txtCidadeEstado">—</b></div>
-            <div class="telemetry-row"><span>Data/Hora</span><b id="txtDataHora">—</b></div>
+            <div class="telemetry-row"><span>Cidade / UF</span><b id="txtCidadeEstado">—</b></div>
+            <div class="telemetry-row"><span>Data / Hora</span><b id="txtDataHora">—</b></div>
             <div class="telemetry-row"><span>Coordenadas</span><b id="txtCoords">—</b></div>
         </div>
-        <button id="btnSair" style="background: #1a212b; color: var(--danger); border: 1px solid var(--border);">❌ Desconectar</button>
+
+        <button class="btn btn-dark" id="btnSair">❌ Desconectar</button>
     </div>
 </div>
 
 <div id="map"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<!-- Scripts adicionais para o motor de rotas nativo do mapa -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-routing-machine/3.2.12/leaflet-routing-machine.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-
 <script>
+// ===================== FIREBASE =====================
 var firebaseConfig = {
     apiKey: "AIzaSyDwKIS8wL3D7OuaysVFV_xyAsFsKo2eXzY",
     authDomain: "everton-gps.firebaseapp.com",
@@ -166,74 +199,60 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19, attribution: '&copy; OpenStreetMap'
 }).addTo(map);
 
-var marcadorVeiculo = L.marker([-29.6133, -52.1919]).addTo(map);
+var marcadorVeiculo = null;
+var polilinhaRota = L.polyline([], { color: 'rgba(45,212,255,0.3)', weight: 3, dashArray: '5,7' }).addTo(map);
+var polilinhaRuas = L.polyline([], { color: '#00ffa6', weight: 5, opacity: 0.9 }).addTo(map);
+var marcadorSelecionado = null;
+var marcadores = []; // marcadores de cada ponto do histórico
 
-// Instanciando o controle de rotas nativo do Leaflet
-var controleRotas = L.Routing.control({
-    waypoints: [],
-    router: L.Routing.osrmv1({
-        serviceUrl: 'https://router.project-osrm.org/route/v1'
-    }),
-    lineOptions: {
-        styles: [{ color: '#00ffa6', weight: 6, opacity: 0.85 }]
-    },
-    createMarker: function() { return null; }, // Não cria balões extras nos pontos do meio da rua
-    addWaypoints: false,
-    fitSelectedRoutes: false
-}).addTo(map);
-
+// ===================== ESTADO =====================
 var veiculoSelecionado = "";
 var listenerTempoReal = null;
-var dadosHistoricoCarregados = [];
+var dadosHistorico = [];
+var indiceAtivo = -1;
 
 document.getElementById('filtroData').value = new Date().toISOString().slice(0, 10);
 
-// ===================== AUTENTICAÇÃO =====================
+// ===================== AUTH =====================
 document.getElementById('btnEntrarPainel').addEventListener('click', function() {
     var email = document.getElementById('authEmail').value.trim();
     var senha = document.getElementById('authSenha').value;
     var erroDiv = document.getElementById('erroLogin');
-
-    if(!email || !senha) return alert("Preencha todos os campos!");
+    if (!email || !senha) return alert("Preencha todos os campos!");
     erroDiv.style.display = "none";
-
-    auth.signInWithEmailAndPassword(email, senha)
-        .catch(function() {
-            erroDiv.textContent = "Acesso negado: dados incorretos.";
-            erroDiv.style.display = "block";
-        });
+    auth.signInWithEmailAndPassword(email, senha).catch(function() {
+        erroDiv.textContent = "Acesso negado: dados incorretos.";
+        erroDiv.style.display = "block";
+    });
 });
 
 auth.onAuthStateChanged(function(user) {
     if (user) {
         document.getElementById('authOverlay').style.display = "none";
-        document.getElementById('userLogado').textContent = "🟢 Admin: " + user.email;
+        document.getElementById('userLogado').textContent = "🟢 " + user.email;
         inicializarEscutaBanco();
     } else {
         document.getElementById('authOverlay').style.display = "flex";
         document.getElementById('selectVeiculo').innerHTML = '<option value="">Aguardando login...</option>';
-        if (listenerTempoReal && veiculoSelecionado) db.ref('veiculos/' + veiculoSelecionado + '/atual').off('value', listenerTempoReal);
+        pararListenerTempoReal();
     }
 });
 
-document.getElementById('btnSair').addEventListener('click', function() {
-    auth.signOut();
-});
+document.getElementById('btnSair').addEventListener('click', function() { auth.signOut(); });
 
+// ===================== BANCO =====================
 function inicializarEscutaBanco() {
     db.ref('veiculos').on('value', function(snapshot) {
         var select = document.getElementById('selectVeiculo');
         select.innerHTML = '<option value="">-- Escolha um Veículo --</option>';
-        
-        if(snapshot.exists()) {
-            snapshot.forEach(function(childSnapshot) {
-                var nomeVeiculo = childSnapshot.key;
-                var option = document.createElement('option');
-                option.value = nomeVeiculo;
-                option.textContent = "🚗 " + nomeVeiculo;
-                select.appendChild(option);
+        if (snapshot.exists()) {
+            snapshot.forEach(function(child) {
+                var opt = document.createElement('option');
+                opt.value = child.key;
+                opt.textContent = "🚗 " + child.key;
+                select.appendChild(opt);
             });
-            if(veiculoSelecionado) select.value = veiculoSelecionado;
+            if (veiculoSelecionado) select.value = veiculoSelecionado;
         } else {
             select.innerHTML = '<option value="">Nenhum veículo ativo</option>';
         }
@@ -242,140 +261,270 @@ function inicializarEscutaBanco() {
 
 document.getElementById('selectVeiculo').addEventListener('change', function(e) {
     veiculoSelecionado = e.target.value;
-    if(veiculoSelecionado) verificarEAtivarTempoReal();
+    if (veiculoSelecionado) ativarTempoReal();
 });
 
-function verificarEAtivarTempoReal() {
-    if (listenerTempoReal) db.ref('veiculos/' + veiculoSelecionado + '/atual').off('value', listenerTempoReal);
-    
-    document.getElementById('statusModo').innerHTML = '<span class="live-indicator"></span> MONITORANDO EM TEMPO REAL';
-    document.getElementById('statusModo').style.color = "var(--signal-on)";
-    document.getElementById('statusModo').style.borderColor = "var(--signal-on)";
+// ===================== TEMPO REAL =====================
+function pararListenerTempoReal() {
+    if (listenerTempoReal && veiculoSelecionado) {
+        db.ref('veiculos/' + veiculoSelecionado + '/atual').off('value', listenerTempoReal);
+        listenerTempoReal = null;
+    }
+}
+
+function ativarTempoReal() {
+    pararListenerTempoReal();
+    setStatusBar(true);
     document.getElementById('btnVoltarTempoReal').style.display = "none";
 
-    listenerTempoReal = db.ref('veiculos/' + veiculoSelecionado + '/atual').on('value', function(snapshot) {
-        if(!snapshot.exists()) return;
-        atualizarPainelEletrico(snapshot.val());
-        desenharLinhaDoTempoReal();
-    });
-}
-
-function desenharLinhaDoTempoReal() {
-    db.ref('veiculos/' + veiculoSelecionado + '/historico').limitToLast(30).once('value', function(snapshot) {
+    // Carrega últimos 50 pontos para a lista de ruas
+    db.ref('veiculos/' + veiculoSelecionado + '/historico').limitToLast(50).once('value', function(snap) {
         var pontos = [];
-        snapshot.forEach(function(child) {
-            var p = child.val();
-            if(p.lat && p.lon) pontos.push([p.lat, p.lon]);
-        });
-        if(pontos.length >= 2) processarEncaixeNasRuas(pontos);
+        snap.forEach(function(c) { pontos.push(c.val()); });
+        dadosHistorico = pontos;
+        renderizarListaRuas(pontos);
+        desenharRota(pontos);
+        if (pontos.length > 0) mostrarPonto(pontos[pontos.length - 1], pontos.length - 1);
+    });
+
+    listenerTempoReal = db.ref('veiculos/' + veiculoSelecionado + '/atual').on('value', function(snap) {
+        if (!snap.exists()) return;
+        var d = snap.val();
+        // Atualiza marcador principal
+        if (!marcadorVeiculo) {
+            marcadorVeiculo = L.marker([d.lat, d.lon]).addTo(map);
+        } else {
+            marcadorVeiculo.setLatLng([d.lat, d.lon]);
+        }
+        map.setView([d.lat, d.lon], map.getZoom() < 14 ? 16 : map.getZoom());
+        atualizarPainel(d);
     });
 }
 
-// ===================== BUSCA DE HISTÓRICO =====================
+document.getElementById('btnVoltarTempoReal').addEventListener('click', ativarTempoReal);
+
+// ===================== HISTÓRICO =====================
 document.getElementById('btnBuscarHistorico').addEventListener('click', function() {
     if (!veiculoSelecionado) return alert("Selecione um veículo primeiro!");
-    
-    var dataFiltro = document.getElementById('filtroData').value; 
-    var horaInicio = document.getElementById('filtroHoraInicio').value; 
-    var horaFim = document.getElementById('filtroHoraFim').value; 
-    
-    if(!dataFiltro) return alert("Selecione a data!");
+    var dataFiltro = document.getElementById('filtroData').value;
+    var hIni = document.getElementById('filtroHoraInicio').value;
+    var hFim = document.getElementById('filtroHoraFim').value;
+    if (!dataFiltro) return alert("Selecione a data!");
 
-    var partesData = dataFiltro.split('-');
-    var dataFormatadaBr = partesData[2] + "/" + partesData[1] + "/" + partesData[0];
+    var partes = dataFiltro.split('-');
+    var dataBr = partes[2] + "/" + partes[1] + "/" + partes[0];
 
-    if (listenerTempoReal) db.ref('veiculos/' + veiculoSelecionado + '/atual').off('value', listenerTempoReal);
-
-    document.getElementById('statusModo').innerHTML = '📅 EXIBINDO HISTÓRICO PASSADO';
-    document.getElementById('statusModo').style.color = "var(--signal-off)";
-    document.getElementById('statusModo').style.borderColor = "var(--signal-off)";
+    pararListenerTempoReal();
+    setStatusBar(false);
     document.getElementById('btnVoltarTempoReal').style.display = "block";
 
-    db.ref('veiculos/' + veiculoSelecionado + '/historico').once('value', function(snapshot) {
-        dadosHistoricoCarregados = [];
-        var coordenadasParaLinha = [];
-
-        snapshot.forEach(function(child) {
-            var ponto = child.val();
-            if (ponto.data === dataFormatadaBr) {
-                if (ponto.hora >= horaInicio && ponto.hora <= horaFim) {
-                    dadosHistoricoCarregados.push(ponto);
-                    coordenadasParaLinha.push([ponto.lat, ponto.lon]);
-                }
+    db.ref('veiculos/' + veiculoSelecionado + '/historico').once('value', function(snap) {
+        var pontos = [];
+        snap.forEach(function(child) {
+            var p = child.val();
+            if (p.data === dataBr && p.hora >= hIni && p.hora <= hFim) {
+                pontos.push(p);
             }
         });
 
-        if(dadosHistoricoCarregados.length === 0) {
+        if (pontos.length === 0) {
             alert("Nenhum registro encontrado para este período.");
-            verificarEAtivarTempoReal();
             return;
         }
 
-        atualizarPainelEletrico(dadosHistoricoCarregados[dadosHistoricoCarregados.length - 1]);
-        if (coordenadasParaLinha.length >= 2) processarEncaixeNasRuas(coordenadasParaLinha);
+        dadosHistorico = pontos;
+        renderizarListaRuas(pontos);
+        desenharRota(pontos);
+        mostrarPonto(pontos[pontos.length - 1], pontos.length - 1);
     });
 });
 
-document.getElementById('btnVoltarTempoReal').addEventListener('click', verificarEAtivarTempoReal);
+// ===================== LISTA DE RUAS CLICÁVEIS =====================
+function renderizarListaRuas(pontos) {
+    var lista = document.getElementById('listaRuas');
+    var contador = document.getElementById('contadorPontos');
+    limparMarcadores();
 
-function atualizarPainelEletrico(dados) {
-    if(!dados || !dados.lat || !dados.lon) return;
-    var latlng = [dados.lat, dados.lon];
-    marcadorVeiculo.setLatLng(latlng);
-    map.setView(latlng, map.getZoom() < 14 ? 16 : map.getZoom());
+    if (!pontos || pontos.length === 0) {
+        lista.innerHTML = '<div class="vazio">Nenhum ponto encontrado.</div>';
+        contador.textContent = "";
+        return;
+    }
 
-    document.getElementById('txtVelocidade').textContent = (dados.velocidade || 0) + " km/h";
-    document.getElementById('txtTempoParado').textContent = dados.tempoParado || "00:00:00";
-    document.getElementById('txtRua').textContent = dados.rua || "Não localizada";
-    document.getElementById('txtBairro').textContent = dados.bairro || "—";
-    document.getElementById('txtCidadeEstado').textContent = (dados.cidade || "—") + " / " + (dados.estado || "—");
-    document.getElementById('txtDataHora').textContent = dados.data + " às " + dados.hora;
-    document.getElementById('txtCoords').textContent = dados.lat.toFixed(6) + ", " + dados.lon.toFixed(6);
+    contador.textContent = "(" + pontos.length + " pontos)";
+    lista.innerHTML = "";
 
-    var badge = document.getElementById('txtStatus');
-    badge.textContent = dados.status || "PARADO";
-    badge.className = dados.velocidade > 80 ? "badge badge-perigo" : (dados.velocidade > 2 ? "badge badge-movimento" : "badge badge-parado");
+    pontos.forEach(function(p, i) {
+        // Badge de velocidade
+        var velClass = p.velocidade > 80 ? "per" : (p.velocidade > 2 ? "mov" : "par");
+        var velTexto = p.velocidade > 80 ? "⚡ " + p.velocidade + " km/h" :
+                       p.velocidade > 2  ? "▶ " + p.velocidade + " km/h" :
+                                           "⏸ Parado";
+
+        var item = document.createElement('div');
+        item.className = "item-rua";
+        item.dataset.index = i;
+        item.innerHTML =
+            '<div class="rua-nome">' + (p.rua || "Rua não identificada") + '</div>' +
+            '<div class="rua-meta">' +
+                '<span>' + (p.hora || "") + '</span>' +
+                '<span class="rua-vel ' + velClass + '">' + velTexto + '</span>' +
+                (p.velocidade <= 2 && p.tempoParado && p.tempoParado !== "00:00:00"
+                    ? '<span style="color:var(--signal-off);">⏱ ' + p.tempoParado + '</span>' : '') +
+            '</div>';
+
+        item.addEventListener('click', function() {
+            var idx = parseInt(this.dataset.index);
+            selecionarItem(idx);
+        });
+
+        lista.appendChild(item);
+
+        // Marcador no mapa para cada ponto
+        if (p.lat && p.lon) {
+            var cor = p.velocidade > 80 ? '#ff5470' : (p.velocidade > 2 ? '#00ffa6' : '#ffb020');
+            var circulo = L.circleMarker([p.lat, p.lon], {
+                radius: 5, color: cor, fillColor: cor, fillOpacity: 0.85, weight: 1.5
+            }).addTo(map);
+
+            // Popup ao clicar no marcador do mapa
+            (function(ponto, index) {
+                circulo.on('click', function() { selecionarItem(index); });
+                circulo.bindPopup(criarPopup(ponto), { maxWidth: 260 });
+            })(p, i);
+
+            marcadores.push(circulo);
+        }
+    });
+
+    // Rola a lista até o último item automaticamente
+    lista.scrollTop = lista.scrollHeight;
 }
 
-// ===================== NOVO MOTOR DE ENCAIXE INTELIGENTE =====================
-function processarEncaixeNasRuas(historicoCoordenadas) {
-    // 1. Filtrar pontos consecutivos duplicados
-    var coordenadasFiltradas = [];
-    for (var i = 0; i < historicoCoordenadas.length; i++) {
-        if (i === 0) {
-            coordenadasFiltradas.push(historicoCoordenadas[i]);
-        } else {
-            var anterior = historicoCoordenadas[i - 1];
-            var atual = historicoCoordenadas[i];
-            if (atual[0] !== anterior[0] || atual[1] !== anterior[1]) {
-                coordenadasFiltradas.push(atual);
+function criarPopup(p) {
+    var velTexto = p.velocidade > 80 ? "⚡ " + p.velocidade + " km/h (Excesso!)" :
+                   p.velocidade > 2  ? "▶ " + p.velocidade + " km/h" : "⏸ Parado";
+    var html =
+        '<div style="font-size:0.85em;line-height:1.6;">' +
+        '<div class="popup-linha"><b>📍 Rua:</b> ' + (p.rua || "—") + '</div>' +
+        '<div class="popup-linha"><b>🏘 Bairro:</b> ' + (p.bairro || "—") + '</div>' +
+        '<div class="popup-linha"><b>🏙 Cidade:</b> ' + (p.cidade || "—") + ' / ' + (p.estado || "—") + '</div>' +
+        '<div class="popup-linha"><b>🕐 Hora:</b> ' + (p.data || "") + ' ' + (p.hora || "") + '</div>' +
+        '<div class="popup-linha"><b>🚗 Vel:</b> ' + velTexto + '</div>' +
+        (p.velocidade <= 2 ? '<div class="popup-linha"><b>⏱ Parado:</b> ' + (p.tempoParado || "—") + '</div>' : '') +
+        '</div>';
+    return html;
+}
+
+function selecionarItem(idx) {
+    // Desmarca anterior
+    if (indiceAtivo >= 0) {
+        var anterior = document.querySelector('.item-rua[data-index="' + indiceAtivo + '"]');
+        if (anterior) anterior.classList.remove('ativo');
+    }
+    indiceAtivo = idx;
+
+    // Marca novo
+    var el = document.querySelector('.item-rua[data-index="' + idx + '"]');
+    if (el) {
+        el.classList.add('ativo');
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    var p = dadosHistorico[idx];
+    if (!p) return;
+
+    mostrarPonto(p, idx);
+
+    // Abre popup no mapa
+    if (marcadores[idx]) {
+        map.setView([p.lat, p.lon], 17);
+        marcadores[idx].openPopup();
+    }
+}
+
+function limparMarcadores() {
+    marcadores.forEach(function(m) { map.removeLayer(m); });
+    marcadores = [];
+    indiceAtivo = -1;
+}
+
+// ===================== ROTA NO MAPA =====================
+function desenharRota(pontos) {
+    var coords = pontos.filter(function(p) { return p.lat && p.lon; })
+                       .map(function(p) { return [p.lat, p.lon]; });
+
+    polilinhaRota.setLatLngs(coords);
+    polilinhaRuas.setLatLngs([]);
+
+    if (coords.length < 2) return;
+    map.fitBounds(L.latLngBounds(coords), { padding: [30, 30] });
+
+    // Encaixe nas ruas via OSRM match
+    encaixarNasRuas(coords);
+}
+
+function encaixarNasRuas(coords) {
+    var amostra = coords;
+    if (coords.length > 80) {
+        amostra = [];
+        var passo = Math.ceil(coords.length / 80);
+        for (var i = 0; i < coords.length; i += passo) amostra.push(coords[i]);
+        amostra.push(coords[coords.length - 1]);
+    }
+    var str = amostra.map(function(c) { return c[1].toFixed(6) + "," + c[0].toFixed(6); }).join(";");
+    var url = "https://router.project-osrm.org/match/v1/driving/" + str + "?overview=full&geometries=geojson";
+
+    fetch(url, { signal: AbortSignal.timeout(10000) })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.code === "Ok" && data.matchings && data.matchings.length > 0) {
+                var pts = [];
+                data.matchings.forEach(function(m) {
+                    m.geometry.coordinates.forEach(function(c) { pts.push([c[1], c[0]]); });
+                });
+                polilinhaRuas.setLatLngs(pts);
             }
-        }
-    }
+        })
+        .catch(function() { /* sem encaixe, tudo bem */ });
+}
 
-    if (coordenadasFiltradas.length < 2) return;
+// ===================== PAINEL DE DETALHES =====================
+function mostrarPonto(p, idx) {
+    if (!p) return;
 
-    // 2. Limitar amostragem máxima para não sobrecarregar a máquina de rotas
-    var pontosAmostra = [];
-    var maxPontosAPI = 25; // Reduzido o bloco para garantir precisão absoluta nas curvas
-    if (coordenadasFiltradas.length > maxPontosAPI) {
-        var passo = Math.ceil(coordenadasFiltradas.length / maxPontosAPI);
-        for (var j = 0; j < coordenadasFiltradas.length; j += passo) {
-            pontosAmostra.push(coordenadasFiltradas[j]);
-        }
-        pontosAmostra.push(coordenadasFiltradas[coordenadasFiltradas.length - 1]);
+    // Marcador principal
+    if (!marcadorVeiculo) {
+        marcadorVeiculo = L.marker([p.lat, p.lon]).addTo(map);
     } else {
-        pontosAmostra = coordenadasFiltradas;
+        marcadorVeiculo.setLatLng([p.lat, p.lon]);
     }
 
-    // Convertendo os pontos para o formato do Leaflet Routing Machine (L.latLng)
-    var waypoints = pontosAmostra.map(p => L.latLng(p[0], p[1]));
+    atualizarPainel(p);
+}
 
-    // 3. Forçar o recalculo e desenho contornando os quarteirões nativamente
-    try {
-        controleRotas.setWaypoints(waypoints);
-    } catch(e) {
-        console.log("Aguardando estabilização do mapa...");
+function atualizarPainel(p) {
+    document.getElementById('txtVelocidade').textContent = (p.velocidade || 0) + " km/h";
+    document.getElementById('txtTempoParado').textContent = p.tempoParado || "00:00:00";
+    document.getElementById('txtRua').textContent = p.rua || "—";
+    document.getElementById('txtBairro').textContent = p.bairro || "—";
+    document.getElementById('txtCidadeEstado').textContent = (p.cidade || "—") + " / " + (p.estado || "—");
+    document.getElementById('txtDataHora').textContent = (p.data || "—") + " às " + (p.hora || "—");
+    document.getElementById('txtCoords').textContent = p.lat ? p.lat.toFixed(6) + ", " + p.lon.toFixed(6) : "—";
+
+    var badge = document.getElementById('txtStatus');
+    badge.textContent = p.status || (p.velocidade > 2 ? "EM MOVIMENTO" : "PARADO");
+    badge.className = p.velocidade > 80 ? "badge badge-perigo" : (p.velocidade > 2 ? "badge badge-movimento" : "badge badge-parado");
+}
+
+function setStatusBar(tempoReal) {
+    var el = document.getElementById('statusModo');
+    if (tempoReal) {
+        el.innerHTML = '<span class="live-indicator"></span> MONITORANDO EM TEMPO REAL';
+        el.className = "status-bar online";
+    } else {
+        el.innerHTML = '📅 EXIBINDO HISTÓRICO PASSADO';
+        el.className = "status-bar";
     }
 }
 </script>
