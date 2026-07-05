@@ -85,6 +85,10 @@
         .popup-linha { font-size: 0.82em; padding: 2px 0; }
         .popup-linha b { color: var(--telemetry); }
 
+        /* Linha de data dupla (de / até) */
+        .data-range { display: flex; gap: 6px; align-items: center; }
+        .data-range span { font-size: 0.72em; color: var(--text-dim); flex-shrink: 0; }
+
         @media (max-width: 768px) {
             body { flex-direction: column-reverse; }
             .sidebar { width: 100%; height: 55vh; }
@@ -134,7 +138,14 @@
         <div class="box">
             <div class="box-title">📅 Filtrar Histórico</div>
             <div style="display:flex;flex-direction:column;gap:6px;">
-                <input type="date" id="filtroData">
+                <div class="data-range">
+                    <span>De</span>
+                    <input type="date" id="filtroDataInicio">
+                </div>
+                <div class="data-range">
+                    <span>Até</span>
+                    <input type="date" id="filtroDataFim">
+                </div>
                 <div style="display:flex;gap:6px;">
                     <input type="time" id="filtroHoraInicio" value="00:00">
                     <input type="time" id="filtroHoraFim" value="23:59">
@@ -211,7 +222,12 @@ var listenerTempoReal = null;
 var dadosHistorico = [];
 var indiceAtivo = -1;
 
-document.getElementById('filtroData').value = new Date().toISOString().slice(0, 10);
+// Data padrão: início e fim = hoje
+(function() {
+    var hoje = new Date().toISOString().slice(0, 10);
+    document.getElementById('filtroDataInicio').value = hoje;
+    document.getElementById('filtroDataFim').value = hoje;
+})();
 
 // ===================== AUTH =====================
 document.getElementById('btnEntrarPainel').addEventListener('click', function() {
@@ -304,15 +320,42 @@ function ativarTempoReal() {
 document.getElementById('btnVoltarTempoReal').addEventListener('click', ativarTempoReal);
 
 // ===================== HISTÓRICO =====================
+
+// Converte "dd/mm/yyyy" + "HH:MM:SS" (ou "HH:MM") em um objeto Date real,
+// para permitir comparação correta entre datas (inclusive períodos que
+// atravessam meses/anos diferentes).
+function parseDataHoraBr(dataBr, horaStr) {
+    if (!dataBr) return null;
+    var pd = dataBr.split('/'); // [dd, mm, yyyy]
+    if (pd.length !== 3) return null;
+    var ph = (horaStr || "00:00:00").split(':');
+    return new Date(
+        parseInt(pd[2], 10),
+        parseInt(pd[1], 10) - 1,
+        parseInt(pd[0], 10),
+        parseInt(ph[0] || 0, 10),
+        parseInt(ph[1] || 0, 10),
+        parseInt(ph[2] || 0, 10)
+    );
+}
+
 document.getElementById('btnBuscarHistorico').addEventListener('click', function() {
     if (!veiculoSelecionado) return alert("Selecione um veículo primeiro!");
-    var dataFiltro = document.getElementById('filtroData').value;
-    var hIni = document.getElementById('filtroHoraInicio').value;
-    var hFim = document.getElementById('filtroHoraFim').value;
-    if (!dataFiltro) return alert("Selecione a data!");
 
-    var partes = dataFiltro.split('-');
-    var dataBr = partes[2] + "/" + partes[1] + "/" + partes[0];
+    var dataInicioStr = document.getElementById('filtroDataInicio').value; // yyyy-mm-dd
+    var dataFimStr = document.getElementById('filtroDataFim').value;       // yyyy-mm-dd
+    var hIni = document.getElementById('filtroHoraInicio').value || "00:00";
+    var hFim = document.getElementById('filtroHoraFim').value || "23:59";
+
+    if (!dataInicioStr || !dataFimStr) return alert("Selecione as datas de início e fim!");
+
+    // Monta os limites do período como objetos Date (permite qualquer intervalo, ex: 04/07 até 07/07)
+    var limiteInicio = new Date(dataInicioStr + "T" + hIni + ":00");
+    var limiteFim = new Date(dataFimStr + "T" + hFim + ":59");
+
+    if (limiteInicio > limiteFim) {
+        return alert("A data/hora de início não pode ser depois da data/hora de fim!");
+    }
 
     pararListenerTempoReal();
     setStatusBar(false);
@@ -322,7 +365,8 @@ document.getElementById('btnBuscarHistorico').addEventListener('click', function
         var pontos = [];
         snap.forEach(function(child) {
             var p = child.val();
-            if (p.data === dataBr && p.hora >= hIni && p.hora <= hFim) {
+            var dtPonto = parseDataHoraBr(p.data, p.hora);
+            if (dtPonto && dtPonto >= limiteInicio && dtPonto <= limiteFim) {
                 pontos.push(p);
             }
         });
@@ -367,7 +411,7 @@ function renderizarListaRuas(pontos) {
         item.innerHTML =
             '<div class="rua-nome">' + (p.rua || "Rua não identificada") + '</div>' +
             '<div class="rua-meta">' +
-                '<span>' + (p.hora || "") + '</span>' +
+                '<span>' + (p.data ? p.data + " " : "") + (p.hora || "") + '</span>' +
                 '<span class="rua-vel ' + velClass + '">' + velTexto + '</span>' +
                 (p.velocidade <= 2 && p.tempoParado && p.tempoParado !== "00:00:00"
                     ? '<span style="color:var(--signal-off);">⏱ ' + p.tempoParado + '</span>' : '') +
