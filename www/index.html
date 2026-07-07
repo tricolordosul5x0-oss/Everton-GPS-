@@ -173,6 +173,13 @@ function fetchComTimeout(url, opcoes, timeoutMs) {
         .finally(() => clearTimeout(id));
 }
 
+// Gera um identificador único e "seguro" para usar como chave de nó no Firebase
+// (sem caracteres proibidos: . # $ [ ] /). Usado para poder corrigir o endereço
+// de um ponto específico depois, sem precisar reenviar tudo.
+function gerarIdPonto(ts) {
+    return ts + "_" + Math.random().toString(36).slice(2, 8);
+}
+
 // ===================== DETECÇÃO DE AMBIENTE (Web x App Nativo) =====================
 // Quando este mesmo código roda dentro do app Android gerado pelo Capacitor,
 // window.Capacitor existe e isNativePlatform() retorna true. Nesse caso usamos o
@@ -428,16 +435,41 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         document.getElementById('txtCidade').textContent = "Buscando...";
         document.getElementById('txtEstado').textContent = "Buscando...";
 
-        filaGeocodificarDepois.push({
-            lat: lat, lon: lon, velocidade: vel, status: situacao,
+        // ---- MUDANÇA PRINCIPAL DE VELOCIDADE ----
+        // Antes: o ponto só entrava na fila de envio (filaPendentes) DEPOIS de o
+        // endereço (Nominatim) ser resolvido, e o Nominatim é limitado a ~1 req/s.
+        // Isso fazia a sincronização "esperar" a fila de endereços.
+        // Agora: o ponto é gravado e enviado ao Firebase IMEDIATAMENTE, com o
+        // endereço como "Buscando endereço...". A busca do endereço roda em
+        // paralelo e, quando terminar, faz um pequeno "patch" nos campos de
+        // endereço — sem travar a sincronização da posição.
+        var idPonto = gerarIdPonto(agora.getTime());
+        var registro = {
+            id: idPonto,
+            lat: lat, lon: lon,
+            velocidade: vel, status: situacao,
             tempoParado: document.getElementById('txtTempoParado').textContent,
             hora: agora.toLocaleTimeString('pt-BR'),
             data: agora.toLocaleDateString('pt-BR'),
-            ts: agora.getTime()
-        });
+            rua: "Buscando endereço...", bairro: "Buscando endereço...",
+            cidade: "Buscando endereço...", estado: "Buscando endereço...",
+            endereco: "Buscando endereço..."
+        };
+
+        registroCompleto.push(registro);
+
+        if (listaVeiculos.length > 0) {
+            listaVeiculos.forEach(vNome => {
+                filaPendentes.push(Object.assign({ vID: vNome, empresaId: EMPRESA_ID }, registro));
+            });
+        }
+
+        filaGeocodificarDepois.push({ id: idPonto, lat: lat, lon: lon, ts: agora.getTime() });
+
         salvarTudo();
         atualizarInterfaceEstado();
-        processarFilaGeocodificacao();
+        enviarDadosFila();              // sincroniza a posição JÁ
+        processarFilaGeocodificacao();  // resolve o endereço em paralelo
     }
 }
 
@@ -588,6 +620,8 @@ function talvezBuscarTemperatura(lat, lon) {
 }
 
 // ===================== GEOCODIFICAÇÃO =====================
+// A partir de agora, a geocodificação só CORRIGE o endereço de um ponto que já
+// foi enviado ao Firebase — ela não bloqueia mais o envio da posição.
 var geocodificando = false;
 function processarFilaGeocodificacao() {
     if (geocodificando || filaGeocodificarDepois.length === 0) return;
@@ -611,7 +645,7 @@ function processarFilaGeocodificacao() {
             var bairro = addr.suburb || addr.neighbourhood || addr.quarter || "Bairro não localizado";
             var cidade = addr.city || addr.town || addr.village || addr.municipality || "Cidade não localizada";
             var estado = addr.state || "Estado não localizado";
-            gravarPontoProcessado(ponto, rua, bairro, cidade, estado);
+            aplicarEnderecoNoPonto(ponto.id, rua, bairro, cidade, estado);
             filaGeocodificarDepois.shift();
         })
         .catch(err => {
@@ -623,7 +657,7 @@ function processarFilaGeocodificacao() {
                 document.getElementById('txtBairro').textContent = "(tentativa " + ponto.tentativas + "/" + MAX_TENTATIVAS_GEOCODIFICACAO + ")";
             }
             if (ponto.tentativas >= MAX_TENTATIVAS_GEOCODIFICACAO) {
-                gravarPontoProcessado(ponto, "Endereço indisponível", "—", "—", "—");
+                aplicarEnderecoNoPonto(ponto.id, "Endereço indisponível", "—", "—", "—");
                 filaGeocodificarDepois.shift();
                 mostrarAvisoGps("⚠️ Não foi possível buscar o endereço de alguns pontos (sem resposta do serviço de mapas). As coordenadas foram salvas normalmente.");
             }
@@ -632,45 +666,72 @@ function processarFilaGeocodificacao() {
             geocodificando = false;
             salvarTudo();
             atualizarInterfaceEstado();
-            enviarDadosFila();
             if (filaGeocodificarDepois.length > 0) {
                 setTimeout(processarFilaGeocodificacao, INTERVALO_GEOCODIFICACAO_MS);
             }
         });
 }
 
-function gravarPontoProcessado(ponto, rua, bairro, cidade, estado) {
-    if (ponto === filaGeocodificarDepois[filaGeocodificarDepois.length - 1]) {
+// Aplica o endereço já resolvido a um ponto específico (por id), tanto no
+// registro local (para o CSV/tela) quanto num "patch" enviado ao Firebase —
+// sem precisar reenviar o pacote inteiro nem esperar a fila de posições.
+function aplicarEnderecoNoPonto(idPonto, rua, bairro, cidade, estado) {
+    var enderecoTxt = `${rua}, ${bairro} - ${cidade}/${estado}`;
+
+    var reg = registroCompleto.find(r => r.id === idPonto);
+    if (reg) {
+        reg.rua = rua; reg.bairro = bairro; reg.cidade = cidade; reg.estado = estado;
+        reg.endereco = enderecoTxt;
+    }
+
+    // Se ainda for o ponto mais recente exibido, atualiza os campos na tela
+    if (registroCompleto.length > 0 && registroCompleto[registroCompleto.length - 1].id === idPonto) {
         document.getElementById('txtRua').textContent = rua;
         document.getElementById('txtBairro').textContent = bairro;
         document.getElementById('txtCidade').textContent = cidade;
         document.getElementById('txtEstado').textContent = estado;
     }
 
-    var registro = {
-        lat: ponto.lat, lon: ponto.lon,
-        velocidade: ponto.velocidade, status: ponto.status,
-        tempoParado: ponto.tempoParado,
-        hora: ponto.hora, data: ponto.data,
-        rua: rua, bairro: bairro, cidade: cidade, estado: estado,
-        endereco: `${rua}, ${bairro} - ${cidade}/${estado}`
-    };
-    registroCompleto.push(registro);
+    // Corrige também os itens ainda pendentes de envio (caso o endereço chegue
+    // antes de o ponto ter sido sincronizado)
+    filaPendentes.forEach(p => {
+        if (p.id === idPonto) {
+            p.rua = rua; p.bairro = bairro; p.cidade = cidade; p.estado = estado; p.endereco = enderecoTxt;
+        }
+    });
 
+    // Corrige o que já foi enviado ao Firebase, com um patch pontual (rápido,
+    // não concorre com o envio das posições novas)
     if (listaVeiculos.length > 0) {
+        var patch = {};
         listaVeiculos.forEach(vNome => {
-            filaPendentes.push(Object.assign({ vID: vNome, empresaId: EMPRESA_ID }, registro));
+            var base = 'veiculos/' + vNome + '/historico/' + idPonto + '/';
+            patch[base + 'rua'] = rua;
+            patch[base + 'bairro'] = bairro;
+            patch[base + 'cidade'] = cidade;
+            patch[base + 'estado'] = estado;
+            patch[base + 'endereco'] = enderecoTxt;
         });
+        db.ref().update(patch).catch(err => console.warn("Falha ao corrigir endereço no Firebase (será tentado de novo no próximo ciclo):", err));
     }
 }
 
 // ===================== ENVIO PARA O FIREBASE =====================
+// Envio em LOTE: em vez de mandar 1 ponto por vez (2 escritas cada), agora
+// vários pontos pendentes (até LIMITE_LOTE_ENVIO) vão juntos num único
+// `update()` multi-path — um só round-trip ao servidor para o lote inteiro.
+// Isso é o que mais acelera a sincronização, principalmente quando o
+// aparelho ficou offline e acumulou fila, ou quando há vários veículos.
 var enviando = false;
-var LIMITE_FALHAS_MESMO_ITEM = 5;
+var LIMITE_LOTE_ENVIO = 25;
+var LIMITE_FALHAS_LOTE = 5;
+var falhasConsecutivasLote = 0;
+
 function mostrarErroSync(msg) {
     var out = document.getElementById('diagnosticoResultado');
     if (out) out.textContent = "❌ Erro na sincronização (" + new Date().toLocaleTimeString('pt-BR') + "):\n" + msg;
 }
+
 function enviarDadosFila() {
     if (enviando || filaPendentes.length === 0) {
         atualizarInterfaceEstado();
@@ -678,27 +739,35 @@ function enviarDadosFila() {
     }
     enviando = true;
 
-    var pacoteAtual = filaPendentes[0];
-    var targetVeiculo = pacoteAtual.vID;
-    var refAtual = db.ref('veiculos/' + targetVeiculo + '/atual');
-    var refHist = db.ref('veiculos/' + targetVeiculo + '/historico').push();
+    var lote = filaPendentes.slice(0, LIMITE_LOTE_ENVIO);
+    var updates = {};
+    var ultimoPorVeiculo = {};
 
-    refAtual.set(pacoteAtual)
-        .then(() => refHist.set(pacoteAtual))
+    lote.forEach(item => {
+        updates['veiculos/' + item.vID + '/historico/' + item.id] = item;
+        ultimoPorVeiculo[item.vID] = item; // só o mais recente do lote vira "atual"
+    });
+    Object.keys(ultimoPorVeiculo).forEach(vID => {
+        updates['veiculos/' + vID + '/atual'] = ultimoPorVeiculo[vID];
+    });
+
+    db.ref().update(updates)
         .then(() => {
-            filaPendentes.shift();
+            filaPendentes.splice(0, lote.length);
+            falhasConsecutivasLote = 0;
             salvarTudo();
         })
         .catch((error) => {
-            console.warn("Falha ao enviar, mantendo na fila:", error);
+            console.warn("Falha ao enviar lote, mantendo na fila:", error);
             var mensagem = (error && error.code) ? (error.code + ": " + error.message) : String(error);
             mostrarErroSync(mensagem);
 
-            pacoteAtual._falhas = (pacoteAtual._falhas || 0) + 1;
-            if (pacoteAtual._falhas >= LIMITE_FALHAS_MESMO_ITEM) {
-                console.warn("Descartando item após " + LIMITE_FALHAS_MESMO_ITEM + " falhas consecutivas:", pacoteAtual);
-                mostrarErroSync(mensagem + "\n\n⚠️ Este ponto falhou " + LIMITE_FALHAS_MESMO_ITEM + " vezes seguidas e foi descartado da fila para não travar os demais.");
+            falhasConsecutivasLote++;
+            if (falhasConsecutivasLote >= LIMITE_FALHAS_LOTE) {
+                console.warn("Descartando o ponto mais antigo da fila após falhas repetidas de sincronização.");
+                mostrarErroSync(mensagem + "\n\n⚠️ A sincronização falhou " + LIMITE_FALHAS_LOTE + " vezes seguidas. O ponto mais antigo da fila foi descartado para não travar os demais.");
                 filaPendentes.shift();
+                falhasConsecutivasLote = 0;
                 salvarTudo();
             }
         })
