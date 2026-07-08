@@ -3,356 +3,867 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Everton GPS Pro - Multiempresa</title>
-    <style>
-        * { box-sizing: border-box; }
-        body { margin: 0; font-family: sans-serif; background: #0a0d12; color: white; min-height: 100vh; display: flex; flex-direction: column; }
-        #map { height: 35vh; width: 100%; background: #000; }
-        .container { padding: 20px; flex: 1; }
-        .hidden { display: none !important; }
-
-        .auth-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.95); display: flex; align-items: center; justify-content: center; z-index: 9999; overflow-y: auto; }
-        .auth-card { background: #131820; padding: 30px; border-radius: 12px; display: flex; flex-direction: column; gap: 12px; width: 90%; max-width: 340px; border: 1px solid #333; margin: 20px 0; }
-        .auth-tabs { display: flex; gap: 4px; margin-bottom: 8px; }
-        .auth-tab { flex: 1; padding: 10px; text-align: center; background: #1a212b; border-radius: 6px; cursor: pointer; font-size: 0.85em; color: #999; }
-        .auth-tab.active { background: #00ffa6; color: #000; font-weight: bold; }
-
-        input, select { padding: 12px; border-radius: 6px; border: 1px solid #444; background: #1a212b; color: white; width: 100%; font-size: 0.95em; }
-        button { padding: 12px; background: #00ffa6; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; color: #000; }
-        button.secondary { background: #2a3341; color: #fff; border: 1px solid #444; }
-        button.danger { background: #ff4d5e; color: #fff; }
-        .small-link { text-align: center; font-size: 0.8em; color: #00ffa6; cursor: pointer; text-decoration: underline; }
-        .error-msg { color: #ff6b6b; font-size: 0.85em; text-align: center; min-height: 1em; }
-
-        .tag-veiculo { background: #1a212b; padding: 12px; margin-bottom: 8px; border-radius: 8px; border: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
-        .tag-membro { background: #1a212b; padding: 10px 12px; margin-bottom: 8px; border-radius: 8px; border: 1px solid #333; display: flex; justify-content: space-between; align-items: center; font-size: 0.9em; }
-        .badge { font-size: 0.7em; padding: 3px 8px; border-radius: 10px; background: #2a3341; }
-        .badge.admin { background: #00ffa6; color: #000; }
-
-        .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-        .empresa-nome { font-weight: bold; font-size: 1.1em; }
-        .role-info { color: #999; font-size: 0.8em; }
-
-        h4 { border-bottom: 1px solid #333; padding-bottom: 8px; margin-top: 25px; }
-    </style>
+    <title>Rastreador Everton GPS - Multi-Frota</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <style>
+        :root {
+            --bg-main: #0a0d12;
+            --bg-card: #131820;
+            --border: rgba(255,255,255,.08);
+            --signal-on: #00ffa6;
+            --signal-off: #ffb020;
+            --danger: #ff5470;
+            --telemetry: #2dd4ff;
+            --text: #eef2f6;
+            --text-dim: #74808f;
+        }
+        body {
+            margin: 0; padding: 0; font-family: system-ui, sans-serif;
+            background: var(--bg-main); color: var(--text);
+            display: flex; flex-direction: column; height: 100vh;
+        }
+        #map { width: 100%; height: 32vh; background: #000; }
+        .container { padding: 16px; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+
+        .input-box { background: var(--bg-card); border: 1px solid var(--border); padding: 12px; border-radius: 8px; }
+        .input-box label { font-size: 0.75em; text-transform: uppercase; color: var(--text-dim); display: block; margin-bottom: 6px; font-weight: bold; }
+        .row { display: flex; gap: 8px; }
+        input { flex: 1; background: #1a212b; border: 1px solid var(--border); padding: 12px; border-radius: 6px; color: white; font-size: 1em; }
+        button { background: var(--signal-on); color: #000; border: none; padding: 12px 20px; font-weight: bold; border-radius: 6px; cursor: pointer; }
+
+        .frota-container { background: var(--bg-card); border: 1px solid var(--border); padding: 12px; border-radius: 8px; }
+        .frota-lista { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+        .tag-veiculo { background: #1a212b; border: 1px solid var(--border); padding: 6px 12px; border-radius: 20px; font-size: 0.85em; display: flex; align-items: center; gap: 8px; }
+        .btn-remover { color: var(--danger); cursor: pointer; font-weight: bold; border: none; background: none; padding: 0; font-size: 1.1em; }
+
+        .status-bar { padding: 12px; border-radius: 6px; text-align: center; font-weight: bold; font-size: 0.9em; }
+        .status-online { background: rgba(0, 255, 166, 0.15); color: var(--signal-on); border: 1px solid var(--signal-on); }
+        .status-offline { background: rgba(255, 176, 32, 0.15); color: var(--signal-off); border: 1px solid var(--signal-off); }
+        .status-erro { background: rgba(255, 84, 112, 0.15); color: var(--danger); border: 1px solid var(--danger); }
+        .status-bg { background: rgba(45, 212, 255, 0.15); color: var(--telemetry); border: 1px solid var(--telemetry); }
+
+        .btn-row { display: flex; gap: 8px; }
+        .btn-force { background: #2dd4ff; color: #000; flex: 2; padding: 14px; font-size: 0.95em; text-transform: uppercase; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; }
+        .btn-export { background: #1a212b; color: var(--text); border: 1px solid var(--border); flex: 1; padding: 14px; font-size: 0.85em; font-weight: bold; border-radius: 6px; cursor: pointer; }
+
+        .telemetry-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+        .telemetry-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.9em; gap: 8px; }
+        .telemetry-row b, .telemetry-row span { text-align: right; }
+        .telemetry-row:last-child { border-bottom: none; }
+
+        .badge { font-size: 0.75em; padding: 3px 8px; border-radius: 4px; font-weight: bold; }
+        .badge-movimento { background: rgba(0,255,166,0.15); color: var(--signal-on); }
+        .badge-parado { background: rgba(255,176,32,0.15); color: var(--signal-off); }
+        .badge-perigo { background: rgba(255, 84, 112, 0.15); color: var(--danger); }
+
+        .gps-warning { background: rgba(255,84,112,0.12); border: 1px solid var(--danger); color: var(--danger); padding: 10px 12px; border-radius: 6px; font-size: 0.85em; display: none; }
+
+        .fila-info { font-size: 0.75em; color: var(--text-dim); text-align: center; }
+
+        /* Estilos do Modal de Autenticação */
+        .auth-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 10000; display: none; }
+        .auth-card { background: var(--bg-card); border: 1px solid var(--border); padding: 24px; border-radius: 12px; width: 90%; max-width: 360px; display: flex; flex-direction: column; gap: 16px; position: relative; }
+        .auth-card h3 { margin: 0; color: var(--text); font-size: 1.2em; text-align: center; }
+        .btn-fechar-modal { position: absolute; top: 12px; right: 12px; background: none; border: none; color: var(--text-dim); font-size: 1.2em; cursor: pointer; padding: 0; }
+        .user-logado-info { font-size: 0.75em; color: var(--signal-on); text-align: center; margin-top: -4px; display: none; }
+    </style>
 </head>
 <body>
 
-    <!-- MODAL DE AUTENTICAÇÃO -->
-    <div id="authModal" class="auth-overlay">
-        <div class="auth-card">
-            <h3 style="text-align:center; margin:0;">🔐 Everton GPS Pro</h3>
-
-            <div class="auth-tabs">
-                <div class="auth-tab active" id="tabLogin">Entrar</div>
-                <div class="auth-tab" id="tabCadastro">Cadastrar Empresa</div>
-            </div>
-
-            <!-- FORM LOGIN -->
-            <div id="formLogin">
-                <input type="email" id="loginEmail" placeholder="E-mail" style="margin-bottom:10px;">
-                <input type="password" id="loginSenha" placeholder="Senha" style="margin-bottom:10px;">
-                <button id="btnLogin">Entrar no Sistema</button>
-            </div>
-
-            <!-- FORM CADASTRO DE EMPRESA -->
-            <div id="formCadastro" class="hidden">
-                <input type="text" id="cadNomeEmpresa" placeholder="Nome da empresa" style="margin-bottom:10px;">
-                <input type="email" id="cadEmail" placeholder="Seu e-mail (admin)" style="margin-bottom:10px;">
-                <input type="password" id="cadSenha" placeholder="Crie uma senha" style="margin-bottom:10px;">
-                <button id="btnCadastrarEmpresa">Criar Conta da Empresa</button>
-            </div>
-
-            <div id="authError" class="error-msg"></div>
+<div id="authModal" class="auth-overlay">
+    <div class="auth-card">
+        <button class="btn-fechar-modal" id="btnFecharLogin">×</button>
+        <h3>🔐 Autenticação Requerida</h3>
+        <div>
+            <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">E-mail</label>
+            <input type="email" id="authEmail" placeholder="seu-email@gmail.com" style="width: 100%; box-sizing: border-box;">
         </div>
+        <div>
+            <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">Senha</label>
+            <input type="password" id="authSenha" placeholder="******" style="width: 100%; box-sizing: border-box;">
+        </div>
+        <button id="btnConfirmarLogin" style="background: var(--telemetry); width: 100%;">Entrar e Executar</button>
     </div>
+</div>
 
-    <div id="map"></div>
-    <div class="container hidden" id="appContent">
+<div id="map"></div>
 
-        <div class="top-bar">
-            <div>
-                <div class="empresa-nome" id="empresaNomeDisplay">-</div>
-                <div class="role-info" id="userLogadoInfo"></div>
-            </div>
-            <button class="secondary" id="btnLogout">Sair</button>
-        </div>
+<div class="container">
 
-        <h4>🚗 Frota</h4>
-        <div class="input-box" style="display: flex; gap: 5px;">
-            <input type="text" id="veiculoInput" placeholder="Nome do veículo" style="flex: 1;">
+    <div id="avisoGps" class="gps-warning"></div>
+
+    <div class="input-box">
+        <label>Cadastrar Novo Veículo na Lista</label>
+        <div id="userLogadoInfo" class="user-logado-info">Sessão Administrador Ativa</div>
+        <div class="row" style="margin-top: 4px;">
+            <input type="text" id="veiculoInput" placeholder="Ex: NISSAN ISA, FIAT UNO">
             <button id="btnAdicionar">Adicionar</button>
         </div>
-        <div id="listaFrotaLocal" class="frota-lista" style="margin-top: 15px;"></div>
-
-        <!-- SÓ APARECE PARA ADMIN -->
-        <div id="painelAdmin" class="hidden">
-            <h4>👥 Equipe</h4>
-            <div id="listaMembros"></div>
-
-            <h4>➕ Convidar Funcionário</h4>
-            <div style="display:flex; flex-direction:column; gap:8px;">
-                <input type="text" id="novoMembroNome" placeholder="Nome do funcionário">
-                <input type="email" id="novoMembroEmail" placeholder="E-mail do funcionário">
-                <input type="password" id="novoMembroSenha" placeholder="Senha temporária">
-                <button id="btnConvidarMembro">Adicionar Funcionário</button>
-                <div id="convidarStatus" class="error-msg"></div>
-            </div>
-        </div>
     </div>
 
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <div class="frota-container">
+        <div style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold;">Veículos Monitorados Neste Aparelho</div>
+        <div class="frota-lista" id="listaFrotaLocal"></div>
+    </div>
 
-    <script>
-        // ============ CAPTURADOR DE ERROS (TEMPORÁRIO PARA DEBUG) ============
-        // Mostra qualquer erro de JavaScript na tela, mesmo sem abrir o console.
-        window.onerror = function(msg, url, line, col, error) {
-            const el = document.getElementById('authError');
-            if (el) {
-                el.style.color = "#ff6b6b";
-                el.style.fontWeight = "bold";
-                el.textContent = "ERRO DE DEBUG: " + msg + " (linha " + line + ")";
-            } else {
-                alert("ERRO DE DEBUG: " + msg + " (linha " + line + ")");
-            }
-            return false;
-        };
+    <div id="statusConexao" class="status-bar status-offline">
+        MODO OFFLINE — gravando localmente no aparelho <span id="contadorPendentes">(0 pendentes)</span>
+    </div>
+    <div id="statusBackground" class="status-bar status-bg" style="display:none;"></div>
+    <div class="fila-info" id="filaInfo"></div>
 
-        // ============ CONFIGURAÇÃO ============
-        const firebaseConfig = {
-            apiKey: "AIzaSyDwKIS8wL3D7OuaysVFV_xyAsFsKo2eXzY",
-            authDomain: "everton-gps.firebaseapp.com",
-            databaseURL: "https://everton-gps-default-rtdb.firebaseio.com",
-            projectId: "everton-gps",
-            storageBucket: "everton-gps.firebasestorage.app",
-            messagingSenderId: "688936933095",
-            appId: "1:688936933095:web:790b2407334e8b148e3442"
-        };
+    <div class="btn-row">
+        <button id="btnForcar" class="btn-force">📡 Forçar Sincronização</button>
+        <button id="btnExportar" class="btn-export">⬇️ Exportar Rota (CSV)</button>
+    </div>
+    <button id="btnDiagnostico" class="btn-export" style="width:100%;">🔍 Testar Conexão com Serviço de Endereço</button>
+    <div id="diagnosticoResultado" class="fila-info" style="text-align:left; white-space:pre-wrap; word-break:break-word;"></div>
 
-        firebase.initializeApp(firebaseConfig);
-        const auth = firebase.auth();
-        const db = firebase.database();
+    <div class="telemetry-card">
+        <div style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 8px; font-weight: bold;">Última Telemetria Gerada</div>
+        <div class="telemetry-row"><span>Situação</span><span id="badStatus" class="badge badge-parado">PARADO</span></div>
+        <div class="telemetry-row"><span>Velocidade</span><b id="txtVelocidade">0 km/h</b></div>
+        <div class="telemetry-row"><span>Precisão GPS</span><b id="txtPrecisao">—</b></div>
+        <div class="telemetry-row"><span>Tempo de Parada</span><b id="txtTempoParado">00:00:00</b></div>
+        <div class="telemetry-row"><span>Coordenadas</span><b id="txtCoords">—</b></div>
+        <div class="telemetry-row"><span>Rua</span><b id="txtRua">—</b></div>
+        <div class="telemetry-row"><span>Bairro</span><b id="txtBairro">—</b></div>
+        <div class="telemetry-row"><span>Cidade</span><b id="txtCidade">—</b></div>
+        <div class="telemetry-row"><span>Estado (UF)</span><b id="txtEstado">—</b></div>
+        <div class="telemetry-row"><span>Data</span><b id="txtData">—</b></div>
+        <div class="telemetry-row"><span>Horário do último ponto</span><span id="txtHora" style="color:var(--telemetry)">—</span></div>
+        <div class="telemetry-row"><span>🌡️ Temperatura no local</span><b id="txtTemperatura">—</b></div>
+    </div>
+</div>
 
-        const map = L.map('map').setView([-29.6133, -52.1919], 13);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<!-- Ponte nativa do Capacitor. Em navegador comum este arquivo não existe e o <script> falha
+     silenciosamente (com erro 404 no console), o que é esperado: o app cai no modo Web normal. -->
+<script src="capacitor.js"></script>
 
-        let empresaAtualId = null;
-        let roleAtual = null;
+<script>
+// ===================== CONFIGURAÇÃO =====================
+var firebaseConfig = {
+    apiKey: "AIzaSyDwKIS8wL3D7OuaysVFV_xyAsFsKo2eXzY",
+    authDomain: "everton-gps.firebaseapp.com",
+    databaseURL: "https://everton-gps-default-rtdb.firebaseio.com",
+    projectId: "everton-gps",
+    storageBucket: "everton-gps.firebasestorage.app",
+    messagingSenderId: "688936933095",
+    appId: "1:688936933095:web:790b2407334e8b148e3442"
+};
+firebase.initializeApp(firebaseConfig);
+var db = firebase.database();
+var auth = firebase.auth();
 
-        // ============ UI: TROCA DE ABAS ============
-        const tabLogin = document.getElementById('tabLogin');
-        const tabCadastro = document.getElementById('tabCadastro');
-        const formLogin = document.getElementById('formLogin');
-        const formCadastro = document.getElementById('formCadastro');
+var LIMITE_VELOCIDADE = 80;
+var EMPRESA_ID = "tricolordosul5x0_gmail_com";
 
-        tabLogin.addEventListener('click', () => {
-            tabLogin.classList.add('active');
-            tabCadastro.classList.remove('active');
-            formLogin.classList.remove('hidden');
-            formCadastro.classList.add('hidden');
-            document.getElementById('authError').textContent = "";
-        });
-        tabCadastro.addEventListener('click', () => {
-            tabCadastro.classList.add('active');
-            tabLogin.classList.remove('active');
-            formCadastro.classList.remove('hidden');
-            formLogin.classList.add('hidden');
-            document.getElementById('authError').textContent = "";
-        });
+var INTERVALO_GEOCODIFICACAO_MS = 1100;
+var MAX_TENTATIVAS_GEOCODIFICACAO = 3;
+var TIMEOUT_FETCH_MS = 8000;
 
-        function mostrarErro(msg) {
-            document.getElementById('authError').textContent = msg;
-        }
+function fetchComTimeout(url, opcoes, timeoutMs) {
+    var controller = new AbortController();
+    var id = setTimeout(() => controller.abort(), timeoutMs);
+    return fetch(url, Object.assign({}, opcoes, { signal: controller.signal }))
+        .finally(() => clearTimeout(id));
+}
 
-        // ============ LOGIN ============
-        document.getElementById('btnLogin').addEventListener('click', () => {
-            const email = document.getElementById('loginEmail').value.trim();
-            const senha = document.getElementById('loginSenha').value;
-            if (!email || !senha) return mostrarErro("Preencha e-mail e senha.");
-            auth.signInWithEmailAndPassword(email, senha)
-                .catch(e => mostrarErro(traduzErro(e)));
-        });
+// Gera um identificador único e "seguro" para usar como chave de nó no Firebase
+// (sem caracteres proibidos: . # $ [ ] /). Usado para poder corrigir o endereço
+// de um ponto específico depois, sem precisar reenviar tudo.
+function gerarIdPonto(ts) {
+    return ts + "_" + Math.random().toString(36).slice(2, 8);
+}
 
-        // ============ CADASTRO DE NOVA EMPRESA ============
-        document.getElementById('btnCadastrarEmpresa').addEventListener('click', () => {
-            const nomeEmpresa = document.getElementById('cadNomeEmpresa').value.trim();
-            const email = document.getElementById('cadEmail').value.trim();
-            const senha = document.getElementById('cadSenha').value;
+// ===================== DETECÇÃO DE AMBIENTE (Web x App Nativo) =====================
+// Quando este mesmo código roda dentro do app Android gerado pelo Capacitor,
+// window.Capacitor existe e isNativePlatform() retorna true. Nesse caso usamos o
+// plugin de rastreio em segundo plano em vez da API de geolocalização do navegador,
+// que é a única forma de continuar gravando com o app minimizado ou a tela apagada.
+var isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+var bgWatcherId = null;
 
-            if (!nomeEmpresa || !email || !senha) return mostrarErro("Preencha todos os campos.");
-            if (senha.length < 6) return mostrarErro("A senha precisa ter no mínimo 6 caracteres.");
+function atualizarBarraBackground(msg, mostrar) {
+    var el = document.getElementById('statusBackground');
+    if (!mostrar) { el.style.display = "none"; return; }
+    el.style.display = "block";
+    el.textContent = msg;
+}
 
-            auth.createUserWithEmailAndPassword(email, senha)
-                .then(async (cred) => {
-                    const uid = cred.user.uid;
-                    const novaEmpresaRef = db.ref('empresas').push();
-                    const empresaId = novaEmpresaRef.key;
+// ===================== AVISO DE CONTEXTO INSEGURO (HTTP) =====================
+function checarContextoSeguro() {
+    if (isNative) return true; // dentro do app nativo não se aplica
+    var seguro = window.isSecureContext || location.hostname === "localhost" || location.hostname === "127.0.0.1";
+    if (!seguro) {
+        mostrarAvisoGps("⚠️ Esta página precisa estar em HTTPS para acessar o GPS. Abra-a por um link https:// para que a localização funcione.");
+        return false;
+    }
+    return true;
+}
+function mostrarAvisoGps(msg) {
+    var box = document.getElementById('avisoGps');
+    box.textContent = msg;
+    box.style.display = "block";
+}
+function esconderAvisoGps() {
+    document.getElementById('avisoGps').style.display = "none";
+}
 
-                    await novaEmpresaRef.set({
-                        nome: nomeEmpresa,
-                        plano: "trial",
-                        criadoEm: Date.now(),
-                        frota: [],
-                        membros: {
-                            [uid]: { email: email, role: "admin", nome: "Admin" }
-                        }
-                    });
+// ===================== MAPA =====================
+var map = L.map('map', { zoomControl: false }).setView([-29.6133, -52.1919], 13);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap'
+}).addTo(map);
+var marcador = L.marker([-29.6133, -52.1919]).addTo(map);
+var circuloPrecisao = L.circle([-29.6133, -52.1919], { radius: 0, color: '#2dd4ff', fillOpacity: 0.1, weight: 1 }).addTo(map);
+var polilinhaRota = L.polyline([], {color: 'rgba(45,212,255,0.35)', weight: 3, opacity: 0.6, dashArray: '4,6'}).addTo(map);
+var polilinhaRuas = L.polyline([], {color: '#2dd4ff', weight: 6, opacity: 0.95}).addTo(map);
 
-                    await db.ref(`mapaUsuarioEmpresa/${uid}`).set(empresaId);
-                    // onAuthStateChanged cuida do resto (carregar dashboard)
-                })
-                .catch(e => mostrarErro(traduzErro(e)));
-        });
+// ===================== ESTADO PERSISTENTE =====================
+var listaVeiculos = JSON.parse(localStorage.getItem('frota_veiculos') || "[]");
+var filaPendentes = JSON.parse(localStorage.getItem('fila_rastreio') || "[]");
+var filaGeocodificarDepois = JSON.parse(localStorage.getItem('fila_geocodificar') || "[]");
+var historicoCoordenadasLocais = JSON.parse(localStorage.getItem('historico_coords') || "[]");
+var registroCompleto = JSON.parse(localStorage.getItem('registro_completo') || "[]");
 
-        function traduzErro(e) {
-            const map = {
-                "auth/email-already-in-use": "Este e-mail já está cadastrado.",
-                "auth/invalid-email": "E-mail inválido.",
-                "auth/weak-password": "Senha muito fraca (mínimo 6 caracteres).",
-                "auth/wrong-password": "Senha incorreta.",
-                "auth/user-not-found": "Usuário não encontrado.",
-                "auth/invalid-credential": "E-mail ou senha incorretos."
-            };
-            return map[e.code] || ("Erro: " + e.message);
-        }
+if (historicoCoordenadasLocais.length > 0) {
+    polilinhaRota.setLatLngs(historicoCoordenadasLocais);
+    var ultimo = historicoCoordenadasLocais[historicoCoordenadasLocais.length - 1];
+    map.setView(ultimo, 16);
+    marcador.setLatLng(ultimo);
+}
 
-        // ============ ESTADO DE AUTENTICAÇÃO ============
-        auth.onAuthStateChanged(async (user) => {
-            if (!user) {
-                document.getElementById('authModal').style.display = "flex";
-                document.getElementById('appContent').classList.add('hidden');
-                return;
-            }
+function salvarTudo() {
+    localStorage.setItem('frota_veiculos', JSON.stringify(listaVeiculos));
+    localStorage.setItem('fila_rastreio', JSON.stringify(filaPendentes));
+    localStorage.setItem('fila_geocodificar', JSON.stringify(filaGeocodificarDepois));
+    localStorage.setItem('historico_coords', JSON.stringify(historicoCoordenadasLocais));
+    if (registroCompleto.length > 5000) registroCompleto = registroCompleto.slice(-5000);
+    localStorage.setItem('registro_completo', JSON.stringify(registroCompleto));
+}
 
-            const mapaSnap = await db.ref(`mapaUsuarioEmpresa/${user.uid}`).once('value');
-            empresaAtualId = mapaSnap.val();
+// ===================== CONTROLE DO MODAL DE LOGIN INTERNO =====================
+var acaoPendente = null;
 
-            if (!empresaAtualId) {
-                mostrarErro("Este usuário não está vinculado a nenhuma empresa.");
-                auth.signOut();
-                return;
-            }
+function abrirModalLogin(callbackAcao) {
+    if (auth.currentUser) {
+        callbackAcao();
+        return;
+    }
+    acaoPendente = callbackAcao;
+    document.getElementById('authModal').style.display = "flex";
+}
 
+document.getElementById('btnFecharLogin').addEventListener('click', function() {
+    document.getElementById('authModal').style.display = "none";
+    acaoPendente = null;
+});
+
+document.getElementById('btnConfirmarLogin').addEventListener('click', function() {
+    var email = document.getElementById('authEmail').value.trim();
+    var senha = document.getElementById('authSenha').value;
+
+    if (!email || !senha) return alert("Preencha todos os campos!");
+
+    document.getElementById('btnConfirmarLogin').textContent = "Autenticando...";
+    document.getElementById('btnConfirmarLogin').disabled = true;
+
+    auth.signInWithEmailAndPassword(email, senha)
+        .then(() => {
             document.getElementById('authModal').style.display = "none";
-            document.getElementById('appContent').classList.remove('hidden');
-
-            carregarEmpresa(user.uid);
+            document.getElementById('authEmail').value = "";
+            document.getElementById('authSenha').value = "";
+            if (acaoPendente) {
+                acaoPendente();
+                acaoPendente = null;
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            alert("Erro na autenticação: Verifique seus dados. " + err.message);
+        })
+        .finally(() => {
+            document.getElementById('btnConfirmarLogin').textContent = "Entrar e Executar";
+            document.getElementById('btnConfirmarLogin').disabled = false;
         });
+});
 
-        // ============ CARREGAR DADOS DA EMPRESA ============
-        function carregarEmpresa(uid) {
-            const empresaRef = db.ref(`empresas/${empresaAtualId}`);
+auth.onAuthStateChanged(user => {
+    var badgeUser = document.getElementById('userLogadoInfo');
+    badgeUser.style.display = user ? "block" : "none";
+});
 
-            empresaRef.child('nome').once('value').then(snap => {
-                document.getElementById('empresaNomeDisplay').textContent = snap.val() || "Empresa";
-            });
+// ===================== CADASTRO DE VEÍCULOS (PROTEGIDOS) =====================
+function renderizarFrotaLocal() {
+    var container = document.getElementById('listaFrotaLocal');
+    container.innerHTML = "";
+    if (listaVeiculos.length === 0) {
+        container.innerHTML = "<span style='color:var(--text-dim); font-size:0.85em;'>Nenhum veículo adicionado ainda.</span>";
+        return;
+    }
+    listaVeiculos.forEach((nome, index) => {
+        var tag = document.createElement('div');
+        tag.className = "tag-veiculo";
+        tag.innerHTML = `🚗 <b>${nome}</b> <button class="btn-remover" onclick="removerVeiculoExigindoSenha(${index})">×</button>`;
+        container.appendChild(tag);
+    });
+}
 
-            empresaRef.child(`membros/${uid}`).once('value').then(snap => {
-                const membro = snap.val() || {};
-                roleAtual = membro.role || "operador";
-                document.getElementById('userLogadoInfo').textContent =
-                    (membro.email || auth.currentUser.email) + " · " + (roleAtual === "admin" ? "Administrador" : "Operador");
+document.getElementById('btnAdicionar').addEventListener('click', function() {
+    var nome = document.getElementById('veiculoInput').value.trim().toUpperCase();
+    if (!nome) return alert('Digite um identificador!');
+    if (listaVeiculos.includes(nome)) return alert('Esse veículo já está cadastrado!');
 
-                if (roleAtual === "admin") {
-                    document.getElementById('painelAdmin').classList.remove('hidden');
-                    carregarMembros();
-                } else {
-                    document.getElementById('painelAdmin').classList.add('hidden');
-                }
-            });
+    abrirModalLogin(function() {
+        listaVeiculos.push(nome);
+        salvarTudo();
+        document.getElementById('veiculoInput').value = "";
+        renderizarFrotaLocal();
+        processarFilaGeocodificacao();
+        enviarDadosFila();
+        auth.signOut();
+    });
+});
 
-            empresaRef.child('frota').on('value', snap => {
-                const frota = snap.val() || [];
-                document.getElementById('listaFrotaLocal').innerHTML = frota.map(v =>
-                    `<div class="tag-veiculo">🚗 ${v}</div>`
-                ).join('') || '<div style="color:#666;">Nenhum veículo cadastrado ainda.</div>';
+window.removerVeiculoExigindoSenha = function(index) {
+    var nomeVeiculo = listaVeiculos[index];
+    abrirModalLogin(function() {
+        if (confirm(`Remover o veículo ${nomeVeiculo} da lista local?`)) {
+            listaVeiculos.splice(index, 1);
+            salvarTudo();
+            renderizarFrotaLocal();
+        }
+        auth.signOut();
+    });
+};
+
+// ===================== TEMPO PARADO =====================
+var tempoParadoSegundos = parseInt(localStorage.getItem('tempo_parado_seg') || "0");
+setInterval(function() {
+    if (document.getElementById('badStatus').textContent === "PARADO") {
+        tempoParadoSegundos++;
+        localStorage.setItem('tempo_parado_seg', tempoParadoSegundos);
+    } else {
+        tempoParadoSegundos = 0;
+        localStorage.setItem('tempo_parado_seg', "0");
+    }
+    var hrs = Math.floor(tempoParadoSegundos / 3600).toString().padStart(2, '0');
+    var mins = Math.floor((tempoParadoSegundos % 3600) / 60).toString().padStart(2, '0');
+    var segs = (tempoParadoSegundos % 60).toString().padStart(2, '0');
+    document.getElementById('txtTempoParado').textContent = `${hrs}:${mins}:${segs}`;
+}, 1000);
+
+// ===================== CAPTURA DE GPS =====================
+var DISTANCIA_MINIMA_MOVIMENTO_M = 20;
+var ultimoPontoRegistrado = historicoCoordenadasLocais.length > 0
+    ? historicoCoordenadasLocais[historicoCoordenadasLocais.length - 1]
+    : null;
+var primeiraLeituraDestaSessao = true;
+var errosGpsConsecutivos = 0;
+var LIMITE_ERROS_PARA_AVISO = 4;
+
+function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
+    var R = 6371000;
+    var dLat = (lat2 - lat1) * Math.PI / 180;
+    var dLon = (lon2 - lon1) * Math.PI / 180;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Ponto único de entrada para qualquer nova posição, venha ela da API web
+// (navigator.geolocation) ou do plugin nativo de segundo plano.
+function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
+    esconderAvisoGps();
+    errosGpsConsecutivos = 0;
+
+    var precisao = precisaoRaw ? Math.round(precisaoRaw) : null;
+    var vel = velRaw ? Math.round(velRaw * 3.6) : 0;
+    var agora = new Date();
+
+    map.setView([lat, lon], map.getZoom() < 14 ? 16 : map.getZoom());
+    marcador.setLatLng([lat, lon]);
+    if (precisao) {
+        circuloPrecisao.setLatLng([lat, lon]);
+        circuloPrecisao.setRadius(precisao);
+    }
+
+    document.getElementById('txtVelocidade').textContent = vel + " km/h";
+    document.getElementById('txtData').textContent = agora.toLocaleDateString('pt-BR');
+    document.getElementById('txtHora').textContent = agora.toLocaleTimeString('pt-BR');
+    document.getElementById('txtPrecisao').textContent = precisao ? `± ${precisao} m` : "—";
+    document.getElementById('txtCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+
+    var situacao = "EM MOVIMENTO";
+    var badgeStatus = document.getElementById('badStatus');
+    if (vel <= 2) {
+        situacao = "PARADO";
+        badgeStatus.textContent = "PARADO";
+        badgeStatus.className = "badge badge-parado";
+    } else if (vel > LIMITE_VELOCIDADE) {
+        situacao = "VELOCIDADE ACIMA DO LIMITE";
+        badgeStatus.textContent = "EXCESSO DE VELOCIDADE";
+        badgeStatus.className = "badge badge-perigo";
+    } else {
+        badgeStatus.textContent = "EM MOVIMENTO";
+        badgeStatus.className = "badge badge-movimento";
+    }
+
+    var distancia = ultimoPontoRegistrado
+        ? calcularDistanciaMetros(ultimoPontoRegistrado[0], ultimoPontoRegistrado[1], lat, lon)
+        : Infinity;
+
+    if (distancia >= DISTANCIA_MINIMA_MOVIMENTO_M || primeiraLeituraDestaSessao) {
+        primeiraLeituraDestaSessao = false;
+        ultimoPontoRegistrado = [lat, lon];
+
+        historicoCoordenadasLocais.push([lat, lon]);
+        if (historicoCoordenadasLocais.length > 2000) historicoCoordenadasLocais.shift();
+        polilinhaRota.setLatLngs(historicoCoordenadasLocais);
+        agendarEncaixeNasRuas();
+        talvezBuscarTemperatura(lat, lon);
+
+        document.getElementById('txtRua').textContent = "Buscando...";
+        document.getElementById('txtBairro').textContent = "Buscando...";
+        document.getElementById('txtCidade').textContent = "Buscando...";
+        document.getElementById('txtEstado').textContent = "Buscando...";
+
+        // ---- MUDANÇA PRINCIPAL DE VELOCIDADE ----
+        // Antes: o ponto só entrava na fila de envio (filaPendentes) DEPOIS de o
+        // endereço (Nominatim) ser resolvido, e o Nominatim é limitado a ~1 req/s.
+        // Isso fazia a sincronização "esperar" a fila de endereços.
+        // Agora: o ponto é gravado e enviado ao Firebase IMEDIATAMENTE, com o
+        // endereço como "Buscando endereço...". A busca do endereço roda em
+        // paralelo e, quando terminar, faz um pequeno "patch" nos campos de
+        // endereço — sem travar a sincronização da posição.
+        var idPonto = gerarIdPonto(agora.getTime());
+        var registro = {
+            id: idPonto,
+            lat: lat, lon: lon,
+            velocidade: vel, status: situacao,
+            tempoParado: document.getElementById('txtTempoParado').textContent,
+            hora: agora.toLocaleTimeString('pt-BR'),
+            data: agora.toLocaleDateString('pt-BR'),
+            rua: "Buscando endereço...", bairro: "Buscando endereço...",
+            cidade: "Buscando endereço...", estado: "Buscando endereço...",
+            endereco: "Buscando endereço..."
+        };
+
+        registroCompleto.push(registro);
+
+        if (listaVeiculos.length > 0) {
+            listaVeiculos.forEach(vNome => {
+                filaPendentes.push(Object.assign({ vID: vNome, empresaId: EMPRESA_ID }, registro));
             });
         }
 
-        function carregarMembros() {
-            db.ref(`empresas/${empresaAtualId}/membros`).on('value', snap => {
-                const membros = snap.val() || {};
-                const html = Object.values(membros).map(m =>
-                    `<div class="tag-membro"><span>${m.nome || m.email}</span><span class="badge ${m.role === 'admin' ? 'admin' : ''}">${m.role === 'admin' ? 'Admin' : 'Operador'}</span></div>`
-                ).join('');
-                document.getElementById('listaMembros').innerHTML = html || '<div style="color:#666;">Nenhum membro ainda.</div>';
-            });
+        filaGeocodificarDepois.push({ id: idPonto, lat: lat, lon: lon, ts: agora.getTime() });
+
+        salvarTudo();
+        atualizarInterfaceEstado();
+        enviarDadosFila();              // sincroniza a posição JÁ
+        processarFilaGeocodificacao();  // resolve o endereço em paralelo
+    }
+}
+
+function tratarErroGps(erro) {
+    console.error(erro);
+    errosGpsConsecutivos++;
+
+    if (erro.code === 1 /* PERMISSION_DENIED */) {
+        mostrarAvisoGps("⚠️ Permissão de localização negada. Ative o GPS nas permissões do app/navegador para este site.");
+    } else if (errosGpsConsecutivos >= LIMITE_ERROS_PARA_AVISO) {
+        var msg = erro.code === 2 /* POSITION_UNAVAILABLE */
+            ? "⚠️ Sinal de GPS fraco no momento. Tente em área aberta."
+            : "⚠️ Sinal de GPS instável. Tentando novamente...";
+        mostrarAvisoGps(msg);
+    }
+}
+
+// --- Modo App Nativo (Android/iOS via Capacitor): rastreio real em segundo plano ---
+function iniciarRastreioNativoBackground() {
+    var BG = window.Capacitor.Plugins.BackgroundGeolocation;
+    if (!BG) {
+        mostrarAvisoGps("⚠️ Plugin de rastreio em segundo plano não instalado. Rode 'npx cap sync' no projeto e reinstale o app.");
+        iniciarRastreioWeb();
+        return;
+    }
+
+    atualizarBarraBackground("🟢 Rastreio em segundo plano ATIVO — grava mesmo com o app minimizado ou a tela apagada", true);
+
+    BG.addWatcher({
+        backgroundMessage: "Rastreador Everton GPS está registrando a localização do veículo.",
+        backgroundTitle: "Rastreador ativo",
+        requestPermissions: true,
+        stale: false,
+        distanceFilter: DISTANCIA_MINIMA_MOVIMENTO_M
+    }, function(location, error) {
+        if (error) {
+            if (error.code === "NOT_AUTHORIZED") {
+                mostrarAvisoGps("⚠️ Permissão de localização em segundo plano negada. Nas configurações do app, escolha 'Permitir o tempo todo'.");
+            } else {
+                console.warn("Erro no rastreio em segundo plano:", error);
+            }
+            return;
         }
+        if (location) {
+            processarNovaPosicao(location.latitude, location.longitude, location.accuracy, location.speed);
+        }
+    }).then(function(id) {
+        bgWatcherId = id;
+    }).catch(function(err) {
+        console.error("Falha ao iniciar rastreio em segundo plano:", err);
+        mostrarAvisoGps("⚠️ Não foi possível iniciar o rastreio em segundo plano: " + (err && err.message ? err.message : err));
+    });
+}
 
-        // ============ ADICIONAR VEÍCULO (COMPARTILHADO NA EMPRESA) ============
-        document.getElementById('btnAdicionar').addEventListener('click', () => {
-            const input = document.getElementById('veiculoInput');
-            const nome = input.value.trim().toUpperCase();
-            if (!nome || !empresaAtualId) return;
+// --- Modo Navegador/PWA: só grava enquanto a aba está aberta e visível ---
+function iniciarRastreioWeb() {
+    if (!checarContextoSeguro()) return;
+    if (!navigator.geolocation) {
+        mostrarAvisoGps("⚠️ Este navegador não suporta geolocalização.");
+        return;
+    }
+    navigator.geolocation.watchPosition(function(position) {
+        processarNovaPosicao(
+            position.coords.latitude,
+            position.coords.longitude,
+            position.coords.accuracy,
+            position.coords.speed
+        );
+    }, tratarErroGps, { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 });
+}
 
-            const frotaRef = db.ref(`empresas/${empresaAtualId}/frota`);
-            frotaRef.once('value').then(snap => {
-                let frota = snap.val() || [];
-                if (!frota.includes(nome)) {
-                    frota.push(nome);
-                    frotaRef.set(frota);
-                    input.value = "";
-                }
-            });
-        });
+function iniciarRastreioGps() {
+    if (isNative) {
+        iniciarRastreioNativoBackground();
+    } else {
+        atualizarBarraBackground("ℹ️ Rodando no navegador: o rastreio para se a aba for fechada ou o celular travar a tela. Para gravar em segundo plano de verdade, use o app instalado.", true);
+        iniciarRastreioWeb();
+    }
+}
 
-        // ============ CONVIDAR FUNCIONÁRIO (SEM DESLOGAR O ADMIN) ============
-        // Truque: cria o novo usuário numa instância SECUNDÁRIA do Firebase,
-        // assim a sessão do admin logado no app principal não é substituída.
-        document.getElementById('btnConvidarMembro').addEventListener('click', async () => {
-            const nome = document.getElementById('novoMembroNome').value.trim();
-            const email = document.getElementById('novoMembroEmail').value.trim();
-            const senha = document.getElementById('novoMembroSenha').value;
-            const statusEl = document.getElementById('convidarStatus');
-            statusEl.style.color = "#ff6b6b";
-            statusEl.textContent = "";
+iniciarRastreioGps();
 
-            if (!nome || !email || !senha) {
-                statusEl.textContent = "Preencha todos os campos.";
-                return;
-            }
-            if (senha.length < 6) {
-                statusEl.textContent = "A senha precisa ter no mínimo 6 caracteres.";
-                return;
-            }
+// ===================== ENCAIXE DA ROTA NAS RUAS =====================
+var encaixeAgendado = false;
+var ultimoEncaixeTs = 0;
+var INTERVALO_MIN_ENCAIXE_MS = 4000;
 
-            let secondaryApp;
-            try {
-                secondaryApp = firebase.initializeApp(firebaseConfig, "Secundario_" + Date.now());
-                const cred = await secondaryApp.auth().createUserWithEmailAndPassword(email, senha);
-                const novoUid = cred.user.uid;
+function agendarEncaixeNasRuas() {
+    var agora = Date.now();
+    var esperar = Math.max(0, INTERVALO_MIN_ENCAIXE_MS - (agora - ultimoEncaixeTs));
+    if (encaixeAgendado) return;
+    encaixeAgendado = true;
+    setTimeout(executarEncaixeNasRuas, esperar);
+}
 
-                await db.ref(`empresas/${empresaAtualId}/membros/${novoUid}`).set({
-                    email: email,
-                    nome: nome,
-                    role: "operador"
+function executarEncaixeNasRuas() {
+    encaixeAgendado = false;
+    ultimoEncaixeTs = Date.now();
+
+    if (historicoCoordenadasLocais.length < 2) return;
+
+    var pontos = historicoCoordenadasLocais.slice(-100);
+    var coordsStr = pontos.map(p => p[1].toFixed(6) + "," + p[0].toFixed(6)).join(";");
+    var url = `https://router.project-osrm.org/match/v1/driving/${coordsStr}?overview=full&geometries=geojson&overview=full`;
+
+    fetchComTimeout(url, {}, TIMEOUT_FETCH_MS)
+        .then(res => res.json())
+        .then(data => {
+            if (data.code === "Ok" && data.matchings && data.matchings.length > 0) {
+                var pontosRua = [];
+                data.matchings.forEach(m => {
+                    m.geometry.coordinates.forEach(c => pontosRua.push([c[1], c[0]]));
                 });
-                await db.ref(`mapaUsuarioEmpresa/${novoUid}`).set(empresaAtualId);
+                polilinhaRuas.setLatLngs(pontosRua);
+            }
+        })
+        .catch(err => console.warn("Encaixe nas ruas indisponível agora:", err));
+}
 
-                await secondaryApp.auth().signOut();
-                await secondaryApp.delete();
+// ===================== TERMÔMETRO =====================
+var ultimaBuscaTempTs = 0;
+var buscandoTemp = false;
+var INTERVALO_MIN_TEMPERATURA_MS = 5 * 60 * 1000;
 
-                statusEl.style.color = "#00ffa6";
-                statusEl.textContent = "Funcionário adicionado com sucesso!";
-                document.getElementById('novoMembroNome').value = "";
-                document.getElementById('novoMembroEmail').value = "";
-                document.getElementById('novoMembroSenha').value = "";
-            } catch (e) {
-                statusEl.textContent = traduzErro(e);
-                if (secondaryApp) { try { await secondaryApp.delete(); } catch(_) {} }
+function talvezBuscarTemperatura(lat, lon) {
+    var agora = Date.now();
+    if (buscandoTemp || (agora - ultimaBuscaTempTs) < INTERVALO_MIN_TEMPERATURA_MS) return;
+    buscandoTemp = true;
+    ultimaBuscaTempTs = agora;
+
+    var url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature&temperature_unit=celsius&timezone=auto`;
+    fetchComTimeout(url, {}, TIMEOUT_FETCH_MS)
+        .then(res => {
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            return res.json();
+        })
+        .then(data => {
+            if (data && data.current && typeof data.current.temperature_2m === "number") {
+                var sensacao = typeof data.current.apparent_temperature === "number"
+                    ? ` (sensação ${data.current.apparent_temperature.toFixed(1)}°C)`
+                    : "";
+                document.getElementById('txtTemperatura').textContent =
+                    data.current.temperature_2m.toFixed(1) + " °C" + sensacao;
+            }
+        })
+        .catch(err => console.warn("Falha ao buscar temperatura:", err))
+        .finally(() => { buscandoTemp = false; });
+}
+
+// ===================== GEOCODIFICAÇÃO =====================
+// A partir de agora, a geocodificação só CORRIGE o endereço de um ponto que já
+// foi enviado ao Firebase — ela não bloqueia mais o envio da posição.
+var geocodificando = false;
+function processarFilaGeocodificacao() {
+    if (geocodificando || filaGeocodificarDepois.length === 0) return;
+    geocodificando = true;
+    atualizarInterfaceEstado();
+
+    var ponto = filaGeocodificarDepois[0];
+
+    fetchComTimeout(
+        `https://nominatim.openstreetmap.org/reverse?lat=${ponto.lat}&lon=${ponto.lon}&format=json&zoom=18&addressdetails=1`,
+        { headers: { 'Accept-Language': 'pt-BR' } },
+        TIMEOUT_FETCH_MS
+    )
+        .then(res => {
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            return res.json();
+        })
+        .then(data => {
+            var addr = data.address || {};
+            var rua = addr.road || addr.pedestrian || addr.footway || "Rua não localizada";
+            var bairro = addr.suburb || addr.neighbourhood || addr.quarter || "Bairro não localizado";
+            var cidade = addr.city || addr.town || addr.village || addr.municipality || "Cidade não localizada";
+            var estado = addr.state || "Estado não localizado";
+            aplicarEnderecoNoPonto(ponto.id, rua, bairro, cidade, estado);
+            filaGeocodificarDepois.shift();
+        })
+        .catch(err => {
+            console.warn("Falha ao buscar endereço:", err);
+            ponto.tentativas = (ponto.tentativas || 0) + 1;
+            if (ponto === filaGeocodificarDepois[filaGeocodificarDepois.length - 1]) {
+                var msgErro = "Erro: " + (err && err.name ? err.name + " - " : "") + (err && err.message ? err.message : String(err));
+                document.getElementById('txtRua').textContent = msgErro;
+                document.getElementById('txtBairro').textContent = "(tentativa " + ponto.tentativas + "/" + MAX_TENTATIVAS_GEOCODIFICACAO + ")";
+            }
+            if (ponto.tentativas >= MAX_TENTATIVAS_GEOCODIFICACAO) {
+                aplicarEnderecoNoPonto(ponto.id, "Endereço indisponível", "—", "—", "—");
+                filaGeocodificarDepois.shift();
+                mostrarAvisoGps("⚠️ Não foi possível buscar o endereço de alguns pontos (sem resposta do serviço de mapas). As coordenadas foram salvas normalmente.");
+            }
+        })
+        .finally(() => {
+            geocodificando = false;
+            salvarTudo();
+            atualizarInterfaceEstado();
+            if (filaGeocodificarDepois.length > 0) {
+                setTimeout(processarFilaGeocodificacao, INTERVALO_GEOCODIFICACAO_MS);
             }
         });
+}
 
-        // ============ LOGOUT ============
-        document.getElementById('btnLogout').addEventListener('click', () => {
-            auth.signOut();
-            empresaAtualId = null;
-            roleAtual = null;
+// Aplica o endereço já resolvido a um ponto específico (por id), tanto no
+// registro local (para o CSV/tela) quanto num "patch" enviado ao Firebase —
+// sem precisar reenviar o pacote inteiro nem esperar a fila de posições.
+function aplicarEnderecoNoPonto(idPonto, rua, bairro, cidade, estado) {
+    var enderecoTxt = `${rua}, ${bairro} - ${cidade}/${estado}`;
+
+    var reg = registroCompleto.find(r => r.id === idPonto);
+    if (reg) {
+        reg.rua = rua; reg.bairro = bairro; reg.cidade = cidade; reg.estado = estado;
+        reg.endereco = enderecoTxt;
+    }
+
+    // Se ainda for o ponto mais recente exibido, atualiza os campos na tela
+    if (registroCompleto.length > 0 && registroCompleto[registroCompleto.length - 1].id === idPonto) {
+        document.getElementById('txtRua').textContent = rua;
+        document.getElementById('txtBairro').textContent = bairro;
+        document.getElementById('txtCidade').textContent = cidade;
+        document.getElementById('txtEstado').textContent = estado;
+    }
+
+    // Corrige também os itens ainda pendentes de envio (caso o endereço chegue
+    // antes de o ponto ter sido sincronizado)
+    filaPendentes.forEach(p => {
+        if (p.id === idPonto) {
+            p.rua = rua; p.bairro = bairro; p.cidade = cidade; p.estado = estado; p.endereco = enderecoTxt;
+        }
+    });
+
+    // Corrige o que já foi enviado ao Firebase, com um patch pontual (rápido,
+    // não concorre com o envio das posições novas)
+    if (listaVeiculos.length > 0) {
+        var patch = {};
+        listaVeiculos.forEach(vNome => {
+            var base = 'veiculos/' + vNome + '/historico/' + idPonto + '/';
+            patch[base + 'rua'] = rua;
+            patch[base + 'bairro'] = bairro;
+            patch[base + 'cidade'] = cidade;
+            patch[base + 'estado'] = estado;
+            patch[base + 'endereco'] = enderecoTxt;
         });
-    </script>
+        db.ref().update(patch).catch(err => console.warn("Falha ao corrigir endereço no Firebase (será tentado de novo no próximo ciclo):", err));
+    }
+}
+
+// ===================== ENVIO PARA O FIREBASE =====================
+// Envio em LOTE: em vez de mandar 1 ponto por vez (2 escritas cada), agora
+// vários pontos pendentes (até LIMITE_LOTE_ENVIO) vão juntos num único
+// `update()` multi-path — um só round-trip ao servidor para o lote inteiro.
+// Isso é o que mais acelera a sincronização, principalmente quando o
+// aparelho ficou offline e acumulou fila, ou quando há vários veículos.
+var enviando = false;
+var LIMITE_LOTE_ENVIO = 25;
+var LIMITE_FALHAS_LOTE = 5;
+var falhasConsecutivasLote = 0;
+
+function mostrarErroSync(msg) {
+    var out = document.getElementById('diagnosticoResultado');
+    if (out) out.textContent = "❌ Erro na sincronização (" + new Date().toLocaleTimeString('pt-BR') + "):\n" + msg;
+}
+
+function enviarDadosFila() {
+    if (enviando || filaPendentes.length === 0) {
+        atualizarInterfaceEstado();
+        return;
+    }
+    enviando = true;
+
+    var lote = filaPendentes.slice(0, LIMITE_LOTE_ENVIO);
+    var updates = {};
+    var ultimoPorVeiculo = {};
+
+    lote.forEach(item => {
+        updates['veiculos/' + item.vID + '/historico/' + item.id] = item;
+        ultimoPorVeiculo[item.vID] = item; // só o mais recente do lote vira "atual"
+    });
+    Object.keys(ultimoPorVeiculo).forEach(vID => {
+        updates['veiculos/' + vID + '/atual'] = ultimoPorVeiculo[vID];
+    });
+
+    db.ref().update(updates)
+        .then(() => {
+            filaPendentes.splice(0, lote.length);
+            falhasConsecutivasLote = 0;
+            salvarTudo();
+        })
+        .catch((error) => {
+            console.warn("Falha ao enviar lote, mantendo na fila:", error);
+            var mensagem = (error && error.code) ? (error.code + ": " + error.message) : String(error);
+            mostrarErroSync(mensagem);
+
+            falhasConsecutivasLote++;
+            if (falhasConsecutivasLote >= LIMITE_FALHAS_LOTE) {
+                console.warn("Descartando o ponto mais antigo da fila após falhas repetidas de sincronização.");
+                mostrarErroSync(mensagem + "\n\n⚠️ A sincronização falhou " + LIMITE_FALHAS_LOTE + " vezes seguidas. O ponto mais antigo da fila foi descartado para não travar os demais.");
+                filaPendentes.shift();
+                falhasConsecutivasLote = 0;
+                salvarTudo();
+            }
+        })
+        .finally(() => {
+            enviando = false;
+            atualizarInterfaceEstado();
+            if (filaPendentes.length > 0) enviarDadosFila();
+        });
+}
+
+function atualizarInterfaceEstado() {
+    var barra = document.getElementById('statusConexao');
+    var totalPendente = filaPendentes.length + filaGeocodificarDepois.length;
+
+    if (navigator.onLine && totalPendente === 0) {
+        barra.className = "status-bar status-online";
+        barra.innerHTML = "📡 SISTEMA ONLINE — Todos os veículos sincronizados!";
+    } else if (navigator.onLine) {
+        barra.className = "status-bar status-online";
+        barra.innerHTML = `📡 ONLINE — sincronizando... <span id="contadorPendentes">(${totalPendente} pendentes)</span>`;
+    } else {
+        barra.className = "status-bar status-offline";
+        barra.innerHTML = `MODO OFFLINE — gravando localmente no aparelho <span id="contadorPendentes">(${totalPendente} pendentes)</span>`;
+    }
+
+    document.getElementById('filaInfo').textContent =
+        registroCompleto.length + " pontos da rota real registrados neste aparelho";
+}
+
+window.addEventListener('online', function() {
+    esconderAvisoGps();
+    atualizarInterfaceEstado();
+    processarFilaGeocodificacao();
+    enviarDadosFila();
+    agendarEncaixeNasRuas();
+});
+window.addEventListener('offline', atualizarInterfaceEstado);
+
+document.getElementById('btnForcar').addEventListener('click', function() {
+    processarFilaGeocodificacao();
+    enviarDadosFila();
+});
+
+// ===================== EXPORTAR ROTA REAL (CSV) =====================
+document.getElementById('btnExportar').addEventListener('click', function() {
+    if (registroCompleto.length === 0) {
+        alert("Ainda não há pontos de rota registrados para exportar.");
+        return;
+    }
+    var linhas = ["Data;Hora;Latitude;Longitude;Velocidade(km/h);Situacao;Rua;Bairro;Cidade;Estado"];
+    registroCompleto.forEach(p => {
+        linhas.push([p.data, p.hora, p.lat, p.lon, p.velocidade, p.status, p.rua, p.bairro, p.cidade, p.estado].join(";"));
+    });
+    var blob = new Blob([linhas.join("\n")], { type: "text/csv;charset=utf-8;" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "rota_real_" + new Date().toISOString().slice(0,10) + ".csv";
+    a.click();
+    URL.revokeObjectURL(url);
+});
+
+document.getElementById('btnDiagnostico').addEventListener('click', function() {
+    var out = document.getElementById('diagnosticoResultado');
+    out.textContent = "Testando... (aguarde até 10s)";
+    var inicio = Date.now();
+
+    fetchComTimeout(
+        "https://nominatim.openstreetmap.org/reverse?lat=-29.6133&lon=-52.1919&format=json&zoom=18&addressdetails=1",
+        { headers: { 'Accept-Language': 'pt-BR' } },
+        10000
+    )
+        .then(res => {
+            out.textContent += "\nHTTP status: " + res.status;
+            return res.text();
+        })
+        .then(txt => {
+            var ms = Date.now() - inicio;
+            out.textContent = "✅ SUCESSO em " + ms + "ms\n\nResposta bruta:\n" + txt.slice(0, 500);
+        })
+        .catch(err => {
+            var ms = Date.now() - inicio;
+            out.textContent = "❌ FALHOU após " + ms + "ms\n\nTipo: " + (err && err.name) + "\nMensagem: " + (err && err.message);
+        });
+});
+
+renderizarFrotaLocal();
+atualizarInterfaceEstado();
+checarContextoSeguro();
+
+setInterval(function() {
+    if (filaGeocodificarDepois.length > 0) processarFilaGeocodificacao();
+    if (filaPendentes.length > 0) enviarDadosFila();
+    if (historicoCoordenadasLocais.length >= 2) agendarEncaixeNasRuas();
+}, 6000);
+
+</script>
 </body>
 </html>
