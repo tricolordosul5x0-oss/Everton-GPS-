@@ -93,6 +93,15 @@
     <div id="avisoGps" class="gps-warning"></div>
 
     <div class="input-box">
+        <label>🏢 Empresa deste aparelho</label>
+        <div class="row">
+            <input type="text" id="empresaIdInput" placeholder="ID da empresa (ex: transportadora-silva)">
+            <button id="btnSalvarEmpresa">Salvar</button>
+        </div>
+        <div id="empresaSalvaInfo" style="font-size:0.75em;color:var(--text-dim);margin-top:6px;"></div>
+    </div>
+
+    <div class="input-box">
         <label>Cadastrar Novo Veículo na Lista</label>
         <div id="userLogadoInfo" class="user-logado-info">Sessão Administrador Ativa</div>
         <div class="row" style="margin-top: 4px;">
@@ -160,7 +169,27 @@ var db = firebase.database();
 var auth = firebase.auth();
 
 var LIMITE_VELOCIDADE = 80;
-var EMPRESA_ID = "tricolordosul5x0_gmail_com";
+
+// ===================== EMPRESA (MULTI-TENANT) =====================
+// Cada aparelho instalado num veículo pertence a UMA empresa. O ID é
+// configurável na tela (sem precisar recompilar o app para cada cliente novo)
+// e fica salvo no armazenamento local do aparelho.
+var EMPRESA_ID = localStorage.getItem('empresa_id') || "tricolordosul5x0_gmail_com";
+document.getElementById('empresaIdInput').value = EMPRESA_ID;
+atualizarInfoEmpresaSalva();
+
+function atualizarInfoEmpresaSalva() {
+    document.getElementById('empresaSalvaInfo').textContent = "Enviando dados para: " + EMPRESA_ID;
+}
+
+document.getElementById('btnSalvarEmpresa').addEventListener('click', function() {
+    var novo = document.getElementById('empresaIdInput').value.trim();
+    if (!novo) return alert("Digite um ID de empresa válido.");
+    localStorage.setItem('empresa_id', novo);
+    EMPRESA_ID = novo;
+    atualizarInfoEmpresaSalva();
+    alert("Empresa salva! Os próximos pontos serão enviados para: " + novo);
+});
 
 var INTERVALO_GEOCODIFICACAO_MS = 1100;
 var MAX_TENTATIVAS_GEOCODIFICACAO = 3;
@@ -181,10 +210,6 @@ function gerarIdPonto(ts) {
 }
 
 // ===================== DETECÇÃO DE AMBIENTE (Web x App Nativo) =====================
-// Quando este mesmo código roda dentro do app Android gerado pelo Capacitor,
-// window.Capacitor existe e isNativePlatform() retorna true. Nesse caso usamos o
-// plugin de rastreio em segundo plano em vez da API de geolocalização do navegador,
-// que é a única forma de continuar gravando com o app minimizado ou a tela apagada.
 var isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 var bgWatcherId = null;
 
@@ -197,7 +222,7 @@ function atualizarBarraBackground(msg, mostrar) {
 
 // ===================== AVISO DE CONTEXTO INSEGURO (HTTP) =====================
 function checarContextoSeguro() {
-    if (isNative) return true; // dentro do app nativo não se aplica
+    if (isNative) return true;
     var seguro = window.isSecureContext || location.hostname === "localhost" || location.hostname === "127.0.0.1";
     if (!seguro) {
         mostrarAvisoGps("⚠️ Esta página precisa estar em HTTPS para acessar o GPS. Abra-a por um link https:// para que a localização funcione.");
@@ -378,8 +403,6 @@ function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Ponto único de entrada para qualquer nova posição, venha ela da API web
-// (navigator.geolocation) ou do plugin nativo de segundo plano.
 function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     esconderAvisoGps();
     errosGpsConsecutivos = 0;
@@ -435,14 +458,6 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         document.getElementById('txtCidade').textContent = "Buscando...";
         document.getElementById('txtEstado').textContent = "Buscando...";
 
-        // ---- MUDANÇA PRINCIPAL DE VELOCIDADE ----
-        // Antes: o ponto só entrava na fila de envio (filaPendentes) DEPOIS de o
-        // endereço (Nominatim) ser resolvido, e o Nominatim é limitado a ~1 req/s.
-        // Isso fazia a sincronização "esperar" a fila de endereços.
-        // Agora: o ponto é gravado e enviado ao Firebase IMEDIATAMENTE, com o
-        // endereço como "Buscando endereço...". A busca do endereço roda em
-        // paralelo e, quando terminar, faz um pequeno "patch" nos campos de
-        // endereço — sem travar a sincronização da posição.
         var idPonto = gerarIdPonto(agora.getTime());
         var registro = {
             id: idPonto,
@@ -468,8 +483,8 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
 
         salvarTudo();
         atualizarInterfaceEstado();
-        enviarDadosFila();              // sincroniza a posição JÁ
-        processarFilaGeocodificacao();  // resolve o endereço em paralelo
+        enviarDadosFila();
+        processarFilaGeocodificacao();
     }
 }
 
@@ -477,17 +492,16 @@ function tratarErroGps(erro) {
     console.error(erro);
     errosGpsConsecutivos++;
 
-    if (erro.code === 1 /* PERMISSION_DENIED */) {
+    if (erro.code === 1) {
         mostrarAvisoGps("⚠️ Permissão de localização negada. Ative o GPS nas permissões do app/navegador para este site.");
     } else if (errosGpsConsecutivos >= LIMITE_ERROS_PARA_AVISO) {
-        var msg = erro.code === 2 /* POSITION_UNAVAILABLE */
+        var msg = erro.code === 2
             ? "⚠️ Sinal de GPS fraco no momento. Tente em área aberta."
             : "⚠️ Sinal de GPS instável. Tentando novamente...";
         mostrarAvisoGps(msg);
     }
 }
 
-// --- Modo App Nativo (Android/iOS via Capacitor): rastreio real em segundo plano ---
 function iniciarRastreioNativoBackground() {
     var BG = window.Capacitor.Plugins.BackgroundGeolocation;
     if (!BG) {
@@ -524,7 +538,6 @@ function iniciarRastreioNativoBackground() {
     });
 }
 
-// --- Modo Navegador/PWA: só grava enquanto a aba está aberta e visível ---
 function iniciarRastreioWeb() {
     if (!checarContextoSeguro()) return;
     if (!navigator.geolocation) {
@@ -620,8 +633,6 @@ function talvezBuscarTemperatura(lat, lon) {
 }
 
 // ===================== GEOCODIFICAÇÃO =====================
-// A partir de agora, a geocodificação só CORRIGE o endereço de um ponto que já
-// foi enviado ao Firebase — ela não bloqueia mais o envio da posição.
 var geocodificando = false;
 function processarFilaGeocodificacao() {
     if (geocodificando || filaGeocodificarDepois.length === 0) return;
@@ -672,9 +683,6 @@ function processarFilaGeocodificacao() {
         });
 }
 
-// Aplica o endereço já resolvido a um ponto específico (por id), tanto no
-// registro local (para o CSV/tela) quanto num "patch" enviado ao Firebase —
-// sem precisar reenviar o pacote inteiro nem esperar a fila de posições.
 function aplicarEnderecoNoPonto(idPonto, rua, bairro, cidade, estado) {
     var enderecoTxt = `${rua}, ${bairro} - ${cidade}/${estado}`;
 
@@ -684,7 +692,6 @@ function aplicarEnderecoNoPonto(idPonto, rua, bairro, cidade, estado) {
         reg.endereco = enderecoTxt;
     }
 
-    // Se ainda for o ponto mais recente exibido, atualiza os campos na tela
     if (registroCompleto.length > 0 && registroCompleto[registroCompleto.length - 1].id === idPonto) {
         document.getElementById('txtRua').textContent = rua;
         document.getElementById('txtBairro').textContent = bairro;
@@ -692,20 +699,17 @@ function aplicarEnderecoNoPonto(idPonto, rua, bairro, cidade, estado) {
         document.getElementById('txtEstado').textContent = estado;
     }
 
-    // Corrige também os itens ainda pendentes de envio (caso o endereço chegue
-    // antes de o ponto ter sido sincronizado)
     filaPendentes.forEach(p => {
         if (p.id === idPonto) {
             p.rua = rua; p.bairro = bairro; p.cidade = cidade; p.estado = estado; p.endereco = enderecoTxt;
         }
     });
 
-    // Corrige o que já foi enviado ao Firebase, com um patch pontual (rápido,
-    // não concorre com o envio das posições novas)
+    // Corrige o que já foi enviado ao Firebase (agora dentro do caminho da empresa)
     if (listaVeiculos.length > 0) {
         var patch = {};
         listaVeiculos.forEach(vNome => {
-            var base = 'veiculos/' + vNome + '/historico/' + idPonto + '/';
+            var base = 'empresas/' + EMPRESA_ID + '/veiculos/' + vNome + '/historico/' + idPonto + '/';
             patch[base + 'rua'] = rua;
             patch[base + 'bairro'] = bairro;
             patch[base + 'cidade'] = cidade;
@@ -717,11 +721,9 @@ function aplicarEnderecoNoPonto(idPonto, rua, bairro, cidade, estado) {
 }
 
 // ===================== ENVIO PARA O FIREBASE =====================
-// Envio em LOTE: em vez de mandar 1 ponto por vez (2 escritas cada), agora
-// vários pontos pendentes (até LIMITE_LOTE_ENVIO) vão juntos num único
-// `update()` multi-path — um só round-trip ao servidor para o lote inteiro.
-// Isso é o que mais acelera a sincronização, principalmente quando o
-// aparelho ficou offline e acumulou fila, ou quando há vários veículos.
+// Cada ponto pendente já carrega o `empresaId` de quando foi gerado (assim, se
+// você trocar o ID da empresa no meio do caminho, pontos antigos ainda vão
+// para a empresa certa em vez de "vazar" para a nova).
 var enviando = false;
 var LIMITE_LOTE_ENVIO = 25;
 var LIMITE_FALHAS_LOTE = 5;
@@ -744,11 +746,13 @@ function enviarDadosFila() {
     var ultimoPorVeiculo = {};
 
     lote.forEach(item => {
-        updates['veiculos/' + item.vID + '/historico/' + item.id] = item;
-        ultimoPorVeiculo[item.vID] = item; // só o mais recente do lote vira "atual"
+        var empresaDoItem = item.empresaId || EMPRESA_ID;
+        var basePath = 'empresas/' + empresaDoItem + '/veiculos/' + item.vID + '/';
+        updates[basePath + 'historico/' + item.id] = item;
+        ultimoPorVeiculo[basePath] = item; // só o mais recente do lote vira "atual"
     });
-    Object.keys(ultimoPorVeiculo).forEach(vID => {
-        updates['veiculos/' + vID + '/atual'] = ultimoPorVeiculo[vID];
+    Object.keys(ultimoPorVeiculo).forEach(basePath => {
+        updates[basePath + 'atual'] = ultimoPorVeiculo[basePath];
     });
 
     db.ref().update(updates)
