@@ -393,6 +393,11 @@ var primeiraLeituraDestaSessao = true;
 var errosGpsConsecutivos = 0;
 var LIMITE_ERROS_PARA_AVISO = 4;
 
+// ---- NOVO: guarda a leitura mais recente do GPS, mesmo quando o veículo
+// não andou os 20m necessários para virar um "ponto de rota". Isso alimenta
+// o heartbeat abaixo, sem alterar em nada a lógica de histórico/fila existente.
+var ultimaLeituraCompleta = null;
+
 function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
     var R = 6371000;
     var dLat = (lat2 - lat1) * Math.PI / 180;
@@ -438,6 +443,14 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         badgeStatus.textContent = "EM MOVIMENTO";
         badgeStatus.className = "badge badge-movimento";
     }
+
+    // ---- NOVO: atualiza sempre a leitura mais recente (não depende do filtro de 20m) ----
+    ultimaLeituraCompleta = {
+        lat: lat, lon: lon, velocidade: vel, status: situacao,
+        precisao: precisao,
+        hora: agora.toLocaleTimeString('pt-BR'),
+        data: agora.toLocaleDateString('pt-BR')
+    };
 
     var distancia = ultimoPontoRegistrado
         ? calcularDistanciaMetros(ultimoPontoRegistrado[0], ultimoPontoRegistrado[1], lat, lon)
@@ -782,6 +795,40 @@ function enviarDadosFila() {
         });
 }
 
+// ---- NOVO: HEARTBEAT ----
+// Só atualiza o nó "atual" de cada veículo com a leitura mais recente do GPS,
+// mesmo que o veículo não tenha andado os 20m necessários para gerar um ponto
+// de rota novo. Não mexe em historico/, na fila offline (filaPendentes) nem
+// na geocodificação — é uma escrita extra e independente, só para o painel
+// admin sempre mostrar "agora mesmo" em vez de ficar com o horário travado
+// enquanto o veículo está parado ou andando devagar.
+var ultimoHeartbeatTs = 0;
+var INTERVALO_HEARTBEAT_MS = 15000; // 15s
+
+function enviarHeartbeat() {
+    if (!ultimaLeituraCompleta) return;
+    if (listaVeiculos.length === 0) return;
+    if (!navigator.onLine) return;
+
+    var agora = Date.now();
+    if (agora - ultimoHeartbeatTs < INTERVALO_HEARTBEAT_MS) return;
+    ultimoHeartbeatTs = agora;
+
+    var updates = {};
+    listaVeiculos.forEach(vNome => {
+        var basePath = 'empresas/' + EMPRESA_ID + '/veiculos/' + vNome + '/atual/';
+        updates[basePath + 'lat'] = ultimaLeituraCompleta.lat;
+        updates[basePath + 'lon'] = ultimaLeituraCompleta.lon;
+        updates[basePath + 'velocidade'] = ultimaLeituraCompleta.velocidade;
+        updates[basePath + 'status'] = ultimaLeituraCompleta.status;
+        updates[basePath + 'hora'] = ultimaLeituraCompleta.hora;
+        updates[basePath + 'data'] = ultimaLeituraCompleta.data;
+    });
+
+    db.ref().update(updates)
+        .catch(err => console.warn("Heartbeat falhou (sem problema, tenta de novo no próximo ciclo):", err));
+}
+
 function atualizarInterfaceEstado() {
     var barra = document.getElementById('statusConexao');
     var totalPendente = filaPendentes.length + filaGeocodificarDepois.length;
@@ -813,6 +860,7 @@ window.addEventListener('offline', atualizarInterfaceEstado);
 document.getElementById('btnForcar').addEventListener('click', function() {
     processarFilaGeocodificacao();
     enviarDadosFila();
+    enviarHeartbeat();
 });
 
 // ===================== EXPORTAR ROTA REAL (CSV) =====================
@@ -866,6 +914,7 @@ setInterval(function() {
     if (filaGeocodificarDepois.length > 0) processarFilaGeocodificacao();
     if (filaPendentes.length > 0) enviarDadosFila();
     if (historicoCoordenadasLocais.length >= 2) agendarEncaixeNasRuas();
+    enviarHeartbeat(); // NOVO: mantém o "atual" fresco mesmo parado
 }, 6000);
 
 </script>
