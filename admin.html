@@ -41,7 +41,6 @@
         .btn-green { background: var(--signal-on); }
         .btn-dark { background: #1a212b; color: var(--danger); border: 1px solid var(--border); }
 
-        /* Telemetria do ponto selecionado */
         .telemetry-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.85em; gap: 8px; }
         .telemetry-row:last-child { border-bottom: none; }
         .telemetry-row b { text-align: right; max-width: 65%; color: var(--text); }
@@ -50,13 +49,11 @@
         .badge-parado { background: rgba(255,176,32,0.15); color: var(--signal-off); }
         .badge-perigo { background: rgba(255,84,112,0.15); color: var(--danger); }
 
-        /* Status bar */
         .status-bar { text-align: center; font-weight: bold; font-size: 0.85em; padding: 8px; border-radius: 6px; border: 1px solid var(--signal-off); color: var(--signal-off); background: rgba(255,176,32,0.08); }
         .status-bar.online { border-color: var(--signal-on); color: var(--signal-on); background: rgba(0,255,166,0.08); }
         .live-indicator { display: inline-block; width: 7px; height: 7px; background: var(--signal-on); border-radius: 50%; margin-right: 5px; animation: blink 1s infinite; }
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
-        /* Lista de ruas / histórico */
         .lista-ruas { display: flex; flex-direction: column; gap: 4px; max-height: 280px; overflow-y: auto; }
         .item-rua {
             background: #1a212b; border: 1px solid var(--border); border-radius: 6px;
@@ -74,18 +71,15 @@
 
         .vazio { font-size: 0.82em; color: var(--text-dim); text-align: center; padding: 16px 0; }
 
-        /* Auth overlay */
         .auth-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.92); display: flex; align-items: center; justify-content: center; z-index: 10000; }
         .auth-card { background: var(--bg-card); border: 1px solid var(--border); padding: 24px; border-radius: 12px; width: 90%; max-width: 360px; display: flex; flex-direction: column; gap: 14px; }
         .auth-card h3 { margin: 0; color: var(--text); font-size: 1.1em; text-align: center; }
 
-        /* Popup do mapa */
         .leaflet-popup-content-wrapper { background: #131820; border: 1px solid rgba(45,212,255,0.3); color: #eef2f6; border-radius: 8px; }
         .leaflet-popup-tip { background: #131820; }
         .popup-linha { font-size: 0.82em; padding: 2px 0; }
         .popup-linha b { color: var(--telemetry); }
 
-        /* Linha de data dupla (de / até) */
         .data-range { display: flex; gap: 6px; align-items: center; }
         .data-range span { font-size: 0.72em; color: var(--text-dim); flex-shrink: 0; }
 
@@ -120,13 +114,12 @@
 <!-- Sidebar -->
 <div class="sidebar">
     <div class="header">
-        <h2>🛠️ Admin Everton GPS</h2>
+        <h2 id="tituloEmpresa">🛠️ Admin Everton GPS</h2>
         <span id="userLogado" style="font-size:0.78em;color:var(--signal-on);">Sessão Protegida</span>
     </div>
 
     <div class="content">
 
-        <!-- Veículo -->
         <div class="box">
             <div class="box-title">🚗 Selecionar Veículo</div>
             <select id="selectVeiculo">
@@ -134,7 +127,6 @@
             </select>
         </div>
 
-        <!-- Filtro -->
         <div class="box">
             <div class="box-title">📅 Filtrar Histórico</div>
             <div style="display:flex;flex-direction:column;gap:6px;">
@@ -155,10 +147,8 @@
             </div>
         </div>
 
-        <!-- Status -->
         <div id="statusModo" class="status-bar">Aguardando seleção...</div>
 
-        <!-- Lista de ruas clicáveis -->
         <div class="box">
             <div class="box-title">🗺️ Histórico de Ruas <span id="contadorPontos" style="color:var(--telemetry);"></span></div>
             <div class="lista-ruas" id="listaRuas">
@@ -166,7 +156,6 @@
             </div>
         </div>
 
-        <!-- Detalhe do ponto selecionado -->
         <div class="box">
             <div class="box-title">📊 Ponto Selecionado</div>
             <div class="telemetry-row"><span>Situação</span><span id="txtStatus" class="badge badge-parado">—</span></div>
@@ -204,6 +193,14 @@ firebase.initializeApp(firebaseConfig);
 var db = firebase.database();
 var auth = firebase.auth();
 
+// ===================== MULTIEMPRESA =====================
+// Ao logar, descobrimos a qual empresa este login pertence consultando
+// 'mapaUsuarioEmpresa/{uid}'. Esse mapeamento é cadastrado manualmente por
+// você (Everton) no Firebase Console, uma vez, ao vender para um cliente novo:
+//   Realtime Database > mapaUsuarioEmpresa > {uid_do_cliente} > "id-da-empresa"
+// Todos os dados de veículos passam a viver em: empresas/{empresaId}/veiculos/...
+var EMPRESA_ID_ATUAL = null;
+
 // ===================== MAPA =====================
 var map = L.map('map', { zoomControl: true }).setView([-29.6133, -52.1919], 13);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -214,7 +211,7 @@ var marcadorVeiculo = null;
 var polilinhaRota = L.polyline([], { color: 'rgba(45,212,255,0.3)', weight: 3, dashArray: '5,7' }).addTo(map);
 var polilinhaRuas = L.polyline([], { color: '#00ffa6', weight: 5, opacity: 0.9 }).addTo(map);
 var marcadorSelecionado = null;
-var marcadores = []; // marcadores de cada ponto do histórico
+var marcadores = [];
 
 // ===================== ESTADO =====================
 var veiculoSelecionado = "";
@@ -222,7 +219,6 @@ var listenerTempoReal = null;
 var dadosHistorico = [];
 var indiceAtivo = -1;
 
-// Data padrão: início e fim = hoje
 (function() {
     var hoje = new Date().toISOString().slice(0, 10);
     document.getElementById('filtroDataInicio').value = hoje;
@@ -236,7 +232,7 @@ document.getElementById('btnEntrarPainel').addEventListener('click', function() 
     var erroDiv = document.getElementById('erroLogin');
     if (!email || !senha) return alert("Preencha todos os campos!");
     erroDiv.style.display = "none";
-    auth.signInWithEmailAndPassword(email, senha).catch(function() {
+    auth.signInWithEmailAndPassword(email, senha).catch(function(e) {
         erroDiv.textContent = "Acesso negado: dados incorretos.";
         erroDiv.style.display = "block";
     });
@@ -244,10 +240,30 @@ document.getElementById('btnEntrarPainel').addEventListener('click', function() 
 
 auth.onAuthStateChanged(function(user) {
     if (user) {
-        document.getElementById('authOverlay').style.display = "none";
-        document.getElementById('userLogado').textContent = "🟢 " + user.email;
-        inicializarEscutaBanco();
+        // Descobre a empresa do usuário logado antes de mostrar qualquer dado
+        db.ref('mapaUsuarioEmpresa/' + user.uid).once('value').then(function(snap) {
+            var empresaId = snap.val();
+            if (!empresaId) {
+                var erroDiv = document.getElementById('erroLogin');
+                erroDiv.textContent = "Este login não está vinculado a nenhuma empresa. Fale com o suporte.";
+                erroDiv.style.display = "block";
+                auth.signOut();
+                return;
+            }
+
+            EMPRESA_ID_ATUAL = empresaId;
+            document.getElementById('authOverlay').style.display = "none";
+            document.getElementById('userLogado').textContent = "🟢 " + user.email;
+
+            // Mostra o nome da empresa se estiver cadastrado, senão o próprio ID
+            db.ref('empresas/' + empresaId + '/nome').once('value').then(function(nomeSnap) {
+                document.getElementById('tituloEmpresa').textContent = "🛠️ " + (nomeSnap.val() || empresaId);
+            });
+
+            inicializarEscutaBanco();
+        });
     } else {
+        EMPRESA_ID_ATUAL = null;
         document.getElementById('authOverlay').style.display = "flex";
         document.getElementById('selectVeiculo').innerHTML = '<option value="">Aguardando login...</option>';
         pararListenerTempoReal();
@@ -258,7 +274,7 @@ document.getElementById('btnSair').addEventListener('click', function() { auth.s
 
 // ===================== BANCO =====================
 function inicializarEscutaBanco() {
-    db.ref('veiculos').on('value', function(snapshot) {
+    db.ref('empresas/' + EMPRESA_ID_ATUAL + '/veiculos').on('value', function(snapshot) {
         var select = document.getElementById('selectVeiculo');
         select.innerHTML = '<option value="">-- Escolha um Veículo --</option>';
         if (snapshot.exists()) {
@@ -282,8 +298,8 @@ document.getElementById('selectVeiculo').addEventListener('change', function(e) 
 
 // ===================== TEMPO REAL =====================
 function pararListenerTempoReal() {
-    if (listenerTempoReal && veiculoSelecionado) {
-        db.ref('veiculos/' + veiculoSelecionado + '/atual').off('value', listenerTempoReal);
+    if (listenerTempoReal && veiculoSelecionado && EMPRESA_ID_ATUAL) {
+        db.ref('empresas/' + EMPRESA_ID_ATUAL + '/veiculos/' + veiculoSelecionado + '/atual').off('value', listenerTempoReal);
         listenerTempoReal = null;
     }
 }
@@ -293,8 +309,9 @@ function ativarTempoReal() {
     setStatusBar(true);
     document.getElementById('btnVoltarTempoReal').style.display = "none";
 
-    // Carrega últimos 50 pontos para a lista de ruas
-    db.ref('veiculos/' + veiculoSelecionado + '/historico').limitToLast(50).once('value', function(snap) {
+    var base = 'empresas/' + EMPRESA_ID_ATUAL + '/veiculos/' + veiculoSelecionado;
+
+    db.ref(base + '/historico').limitToLast(50).once('value', function(snap) {
         var pontos = [];
         snap.forEach(function(c) { pontos.push(c.val()); });
         dadosHistorico = pontos;
@@ -303,10 +320,9 @@ function ativarTempoReal() {
         if (pontos.length > 0) mostrarPonto(pontos[pontos.length - 1], pontos.length - 1);
     });
 
-    listenerTempoReal = db.ref('veiculos/' + veiculoSelecionado + '/atual').on('value', function(snap) {
+    listenerTempoReal = db.ref(base + '/atual').on('value', function(snap) {
         if (!snap.exists()) return;
         var d = snap.val();
-        // Atualiza marcador principal
         if (!marcadorVeiculo) {
             marcadorVeiculo = L.marker([d.lat, d.lon]).addTo(map);
         } else {
@@ -320,13 +336,9 @@ function ativarTempoReal() {
 document.getElementById('btnVoltarTempoReal').addEventListener('click', ativarTempoReal);
 
 // ===================== HISTÓRICO =====================
-
-// Converte "dd/mm/yyyy" + "HH:MM:SS" (ou "HH:MM") em um objeto Date real,
-// para permitir comparação correta entre datas (inclusive períodos que
-// atravessam meses/anos diferentes).
 function parseDataHoraBr(dataBr, horaStr) {
     if (!dataBr) return null;
-    var pd = dataBr.split('/'); // [dd, mm, yyyy]
+    var pd = dataBr.split('/');
     if (pd.length !== 3) return null;
     var ph = (horaStr || "00:00:00").split(':');
     return new Date(
@@ -342,14 +354,13 @@ function parseDataHoraBr(dataBr, horaStr) {
 document.getElementById('btnBuscarHistorico').addEventListener('click', function() {
     if (!veiculoSelecionado) return alert("Selecione um veículo primeiro!");
 
-    var dataInicioStr = document.getElementById('filtroDataInicio').value; // yyyy-mm-dd
-    var dataFimStr = document.getElementById('filtroDataFim').value;       // yyyy-mm-dd
+    var dataInicioStr = document.getElementById('filtroDataInicio').value;
+    var dataFimStr = document.getElementById('filtroDataFim').value;
     var hIni = document.getElementById('filtroHoraInicio').value || "00:00";
     var hFim = document.getElementById('filtroHoraFim').value || "23:59";
 
     if (!dataInicioStr || !dataFimStr) return alert("Selecione as datas de início e fim!");
 
-    // Monta os limites do período como objetos Date (permite qualquer intervalo, ex: 04/07 até 07/07)
     var limiteInicio = new Date(dataInicioStr + "T" + hIni + ":00");
     var limiteFim = new Date(dataFimStr + "T" + hFim + ":59");
 
@@ -361,7 +372,7 @@ document.getElementById('btnBuscarHistorico').addEventListener('click', function
     setStatusBar(false);
     document.getElementById('btnVoltarTempoReal').style.display = "block";
 
-    db.ref('veiculos/' + veiculoSelecionado + '/historico').once('value', function(snap) {
+    db.ref('empresas/' + EMPRESA_ID_ATUAL + '/veiculos/' + veiculoSelecionado + '/historico').once('value', function(snap) {
         var pontos = [];
         snap.forEach(function(child) {
             var p = child.val();
@@ -399,7 +410,6 @@ function renderizarListaRuas(pontos) {
     lista.innerHTML = "";
 
     pontos.forEach(function(p, i) {
-        // Badge de velocidade
         var velClass = p.velocidade > 80 ? "per" : (p.velocidade > 2 ? "mov" : "par");
         var velTexto = p.velocidade > 80 ? "⚡ " + p.velocidade + " km/h" :
                        p.velocidade > 2  ? "▶ " + p.velocidade + " km/h" :
@@ -424,14 +434,12 @@ function renderizarListaRuas(pontos) {
 
         lista.appendChild(item);
 
-        // Marcador no mapa para cada ponto
         if (p.lat && p.lon) {
             var cor = p.velocidade > 80 ? '#ff5470' : (p.velocidade > 2 ? '#00ffa6' : '#ffb020');
             var circulo = L.circleMarker([p.lat, p.lon], {
                 radius: 5, color: cor, fillColor: cor, fillOpacity: 0.85, weight: 1.5
             }).addTo(map);
 
-            // Popup ao clicar no marcador do mapa
             (function(ponto, index) {
                 circulo.on('click', function() { selecionarItem(index); });
                 circulo.bindPopup(criarPopup(ponto), { maxWidth: 260 });
@@ -441,7 +449,6 @@ function renderizarListaRuas(pontos) {
         }
     });
 
-    // Rola a lista até o último item automaticamente
     lista.scrollTop = lista.scrollHeight;
 }
 
@@ -461,14 +468,12 @@ function criarPopup(p) {
 }
 
 function selecionarItem(idx) {
-    // Desmarca anterior
     if (indiceAtivo >= 0) {
         var anterior = document.querySelector('.item-rua[data-index="' + indiceAtivo + '"]');
         if (anterior) anterior.classList.remove('ativo');
     }
     indiceAtivo = idx;
 
-    // Marca novo
     var el = document.querySelector('.item-rua[data-index="' + idx + '"]');
     if (el) {
         el.classList.add('ativo');
@@ -480,7 +485,6 @@ function selecionarItem(idx) {
 
     mostrarPonto(p, idx);
 
-    // Abre popup no mapa
     if (marcadores[idx]) {
         map.setView([p.lat, p.lon], 17);
         marcadores[idx].openPopup();
@@ -504,7 +508,6 @@ function desenharRota(pontos) {
     if (coords.length < 2) return;
     map.fitBounds(L.latLngBounds(coords), { padding: [30, 30] });
 
-    // Encaixe nas ruas via OSRM match
     encaixarNasRuas(coords);
 }
 
@@ -537,7 +540,6 @@ function encaixarNasRuas(coords) {
 function mostrarPonto(p, idx) {
     if (!p) return;
 
-    // Marcador principal
     if (!marcadorVeiculo) {
         marcadorVeiculo = L.marker([p.lat, p.lon]).addTo(map);
     } else {
@@ -573,4 +575,4 @@ function setStatusBar(tempoReal) {
 }
 </script>
 </body>
-</html>
+    </html>
