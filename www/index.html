@@ -429,9 +429,10 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     document.getElementById('txtPrecisao').textContent = precisao ? `± ${precisao} m` : "—";
     document.getElementById('txtCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
 
+    var LIMITE_MOVIMENTO_KMH = 15; // abaixo disso é considerado "parado"
     var situacao = "EM MOVIMENTO";
     var badgeStatus = document.getElementById('badStatus');
-    if (vel <= 2) {
+    if (vel <= LIMITE_MOVIMENTO_KMH) {
         situacao = "PARADO";
         badgeStatus.textContent = "PARADO";
         badgeStatus.className = "badge badge-parado";
@@ -451,6 +452,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         hora: agora.toLocaleTimeString('pt-BR'),
         data: agora.toLocaleDateString('pt-BR')
     };
+    enviarHeartbeat(); // dispara a cada leitura nova de GPS (respeitando o limite mínimo de 5s)
 
     var distancia = ultimoPontoRegistrado
         ? calcularDistanciaMetros(ultimoPontoRegistrado[0], ultimoPontoRegistrado[1], lat, lon)
@@ -803,7 +805,7 @@ function enviarDadosFila() {
 // admin sempre mostrar "agora mesmo" em vez de ficar com o horário travado
 // enquanto o veículo está parado ou andando devagar.
 var ultimoHeartbeatTs = 0;
-var INTERVALO_HEARTBEAT_MS = 15000; // 15s
+var INTERVALO_HEARTBEAT_MS = 5000; // 5s
 
 function enviarHeartbeat() {
     if (!ultimaLeituraCompleta) return;
