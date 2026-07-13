@@ -805,7 +805,7 @@ function enviarDadosFila() {
 // admin sempre mostrar "agora mesmo" em vez de ficar com o horário travado
 // enquanto o veículo está parado ou andando devagar.
 var ultimoHeartbeatTs = 0;
-var INTERVALO_HEARTBEAT_MS = 5000; // 5s
+var INTERVALO_HEARTBEAT_MS = 3000; // 3s
 
 function enviarHeartbeat() {
     if (!ultimaLeituraCompleta) return;
@@ -921,4 +921,4 @@ setInterval(function() {
 
 </script>
 </body>
-</html>
+    </html>
