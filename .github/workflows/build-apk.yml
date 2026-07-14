@@ -27,6 +27,11 @@ jobs:
 
       - name: Instalar dependências
         run: npm install
+      - name: Gerar Ícone do App
+        run: |
+          npm install @capacitor/assets --no-save
+          npx capacitor-assets generate --icon 1784006845314.png
+
 
       - name: Criar o projeto Android
         run: npx cap add android
