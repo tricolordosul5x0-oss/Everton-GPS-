@@ -31,10 +31,12 @@ jobs:
       - name: Criar o projeto Android
         run: npx cap add android
 
-      - name: Gerar Ícone do App
+      - name: Preparar pastas e Gerar Ícone do App
         run: |
+          mkdir -p assets
+          cp 1784006845314.png assets/icon.png
           npm install @capacitor/assets --no-save
-          npx capacitor-assets generate --icon 1784006845314.png
+          npx capacitor-assets generate --icon assets/icon.png
 
       - name: Adicionar permissões de localização
         run: |
