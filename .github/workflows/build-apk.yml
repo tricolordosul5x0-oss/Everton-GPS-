@@ -36,7 +36,7 @@ jobs:
           mkdir -p assets
           cp 1784006845314.png assets/icon.png
           npm install @capacitor/assets --no-save
-          npx capacitor-assets generate --icon assets/icon.png
+          npx capacitor-assets generate
 
       - name: Adicionar permissões de localização
         run: |
