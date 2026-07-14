@@ -30,7 +30,7 @@ jobs:
       - name: Gerar Ícone do App
         run: |
           npm install @capacitor/assets --no-save
-          npx capacitor-assets generate --icon 1784006845314.png
+          npx capacitor-assets generate --icon https://i.postimg.cc/sfJ0tr4w/1784006845314.png
 
 
       - name: Criar o projeto Android
