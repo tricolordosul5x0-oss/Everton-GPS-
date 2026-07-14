@@ -36,8 +36,11 @@ jobs:
       - name: Criar o projeto Android
         run: npx cap add android
 
-      - name: Adicionar permissões de localização em segundo plano
+      - name: Gerar Ícone do App
         run: |
+         npm install @capacitor/assets --no-save
+          npx capacitor-assets generate --icon 1784006845314.png
+
           python3 - <<'EOF'
           path = "android/app/src/main/AndroidManifest.xml"
           with open(path) as f:
