@@ -654,7 +654,11 @@ function processarFilaGeocodificacao() {
     geocodificando = true;
     atualizarInterfaceEstado();
 
-    var ponto = filaGeocodificarDepois[0];
+    // Prioriza o ponto MAIS RECENTE (fim da fila) em vez do mais antigo (início).
+    // Assim, mesmo com a fila grande numa viagem longa, o endereço atual sempre
+    // acaba sendo resolvido rápido — os pontos antigos ainda são processados
+    // depois, na medida em que a fila esvazia, para o histórico ficar completo.
+    var ponto = filaGeocodificarDepois[filaGeocodificarDepois.length - 1];
 
     fetchComTimeout(
         `https://nominatim.openstreetmap.org/reverse?lat=${ponto.lat}&lon=${ponto.lon}&format=json&zoom=18&addressdetails=1`,
@@ -672,7 +676,7 @@ function processarFilaGeocodificacao() {
             var cidade = addr.city || addr.town || addr.village || addr.municipality || "Cidade não localizada";
             var estado = addr.state || "Estado não localizado";
             aplicarEnderecoNoPonto(ponto.id, rua, bairro, cidade, estado);
-            filaGeocodificarDepois.shift();
+            filaGeocodificarDepois.pop();
         })
         .catch(err => {
             console.warn("Falha ao buscar endereço:", err);
@@ -684,7 +688,7 @@ function processarFilaGeocodificacao() {
             }
             if (ponto.tentativas >= MAX_TENTATIVAS_GEOCODIFICACAO) {
                 aplicarEnderecoNoPonto(ponto.id, "Endereço indisponível", "—", "—", "—");
-                filaGeocodificarDepois.shift();
+                filaGeocodificarDepois.pop();
                 mostrarAvisoGps("⚠️ Não foi possível buscar o endereço de alguns pontos (sem resposta do serviço de mapas). As coordenadas foram salvas normalmente.");
             }
         })
@@ -922,4 +926,4 @@ setInterval(function() {
 
 </script>
 </body>
-    </html>
+</html>
