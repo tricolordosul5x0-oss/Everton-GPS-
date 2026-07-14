@@ -758,16 +758,17 @@ function enviarDadosFila() {
 
     var lote = filaPendentes.slice(0, LIMITE_LOTE_ENVIO);
     var updates = {};
-    var ultimoPorVeiculo = {};
 
     lote.forEach(item => {
         var empresaDoItem = item.empresaId || EMPRESA_ID;
         var basePath = 'empresas/' + empresaDoItem + '/veiculos/' + item.vID + '/';
         updates[basePath + 'historico/' + item.id] = item;
-        ultimoPorVeiculo[basePath] = item; // só o mais recente do lote vira "atual"
-    });
-    Object.keys(ultimoPorVeiculo).forEach(basePath => {
-        updates[basePath + 'atual'] = ultimoPorVeiculo[basePath];
+        // NOTA: "atual" não é mais escrito aqui de propósito. Numa viagem longa,
+        // a fila de histórico pode acumular pontos antigos; se este lote atualizasse
+        // "atual" com o último item DELE, corria o risco de sobrescrever a posição
+        // real (mais recente, mandada pelo heartbeat) com uma posição antiga que
+        // ainda estava presa na fila. Quem mantém "atual" em tempo real agora é
+        // só o enviarHeartbeat(), que sempre usa a leitura mais nova do GPS.
     });
 
     db.ref().update(updates)
