@@ -36,8 +36,8 @@ jobs:
           npm install @capacitor/assets --no-save
           npx capacitor-assets generate --icon 1784006845314.png
 
-
-
+      - name: Adicionar permissões de localização
+        run: |
           python3 - <<'EOF'
           path = "android/app/src/main/AndroidManifest.xml"
           with open(path) as f:
