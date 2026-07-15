@@ -193,6 +193,11 @@ firebase.initializeApp(firebaseConfig);
 var db = firebase.database();
 var auth = firebase.auth();
 
+// Limite de velocidade acima do qual o veículo é considerado "em movimento".
+// Mantido em uma única constante para ficar consistente nas três funções que
+// usam esse corte: renderizarListaRuas(), criarPopup() e atualizarPainel().
+var LIMITE_MOVIMENTO_KMH = 5;
+
 // ===================== MULTIEMPRESA =====================
 // Ao logar, descobrimos a qual empresa este login pertence consultando
 // 'mapaUsuarioEmpresa/{uid}'. Esse mapeamento é cadastrado manualmente por
@@ -410,9 +415,9 @@ function renderizarListaRuas(pontos) {
     lista.innerHTML = "";
 
     pontos.forEach(function(p, i) {
-        var velClass = p.velocidade > 80 ? "per" : (p.velocidade > 2 ? "mov" : "par");
+        var velClass = p.velocidade > 80 ? "per" : (p.velocidade > LIMITE_MOVIMENTO_KMH ? "mov" : "par");
         var velTexto = p.velocidade > 80 ? "⚡ " + p.velocidade + " km/h" :
-                       p.velocidade > 2  ? "▶ " + p.velocidade + " km/h" :
+                       p.velocidade > LIMITE_MOVIMENTO_KMH ? "▶ " + p.velocidade + " km/h" :
                                            "⏸ Parado";
 
         var item = document.createElement('div');
@@ -423,7 +428,7 @@ function renderizarListaRuas(pontos) {
             '<div class="rua-meta">' +
                 '<span>' + (p.data ? p.data + " " : "") + (p.hora || "") + '</span>' +
                 '<span class="rua-vel ' + velClass + '">' + velTexto + '</span>' +
-                (p.velocidade <= 2 && p.tempoParado && p.tempoParado !== "00:00:00"
+                (p.velocidade <= LIMITE_MOVIMENTO_KMH && p.tempoParado && p.tempoParado !== "00:00:00"
                     ? '<span style="color:var(--signal-off);">⏱ ' + p.tempoParado + '</span>' : '') +
             '</div>';
 
@@ -435,7 +440,7 @@ function renderizarListaRuas(pontos) {
         lista.appendChild(item);
 
         if (p.lat && p.lon) {
-            var cor = p.velocidade > 80 ? '#ff5470' : (p.velocidade > 2 ? '#00ffa6' : '#ffb020');
+            var cor = p.velocidade > 80 ? '#ff5470' : (p.velocidade > LIMITE_MOVIMENTO_KMH ? '#00ffa6' : '#ffb020');
             var circulo = L.circleMarker([p.lat, p.lon], {
                 radius: 5, color: cor, fillColor: cor, fillOpacity: 0.85, weight: 1.5
             }).addTo(map);
@@ -454,7 +459,7 @@ function renderizarListaRuas(pontos) {
 
 function criarPopup(p) {
     var velTexto = p.velocidade > 80 ? "⚡ " + p.velocidade + " km/h (Excesso!)" :
-                   p.velocidade > 2  ? "▶ " + p.velocidade + " km/h" : "⏸ Parado";
+                   p.velocidade > LIMITE_MOVIMENTO_KMH ? "▶ " + p.velocidade + " km/h" : "⏸ Parado";
     var html =
         '<div style="font-size:0.85em;line-height:1.6;">' +
         '<div class="popup-linha"><b>📍 Rua:</b> ' + (p.rua || "—") + '</div>' +
@@ -462,7 +467,7 @@ function criarPopup(p) {
         '<div class="popup-linha"><b>🏙 Cidade:</b> ' + (p.cidade || "—") + ' / ' + (p.estado || "—") + '</div>' +
         '<div class="popup-linha"><b>🕐 Hora:</b> ' + (p.data || "") + ' ' + (p.hora || "") + '</div>' +
         '<div class="popup-linha"><b>🚗 Vel:</b> ' + velTexto + '</div>' +
-        (p.velocidade <= 2 ? '<div class="popup-linha"><b>⏱ Parado:</b> ' + (p.tempoParado || "—") + '</div>' : '') +
+        (p.velocidade <= LIMITE_MOVIMENTO_KMH ? '<div class="popup-linha"><b>⏱ Parado:</b> ' + (p.tempoParado || "—") + '</div>' : '') +
         '</div>';
     return html;
 }
@@ -559,8 +564,8 @@ function atualizarPainel(p) {
     document.getElementById('txtCoords').textContent = p.lat ? p.lat.toFixed(6) + ", " + p.lon.toFixed(6) : "—";
 
     var badge = document.getElementById('txtStatus');
-    badge.textContent = p.status || (p.velocidade > 2 ? "EM MOVIMENTO" : "PARADO");
-    badge.className = p.velocidade > 80 ? "badge badge-perigo" : (p.velocidade > 2 ? "badge badge-movimento" : "badge badge-parado");
+    badge.textContent = p.status || (p.velocidade > LIMITE_MOVIMENTO_KMH ? "EM MOVIMENTO" : "PARADO");
+    badge.className = p.velocidade > 80 ? "badge badge-perigo" : (p.velocidade > LIMITE_MOVIMENTO_KMH ? "badge badge-movimento" : "badge badge-parado");
 }
 
 function setStatusBar(tempoReal) {
