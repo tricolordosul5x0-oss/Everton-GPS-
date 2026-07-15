@@ -209,6 +209,14 @@ function gerarIdPonto(ts) {
     return ts + "_" + Math.random().toString(36).slice(2, 8);
 }
 
+// Remove caracteres proibidos em chaves de caminho do Firebase Realtime Database
+// (. # $ [ ] /). Sem isso, um nome de veículo ou ID de empresa com um desses
+// caracteres faz o db.ref().update(...) lançar um erro IMEDIATO (síncrono),
+// antes mesmo de tentar a rede — o que pode travar o envio silenciosamente.
+function sanitizarChavePath(valor) {
+    return String(valor).replace(/[.#$\[\]\/]/g, "_");
+}
+
 // ===================== DETECÇÃO DE AMBIENTE (Web x App Nativo) =====================
 var isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 var bgWatcherId = null;
@@ -393,7 +401,7 @@ var primeiraLeituraDestaSessao = true;
 var errosGpsConsecutivos = 0;
 var LIMITE_ERROS_PARA_AVISO = 4;
 
-// ---- NOVO: guarda a leitura mais recente do GPS, mesmo quando o veículo
+// ---- guarda a leitura mais recente do GPS, mesmo quando o veículo
 // não andou os 20m necessários para virar um "ponto de rota". Isso alimenta
 // o heartbeat abaixo, sem alterar em nada a lógica de histórico/fila existente.
 var ultimaLeituraCompleta = null;
@@ -429,7 +437,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     document.getElementById('txtPrecisao').textContent = precisao ? `± ${precisao} m` : "—";
     document.getElementById('txtCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
 
-    var LIMITE_MOVIMENTO_KMH = 15; // abaixo disso é considerado "parado"
+    var LIMITE_MOVIMENTO_KMH = 5; // abaixo disso é considerado "parado"
     var situacao = "EM MOVIMENTO";
     var badgeStatus = document.getElementById('badStatus');
     if (vel <= LIMITE_MOVIMENTO_KMH) {
@@ -445,14 +453,14 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         badgeStatus.className = "badge badge-movimento";
     }
 
-    // ---- NOVO: atualiza sempre a leitura mais recente (não depende do filtro de 20m) ----
+    // ---- atualiza sempre a leitura mais recente (não depende do filtro de 20m) ----
     ultimaLeituraCompleta = {
         lat: lat, lon: lon, velocidade: vel, status: situacao,
         precisao: precisao,
         hora: agora.toLocaleTimeString('pt-BR'),
         data: agora.toLocaleDateString('pt-BR')
     };
-    enviarHeartbeat(); // dispara a cada leitura nova de GPS (respeitando o limite mínimo de 5s)
+    enviarHeartbeat(); // tenta a cada leitura nova de GPS, mas só efetivamente envia respeitando o intervalo mínimo (2 minutos)
 
     var distancia = ultimoPontoRegistrado
         ? calcularDistanciaMetros(ultimoPontoRegistrado[0], ultimoPontoRegistrado[1], lat, lon)
@@ -728,14 +736,20 @@ function aplicarEnderecoNoPonto(idPonto, rua, bairro, cidade, estado) {
     if (listaVeiculos.length > 0) {
         var patch = {};
         listaVeiculos.forEach(vNome => {
-            var base = 'empresas/' + EMPRESA_ID + '/veiculos/' + vNome + '/historico/' + idPonto + '/';
+            var vidSeguro = sanitizarChavePath(vNome);
+            var empresaSegura = sanitizarChavePath(EMPRESA_ID);
+            var base = 'empresas/' + empresaSegura + '/veiculos/' + vidSeguro + '/historico/' + idPonto + '/';
             patch[base + 'rua'] = rua;
             patch[base + 'bairro'] = bairro;
             patch[base + 'cidade'] = cidade;
             patch[base + 'estado'] = estado;
             patch[base + 'endereco'] = enderecoTxt;
         });
-        db.ref().update(patch).catch(err => console.warn("Falha ao corrigir endereço no Firebase (será tentado de novo no próximo ciclo):", err));
+        try {
+            db.ref().update(patch).catch(err => console.warn("Falha ao corrigir endereço no Firebase (será tentado de novo no próximo ciclo):", err));
+        } catch (erroSincrono) {
+            console.error("Correção de endereço: erro síncrono ao montar atualização:", erroSincrono);
+        }
     }
 }
 
@@ -763,54 +777,71 @@ function enviarDadosFila() {
     var lote = filaPendentes.slice(0, LIMITE_LOTE_ENVIO);
     var updates = {};
 
-    lote.forEach(item => {
-        var empresaDoItem = item.empresaId || EMPRESA_ID;
-        var basePath = 'empresas/' + empresaDoItem + '/veiculos/' + item.vID + '/';
-        updates[basePath + 'historico/' + item.id] = item;
-        // NOTA: "atual" não é mais escrito aqui de propósito. Numa viagem longa,
-        // a fila de histórico pode acumular pontos antigos; se este lote atualizasse
-        // "atual" com o último item DELE, corria o risco de sobrescrever a posição
-        // real (mais recente, mandada pelo heartbeat) com uma posição antiga que
-        // ainda estava presa na fila. Quem mantém "atual" em tempo real agora é
-        // só o enviarHeartbeat(), que sempre usa a leitura mais nova do GPS.
-    });
+    try {
+        lote.forEach(item => {
+            var empresaDoItem = sanitizarChavePath(item.empresaId || EMPRESA_ID);
+            var vidSeguro = sanitizarChavePath(item.vID);
+            var basePath = 'empresas/' + empresaDoItem + '/veiculos/' + vidSeguro + '/';
+            updates[basePath + 'historico/' + item.id] = item;
+            // NOTA: "atual" não é mais escrito aqui de propósito. Numa viagem longa,
+            // a fila de histórico pode acumular pontos antigos; se este lote atualizasse
+            // "atual" com o último item DELE, corria o risco de sobrescrever a posição
+            // real (mais recente, mandada pelo heartbeat) com uma posição antiga que
+            // ainda estava presa na fila. Quem mantém "atual" em tempo real agora é
+            // só o enviarHeartbeat(), que sempre usa a leitura mais nova do GPS.
+        });
 
-    db.ref().update(updates)
-        .then(() => {
-            filaPendentes.splice(0, lote.length);
-            falhasConsecutivasLote = 0;
-            salvarTudo();
-        })
-        .catch((error) => {
-            console.warn("Falha ao enviar lote, mantendo na fila:", error);
-            var mensagem = (error && error.code) ? (error.code + ": " + error.message) : String(error);
-            mostrarErroSync(mensagem);
-
-            falhasConsecutivasLote++;
-            if (falhasConsecutivasLote >= LIMITE_FALHAS_LOTE) {
-                console.warn("Descartando o ponto mais antigo da fila após falhas repetidas de sincronização.");
-                mostrarErroSync(mensagem + "\n\n⚠️ A sincronização falhou " + LIMITE_FALHAS_LOTE + " vezes seguidas. O ponto mais antigo da fila foi descartado para não travar os demais.");
-                filaPendentes.shift();
+        db.ref().update(updates)
+            .then(() => {
+                filaPendentes.splice(0, lote.length);
                 falhasConsecutivasLote = 0;
                 salvarTudo();
-            }
-        })
-        .finally(() => {
-            enviando = false;
-            atualizarInterfaceEstado();
-            if (filaPendentes.length > 0) enviarDadosFila();
-        });
+            })
+            .catch((error) => {
+                console.warn("Falha ao enviar lote, mantendo na fila:", error);
+                var mensagem = (error && error.code) ? (error.code + ": " + error.message) : String(error);
+                mostrarErroSync(mensagem);
+
+                falhasConsecutivasLote++;
+                if (falhasConsecutivasLote >= LIMITE_FALHAS_LOTE) {
+                    console.warn("Descartando o ponto mais antigo da fila após falhas repetidas de sincronização.");
+                    mostrarErroSync(mensagem + "\n\n⚠️ A sincronização falhou " + LIMITE_FALHAS_LOTE + " vezes seguidas. O ponto mais antigo da fila foi descartado para não travar os demais.");
+                    filaPendentes.shift();
+                    falhasConsecutivasLote = 0;
+                    salvarTudo();
+                }
+            })
+            .finally(() => {
+                enviando = false;
+                atualizarInterfaceEstado();
+                if (filaPendentes.length > 0) enviarDadosFila();
+            });
+    } catch (erroSincrono) {
+        // Isso captura erros que acontecem NA HORA de montar/chamar update(),
+        // antes de qualquer tentativa de rede — o cenário clássico é um
+        // caractere proibido (. # $ [ ] /) em algum dado usado no caminho.
+        // Sem esse catch, "enviando" ficaria travado em true para sempre e a
+        // fila só cresceria, mesmo com internet perfeita.
+        console.error("Erro síncrono ao preparar envio (fila ficaria travada sem este catch):", erroSincrono);
+        mostrarErroSync("Erro ao preparar envio: " + (erroSincrono && erroSincrono.message ? erroSincrono.message : String(erroSincrono)) + "\n\n⚠️ Provavelmente um caractere inválido em algum dado. O ponto mais antigo da fila foi descartado para destravar os demais.");
+        filaPendentes.shift();
+        enviando = false;
+        atualizarInterfaceEstado();
+        if (filaPendentes.length > 0) enviarDadosFila();
+    }
 }
 
-// ---- NOVO: HEARTBEAT ----
+// ---- HEARTBEAT ----
 // Só atualiza o nó "atual" de cada veículo com a leitura mais recente do GPS,
 // mesmo que o veículo não tenha andado os 20m necessários para gerar um ponto
 // de rota novo. Não mexe em historico/, na fila offline (filaPendentes) nem
 // na geocodificação — é uma escrita extra e independente, só para o painel
-// admin sempre mostrar "agora mesmo" em vez de ficar com o horário travado
-// enquanto o veículo está parado ou andando devagar.
+// admin mostrar a posição mais recente conhecida.
+// Intervalo fixo de 2 minutos (decisão consciente: reduz o volume de escritas
+// no Firebase; em troca, a posição "atual" pode ficar até 2min desatualizada,
+// mesmo com o veículo em movimento).
 var ultimoHeartbeatTs = 0;
-var INTERVALO_HEARTBEAT_MS = 3000; // 3s
+var INTERVALO_HEARTBEAT_MS = 120000; // 2 minutos
 
 function enviarHeartbeat() {
     if (!ultimaLeituraCompleta) return;
@@ -823,7 +854,9 @@ function enviarHeartbeat() {
 
     var updates = {};
     listaVeiculos.forEach(vNome => {
-        var basePath = 'empresas/' + EMPRESA_ID + '/veiculos/' + vNome + '/atual/';
+        var vidSeguro = sanitizarChavePath(vNome);
+        var empresaSegura = sanitizarChavePath(EMPRESA_ID);
+        var basePath = 'empresas/' + empresaSegura + '/veiculos/' + vidSeguro + '/atual/';
         updates[basePath + 'lat'] = ultimaLeituraCompleta.lat;
         updates[basePath + 'lon'] = ultimaLeituraCompleta.lon;
         updates[basePath + 'velocidade'] = ultimaLeituraCompleta.velocidade;
@@ -832,8 +865,12 @@ function enviarHeartbeat() {
         updates[basePath + 'data'] = ultimaLeituraCompleta.data;
     });
 
-    db.ref().update(updates)
-        .catch(err => console.warn("Heartbeat falhou (sem problema, tenta de novo no próximo ciclo):", err));
+    try {
+        db.ref().update(updates)
+            .catch(err => console.warn("Heartbeat falhou (sem problema, tenta de novo no próximo ciclo):", err));
+    } catch (erroSincrono) {
+        console.error("Heartbeat: erro síncrono ao montar atualização:", erroSincrono);
+    }
 }
 
 function atualizarInterfaceEstado() {
@@ -852,7 +889,9 @@ function atualizarInterfaceEstado() {
     }
 
     document.getElementById('filaInfo').textContent =
-        registroCompleto.length + " pontos da rota real registrados neste aparelho";
+        registroCompleto.length + " pontos da rota real registrados neste aparelho" +
+        " (" + filaPendentes.length + " aguardando envio ao Firebase, " +
+        filaGeocodificarDepois.length + " aguardando endereço)";
 }
 
 window.addEventListener('online', function() {
@@ -921,9 +960,9 @@ setInterval(function() {
     if (filaGeocodificarDepois.length > 0) processarFilaGeocodificacao();
     if (filaPendentes.length > 0) enviarDadosFila();
     if (historicoCoordenadasLocais.length >= 2) agendarEncaixeNasRuas();
-    enviarHeartbeat(); // NOVO: mantém o "atual" fresco mesmo parado
+    enviarHeartbeat(); // respeita o intervalo mínimo de 2 minutos internamente
 }, 6000);
 
 </script>
 </body>
-</html>
+    </html>
