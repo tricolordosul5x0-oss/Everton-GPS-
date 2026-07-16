@@ -607,7 +607,18 @@ function iniciarRastreioNativoBackground() {
         backgroundTitle: "Rastreador ativo",
         requestPermissions: true,
         stale: false,
-        distanceFilter: DISTANCIA_MINIMA_MOVIMENTO_M
+        // Antes usava DISTANCIA_MINIMA_MOVIMENTO_M (20m) aqui, o que fazia o
+        // plugin nativo simplesmente NÃO chamar este código enquanto o
+        // veículo estivesse parado (economia de bateria do plugin) — por
+        // isso "Horário do último ponto" e o heartbeat ficavam congelados
+        // por longos períodos parado, mesmo com o app rodando.
+        // Com 0, o plugin reporta no ritmo natural do GPS do aparelho,
+        // mesmo parado. Isso é seguro agora porque a filtragem de ruído
+        // (confirmação por leituras seguidas + margem de precisão) já foi
+        // adicionada em processarNovaPosicao() — ela decide corretamente
+        // se é "parado" ou "andando", sem duplicar pontos nem gerar falso
+        // movimento por causa dessa mudança.
+        distanceFilter: 0
     }, function(location, error) {
         if (error) {
             if (error.code === "NOT_AUTHORIZED") {
