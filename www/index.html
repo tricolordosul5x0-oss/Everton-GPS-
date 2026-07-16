@@ -377,23 +377,55 @@ window.removerVeiculoExigindoSenha = function(index) {
 };
 
 // ===================== TEMPO PARADO =====================
-var tempoParadoSegundos = parseInt(localStorage.getItem('tempo_parado_seg') || "0");
-setInterval(function() {
-    if (document.getElementById('badStatus').textContent === "PARADO") {
-        tempoParadoSegundos++;
-        localStorage.setItem('tempo_parado_seg', tempoParadoSegundos);
+// Antes, isso era um contador que somava 1 segundo por vez dentro de um
+// setInterval. O problema: quando o app fica em segundo plano com a tela
+// apagada, o Android costuma pausar esse tipo de timer (economia de bateria),
+// e a contagem trava, mesmo com o GPS continuando a funcionar normalmente.
+//
+// Agora guardamos apenas o MOMENTO (timestamp) em que o veículo parou, e
+// calculamos a diferença para "agora" toda vez que precisamos exibir o valor.
+// Assim, mesmo que o app fique horas sem rodar o setInterval, assim que ele
+// voltar a executar (nem que seja só quando chega uma nova posição do GPS em
+// segundo plano) o valor mostrado já vem certo, sem depender de ter contado
+// segundo a segundo o tempo todo.
+var inicioParadaTs = localStorage.getItem('inicio_parada_ts')
+    ? parseInt(localStorage.getItem('inicio_parada_ts'), 10)
+    : null;
+var tempoParadoSegundos = 0;
+
+function formatarTempoParado(segundos) {
+    var hrs = Math.floor(segundos / 3600).toString().padStart(2, '0');
+    var mins = Math.floor((segundos % 3600) / 60).toString().padStart(2, '0');
+    var segs = (segundos % 60).toString().padStart(2, '0');
+    return `${hrs}:${mins}:${segs}`;
+}
+
+function atualizarTextoTempoParado() {
+    if (document.getElementById('badStatus').textContent === "PARADO" && inicioParadaTs) {
+        tempoParadoSegundos = Math.max(0, Math.floor((Date.now() - inicioParadaTs) / 1000));
     } else {
         tempoParadoSegundos = 0;
-        localStorage.setItem('tempo_parado_seg', "0");
     }
-    var hrs = Math.floor(tempoParadoSegundos / 3600).toString().padStart(2, '0');
-    var mins = Math.floor((tempoParadoSegundos % 3600) / 60).toString().padStart(2, '0');
-    var segs = (tempoParadoSegundos % 60).toString().padStart(2, '0');
-    document.getElementById('txtTempoParado').textContent = `${hrs}:${mins}:${segs}`;
-}, 1000);
+    document.getElementById('txtTempoParado').textContent = formatarTempoParado(tempoParadoSegundos);
+}
+
+setInterval(atualizarTextoTempoParado, 1000);
 
 // ===================== CAPTURA DE GPS =====================
 var DISTANCIA_MINIMA_MOVIMENTO_M = 20;
+
+// Filtro de ruído do GPS: uma leitura isolada de velocidade ou um "salto" de
+// posição não são confiáveis sozinhos, especialmente perto de galpões/prédios
+// (multipath do sinal). Duas proteções:
+// 1) Se a precisão do GPS estiver ruim, exigimos que o deslocamento seja bem
+//    maior que a margem de erro antes de considerar "andou de verdade".
+// 2) Só confirmamos "EM MOVIMENTO" depois de N leituras seguidas indicando
+//    velocidade acima do limite — um pico isolado (comum e normal em GPS) não
+//    muda mais o status sozinho.
+var PRECISAO_MAXIMA_CONFIAVEL_M = 30;
+var LEITURAS_MIN_PARA_CONFIRMAR_MOVIMENTO = 2;
+var leiturasConsecutivasMovimento = 0;
+
 var ultimoPontoRegistrado = historicoCoordenadasLocais.length > 0
     ? historicoCoordenadasLocais[historicoCoordenadasLocais.length - 1]
     : null;
@@ -443,20 +475,43 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     document.getElementById('txtCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
 
     var LIMITE_MOVIMENTO_KMH = 5; // abaixo disso é considerado "parado"
+
+    // Um pico isolado de velocidade (ruído de GPS, comum perto de galpões e
+    // prédios) não muda mais o status sozinho — só depois de confirmar em
+    // leituras seguidas é que tratamos como movimento de verdade.
+    if (vel > LIMITE_MOVIMENTO_KMH) {
+        leiturasConsecutivasMovimento++;
+    } else {
+        leiturasConsecutivasMovimento = 0;
+    }
+    var movimentoConfirmado = leiturasConsecutivasMovimento >= LEITURAS_MIN_PARA_CONFIRMAR_MOVIMENTO;
+
     var situacao = "EM MOVIMENTO";
     var badgeStatus = document.getElementById('badStatus');
-    if (vel <= LIMITE_MOVIMENTO_KMH) {
+    if (!movimentoConfirmado) {
         situacao = "PARADO";
         badgeStatus.textContent = "PARADO";
         badgeStatus.className = "badge badge-parado";
+        if (!inicioParadaTs) {
+            inicioParadaTs = agora.getTime();
+            localStorage.setItem('inicio_parada_ts', String(inicioParadaTs));
+        }
     } else if (vel > LIMITE_VELOCIDADE) {
         situacao = "VELOCIDADE ACIMA DO LIMITE";
         badgeStatus.textContent = "EXCESSO DE VELOCIDADE";
         badgeStatus.className = "badge badge-perigo";
+        inicioParadaTs = null;
+        localStorage.removeItem('inicio_parada_ts');
     } else {
         badgeStatus.textContent = "EM MOVIMENTO";
         badgeStatus.className = "badge badge-movimento";
+        inicioParadaTs = null;
+        localStorage.removeItem('inicio_parada_ts');
     }
+    // Atualiza o texto na hora, sem esperar o próximo tick do setInterval —
+    // importante porque em segundo plano é essa chamada (vinda do GPS) que
+    // pode ser a única chance de atualizar a tela por um bom tempo.
+    atualizarTextoTempoParado();
 
     // ---- atualiza sempre a leitura mais recente (não depende do filtro de 20m) ----
     ultimaLeituraCompleta = {
@@ -472,7 +527,14 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         ? calcularDistanciaMetros(ultimoPontoRegistrado[0], ultimoPontoRegistrado[1], lat, lon)
         : Infinity;
 
-    if (distancia >= DISTANCIA_MINIMA_MOVIMENTO_M) {
+    // Se a precisão do GPS estiver ruim (círculo de incerteza grande), um
+    // "salto" de posição pode ser só erro de margem, não movimento real.
+    // Exigimos que a distância percorrida supere claramente essa margem.
+    var distanciaMinimaEfetiva = (precisao && precisao > PRECISAO_MAXIMA_CONFIAVEL_M)
+        ? Math.max(DISTANCIA_MINIMA_MOVIMENTO_M, precisao * 1.2)
+        : DISTANCIA_MINIMA_MOVIMENTO_M;
+
+    if (distancia >= distanciaMinimaEfetiva) {
         ultimoPontoRegistrado = [lat, lon];
 
         historicoCoordenadasLocais.push([lat, lon]);
