@@ -397,7 +397,12 @@ var DISTANCIA_MINIMA_MOVIMENTO_M = 20;
 var ultimoPontoRegistrado = historicoCoordenadasLocais.length > 0
     ? historicoCoordenadasLocais[historicoCoordenadasLocais.length - 1]
     : null;
-var primeiraLeituraDestaSessao = true;
+// (Removido: "primeiraLeituraDestaSessao" forçava um novo ponto de histórico
+// toda vez que o app/serviço reiniciava em segundo plano, mesmo com o veículo
+// parado no mesmo lugar — era a causa dos pontos "PARADO" duplicados e com o
+// mesmo horário no histórico. Agora só a regra de distância decide, e ela já
+// cobre corretamente o caso do primeiro ponto de todos, já que a distância é
+// tratada como infinita quando não há nenhum ponto anterior registrado.)
 var errosGpsConsecutivos = 0;
 var LIMITE_ERROS_PARA_AVISO = 4;
 
@@ -458,7 +463,8 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         lat: lat, lon: lon, velocidade: vel, status: situacao,
         precisao: precisao,
         hora: agora.toLocaleTimeString('pt-BR'),
-        data: agora.toLocaleDateString('pt-BR')
+        data: agora.toLocaleDateString('pt-BR'),
+        tempoParado: document.getElementById('txtTempoParado').textContent
     };
     enviarHeartbeat(); // tenta a cada leitura nova de GPS, mas só efetivamente envia respeitando o intervalo mínimo (2 minutos)
 
@@ -466,8 +472,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         ? calcularDistanciaMetros(ultimoPontoRegistrado[0], ultimoPontoRegistrado[1], lat, lon)
         : Infinity;
 
-    if (distancia >= DISTANCIA_MINIMA_MOVIMENTO_M || primeiraLeituraDestaSessao) {
-        primeiraLeituraDestaSessao = false;
+    if (distancia >= DISTANCIA_MINIMA_MOVIMENTO_M) {
         ultimoPontoRegistrado = [lat, lon];
 
         historicoCoordenadasLocais.push([lat, lon]);
@@ -863,6 +868,7 @@ function enviarHeartbeat() {
         updates[basePath + 'status'] = ultimaLeituraCompleta.status;
         updates[basePath + 'hora'] = ultimaLeituraCompleta.hora;
         updates[basePath + 'data'] = ultimaLeituraCompleta.data;
+        updates[basePath + 'tempoParado'] = ultimaLeituraCompleta.tempoParado;
     });
 
     try {
@@ -965,4 +971,4 @@ setInterval(function() {
 
 </script>
 </body>
-    </html>
+</html>
