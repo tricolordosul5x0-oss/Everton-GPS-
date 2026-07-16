@@ -391,6 +391,15 @@ window.removerVeiculoExigindoSenha = function(index) {
 var inicioParadaTs = localStorage.getItem('inicio_parada_ts')
     ? parseInt(localStorage.getItem('inicio_parada_ts'), 10)
     : null;
+var pontoInicioParada = (function() {
+    var raw = localStorage.getItem('ponto_inicio_parada');
+    try {
+        return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+        return null;
+    }
+})();
+var DISTANCIA_MIN_SAIR_DA_PARADA_M = 15;
 var tempoParadoSegundos = 0;
 
 function formatarTempoParado(segundos) {
@@ -425,6 +434,12 @@ var DISTANCIA_MINIMA_MOVIMENTO_M = 20;
 var PRECISAO_MAXIMA_CONFIAVEL_M = 30;
 var LEITURAS_MIN_PARA_CONFIRMAR_MOVIMENTO = 2;
 var leiturasConsecutivasMovimento = 0;
+
+// Último endereço resolvido com sucesso, para reaproveitar em pontos
+// próximos e economizar consultas ao serviço de geocodificação (limitado a
+// ~1 por segundo).
+var RAIO_REUTILIZAR_ENDERECO_M = 40;
+var ultimoEnderecoConhecido = null;
 
 var ultimoPontoRegistrado = historicoCoordenadasLocais.length > 0
     ? historicoCoordenadasLocais[historicoCoordenadasLocais.length - 1]
@@ -478,13 +493,20 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
 
     // Um pico isolado de velocidade (ruído de GPS, comum perto de galpões e
     // prédios) não muda mais o status sozinho — só depois de confirmar em
-    // leituras seguidas é que tratamos como movimento de verdade.
+    // leituras seguidas é que tratamos como movimento de verdade. Além disso,
+    // exigimos que a posição tenha realmente se afastado de onde o veículo
+    // parou — porque o "tremor" do GPS parado às vezes também gera 2
+    // leituras seguidas de velocidade alta sem o veículo ter saído do lugar.
     if (vel > LIMITE_MOVIMENTO_KMH) {
         leiturasConsecutivasMovimento++;
     } else {
         leiturasConsecutivasMovimento = 0;
     }
-    var movimentoConfirmado = leiturasConsecutivasMovimento >= LEITURAS_MIN_PARA_CONFIRMAR_MOVIMENTO;
+    var distanciaDesdeParada = pontoInicioParada
+        ? calcularDistanciaMetros(pontoInicioParada[0], pontoInicioParada[1], lat, lon)
+        : Infinity;
+    var movimentoConfirmado = leiturasConsecutivasMovimento >= LEITURAS_MIN_PARA_CONFIRMAR_MOVIMENTO
+        && distanciaDesdeParada >= DISTANCIA_MIN_SAIR_DA_PARADA_M;
 
     var situacao = "EM MOVIMENTO";
     var badgeStatus = document.getElementById('badStatus');
@@ -495,18 +517,24 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         if (!inicioParadaTs) {
             inicioParadaTs = agora.getTime();
             localStorage.setItem('inicio_parada_ts', String(inicioParadaTs));
+            pontoInicioParada = [lat, lon];
+            localStorage.setItem('ponto_inicio_parada', JSON.stringify(pontoInicioParada));
         }
     } else if (vel > LIMITE_VELOCIDADE) {
         situacao = "VELOCIDADE ACIMA DO LIMITE";
         badgeStatus.textContent = "EXCESSO DE VELOCIDADE";
         badgeStatus.className = "badge badge-perigo";
         inicioParadaTs = null;
+        pontoInicioParada = null;
         localStorage.removeItem('inicio_parada_ts');
+        localStorage.removeItem('ponto_inicio_parada');
     } else {
         badgeStatus.textContent = "EM MOVIMENTO";
         badgeStatus.className = "badge badge-movimento";
         inicioParadaTs = null;
+        pontoInicioParada = null;
         localStorage.removeItem('inicio_parada_ts');
+        localStorage.removeItem('ponto_inicio_parada');
     }
     // Atualiza o texto na hora, sem esperar o próximo tick do setInterval —
     // importante porque em segundo plano é essa chamada (vinda do GPS) que
@@ -534,7 +562,18 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         ? Math.max(DISTANCIA_MINIMA_MOVIMENTO_M, precisao * 1.2)
         : DISTANCIA_MINIMA_MOVIMENTO_M;
 
-    if (distancia >= distanciaMinimaEfetiva) {
+    // Desde que o filtro nativo (distanceFilter) virou 0, o plugin pode
+    // entregar várias leituras bem próximas em sequência rápida — inclusive
+    // parado. Sem essa proteção, um "chacoalhar" do GPS podia passar pelo
+    // filtro de distância antes de o filtro de velocidade conseguir barrar,
+    // gerando pontos "PARADO" duplicados com o mesmo horário.
+    // Regra estrita: só cria ponto novo se for o primeiro de todos (sem
+    // histórico ainda) OU se o movimento estiver CONFIRMADO (leituras
+    // seguidas de velocidade acima do limite). Nada de exceção por tempo —
+    // essa exceção era o que ainda deixava passar ruído de GPS parado.
+    var permiteRegistro = !ultimoPontoRegistrado || movimentoConfirmado;
+
+    if (distancia >= distanciaMinimaEfetiva && permiteRegistro) {
         ultimoPontoRegistrado = [lat, lon];
 
         historicoCoordenadasLocais.push([lat, lon]);
@@ -543,33 +582,69 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         agendarEncaixeNasRuas();
         talvezBuscarTemperatura(lat, lon);
 
-        document.getElementById('txtRua').textContent = "Buscando...";
-        document.getElementById('txtBairro').textContent = "Buscando...";
-        document.getElementById('txtCidade').textContent = "Buscando...";
-        document.getElementById('txtEstado').textContent = "Buscando...";
-
         var idPonto = gerarIdPonto(agora.getTime());
-        var registro = {
-            id: idPonto,
-            lat: lat, lon: lon,
-            velocidade: vel, status: situacao,
-            tempoParado: document.getElementById('txtTempoParado').textContent,
-            hora: agora.toLocaleTimeString('pt-BR'),
-            data: agora.toLocaleDateString('pt-BR'),
-            rua: "Buscando endereço...", bairro: "Buscando endereço...",
-            cidade: "Buscando endereço...", estado: "Buscando endereço...",
-            endereco: "Buscando endereço..."
-        };
+        var registro;
 
-        registroCompleto.push(registro);
+        // Reaproveita o endereço já resolvido se o novo ponto está bem perto
+        // do último ponto que teve endereço confirmado — evita gastar mais
+        // uma consulta ao serviço de geocodificação (limitado a ~1 por
+        // segundo) para um ponto que provavelmente é a mesma rua/bairro.
+        var distanciaDoUltimoEndereco = ultimoEnderecoConhecido
+            ? calcularDistanciaMetros(ultimoEnderecoConhecido.lat, ultimoEnderecoConhecido.lon, lat, lon)
+            : Infinity;
 
-        if (listaVeiculos.length > 0) {
-            listaVeiculos.forEach(vNome => {
-                filaPendentes.push(Object.assign({ vID: vNome, empresaId: EMPRESA_ID }, registro));
-            });
+        if (ultimoEnderecoConhecido && distanciaDoUltimoEndereco <= RAIO_REUTILIZAR_ENDERECO_M) {
+            document.getElementById('txtRua').textContent = ultimoEnderecoConhecido.rua;
+            document.getElementById('txtBairro').textContent = ultimoEnderecoConhecido.bairro;
+            document.getElementById('txtCidade').textContent = ultimoEnderecoConhecido.cidade;
+            document.getElementById('txtEstado').textContent = ultimoEnderecoConhecido.estado;
+
+            registro = {
+                id: idPonto,
+                lat: lat, lon: lon,
+                velocidade: vel, status: situacao,
+                tempoParado: document.getElementById('txtTempoParado').textContent,
+                hora: agora.toLocaleTimeString('pt-BR'),
+                data: agora.toLocaleDateString('pt-BR'),
+                rua: ultimoEnderecoConhecido.rua, bairro: ultimoEnderecoConhecido.bairro,
+                cidade: ultimoEnderecoConhecido.cidade, estado: ultimoEnderecoConhecido.estado,
+                endereco: ultimoEnderecoConhecido.endereco
+            };
+            registroCompleto.push(registro);
+
+            if (listaVeiculos.length > 0) {
+                listaVeiculos.forEach(vNome => {
+                    filaPendentes.push(Object.assign({ vID: vNome, empresaId: EMPRESA_ID }, registro));
+                });
+            }
+            // Não entra na fila de geocodificação — já temos o endereço.
+        } else {
+            document.getElementById('txtRua').textContent = "Buscando...";
+            document.getElementById('txtBairro').textContent = "Buscando...";
+            document.getElementById('txtCidade').textContent = "Buscando...";
+            document.getElementById('txtEstado').textContent = "Buscando...";
+
+            registro = {
+                id: idPonto,
+                lat: lat, lon: lon,
+                velocidade: vel, status: situacao,
+                tempoParado: document.getElementById('txtTempoParado').textContent,
+                hora: agora.toLocaleTimeString('pt-BR'),
+                data: agora.toLocaleDateString('pt-BR'),
+                rua: "Buscando endereço...", bairro: "Buscando endereço...",
+                cidade: "Buscando endereço...", estado: "Buscando endereço...",
+                endereco: "Buscando endereço..."
+            };
+            registroCompleto.push(registro);
+
+            if (listaVeiculos.length > 0) {
+                listaVeiculos.forEach(vNome => {
+                    filaPendentes.push(Object.assign({ vID: vNome, empresaId: EMPRESA_ID }, registro));
+                });
+            }
+
+            filaGeocodificarDepois.push({ id: idPonto, lat: lat, lon: lon, ts: agora.getTime() });
         }
-
-        filaGeocodificarDepois.push({ id: idPonto, lat: lat, lon: lon, ts: agora.getTime() });
 
         salvarTudo();
         atualizarInterfaceEstado();
@@ -795,6 +870,17 @@ function aplicarEnderecoNoPonto(idPonto, rua, bairro, cidade, estado) {
     if (reg) {
         reg.rua = rua; reg.bairro = bairro; reg.cidade = cidade; reg.estado = estado;
         reg.endereco = enderecoTxt;
+
+        // Só guarda como "conhecido" se o endereço foi realmente encontrado
+        // (não em caso de erro/indisponível), para não propagar um endereço
+        // ruim para os próximos pontos próximos.
+        if (rua !== "Endereço indisponível" && rua.indexOf("Erro:") !== 0) {
+            ultimoEnderecoConhecido = {
+                lat: reg.lat, lon: reg.lon,
+                rua: rua, bairro: bairro, cidade: cidade, estado: estado,
+                endereco: enderecoTxt
+            };
+        }
     }
 
     if (registroCompleto.length > 0 && registroCompleto[registroCompleto.length - 1].id === idPonto) {
