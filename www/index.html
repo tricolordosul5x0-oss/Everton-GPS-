@@ -498,11 +498,15 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     // pra não confundir "tremor" do GPS parado com movimento de verdade.
     var distanciaDesdeParada = pontoInicioParada
         ? calcularDistanciaMetros(pontoInicioParada[0], pontoInicioParada[1], lat, lon)
-        : Infinity;
+        : 0; // sem referência de parada ainda (ex: primeira leitura de todas):
+             // assume-se PARADO por padrão, não movimento — a referência é
+             // criada logo abaixo, no ramo "!movimentoConfirmado".
     var limiteConfirmarMovimento = (precisao && precisao > PRECISAO_MAXIMA_CONFIAVEL_M)
         ? Math.max(DISTANCIA_MIN_SAIR_DA_PARADA_M, precisao * 1.2)
         : DISTANCIA_MIN_SAIR_DA_PARADA_M;
-    var movimentoConfirmado = distanciaDesdeParada >= limiteConfirmarMovimento;
+    var movimentoConfirmado = pontoInicioParada
+        ? (distanciaDesdeParada >= limiteConfirmarMovimento)
+        : false;
 
     var situacao = "EM MOVIMENTO";
     var badgeStatus = document.getElementById('badStatus');
@@ -1126,4 +1130,4 @@ setInterval(function() {
 
 </script>
 </body>
-    </html>
+</html>
