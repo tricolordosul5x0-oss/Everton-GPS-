@@ -168,7 +168,7 @@ var auth = firebase.auth();
 
 var LIMITE_VELOCIDADE = 80;
 
-// ===================== EMPRESA (MULTI-TENANT) =====================
+// ===================== EMPRESA =====================
 var EMPRESA_ID = localStorage.getItem('empresa_id') || "tricolordosul5x0_gmail_com";
 document.getElementById('empresaIdInput').value = EMPRESA_ID;
 atualizarInfoEmpresaSalva();
@@ -205,7 +205,7 @@ function sanitizarChavePath(valor) {
     return String(valor).replace(/[.#$\[\]\/]/g, "_");
 }
 
-// ===================== DETECÇÃO DE AMBIENTE (Web x App Nativo) =====================
+// ===================== DETECÇÃO DE AMBIENTE =====================
 var isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 var bgWatcherId = null;
 
@@ -216,7 +216,6 @@ function atualizarBarraBackground(msg, mostrar) {
     el.textContent = msg;
 }
 
-// ===================== AVISO DE CONTEXTO INSEGURO (HTTP) =====================
 function checarContextoSeguro() {
     if (isNative) return true;
     var seguro = window.isSecureContext || location.hostname === "localhost" || location.hostname === "127.0.0.1";
@@ -269,7 +268,7 @@ function salvarTudo() {
     localStorage.setItem('registro_completo', JSON.stringify(registroCompleto));
 }
 
-// ===================== CONTROLE DO MODAL DE LOGIN INTERNO =====================
+// ===================== MODAL LOGIN =====================
 var acaoPendente = null;
 
 function abrirModalLogin(callbackAcao) {
@@ -289,7 +288,6 @@ document.getElementById('btnFecharLogin').addEventListener('click', function() {
 document.getElementById('btnConfirmarLogin').addEventListener('click', function() {
     var email = document.getElementById('authEmail').value.trim();
     var senha = document.getElementById('authSenha').value;
-
     if (!email || !senha) return alert("Preencha todos os campos!");
 
     document.getElementById('btnConfirmarLogin').textContent = "Autenticando...";
@@ -307,7 +305,7 @@ document.getElementById('btnConfirmarLogin').addEventListener('click', function(
         })
         .catch(err => {
             console.error(err);
-            alert("Erro na autenticação: Verifique seus dados. " + err.message);
+            alert("Erro na autenticação: " + err.message);
         })
         .finally(() => {
             document.getElementById('btnConfirmarLogin').textContent = "Entrar e Executar";
@@ -316,11 +314,10 @@ document.getElementById('btnConfirmarLogin').addEventListener('click', function(
 });
 
 auth.onAuthStateChanged(user => {
-    var badgeUser = document.getElementById('userLogadoInfo');
-    badgeUser.style.display = user ? "block" : "none";
+    document.getElementById('userLogadoInfo').style.display = user ? "block" : "none";
 });
 
-// ===================== CADASTRO DE VEÍCULOS (PROTEGIDOS) =====================
+// ===================== CADASTRO VEÍCULOS =====================
 function renderizarFrotaLocal() {
     var container = document.getElementById('listaFrotaLocal');
     container.innerHTML = "";
@@ -355,7 +352,7 @@ document.getElementById('btnAdicionar').addEventListener('click', function() {
 window.removerVeiculoExigindoSenha = function(index) {
     var nomeVeiculo = listaVeiculos[index];
     abrirModalLogin(function() {
-        if (confirm(`Remover o veículo ${nomeVeiculo} da lista local?`)) {
+        if (confirm(`Remover o veículo ${nomeVeiculo}?`)) {
             listaVeiculos.splice(index, 1);
             salvarTudo();
             renderizarFrotaLocal();
@@ -365,16 +362,10 @@ window.removerVeiculoExigindoSenha = function(index) {
 };
 
 // ===================== TEMPO PARADO =====================
-var inicioParadaTs = localStorage.getItem('inicio_parada_ts')
-    ? parseInt(localStorage.getItem('inicio_parada_ts'), 10)
-    : null;
+var inicioParadaTs = localStorage.getItem('inicio_parada_ts') ? parseInt(localStorage.getItem('inicio_parada_ts'), 10) : null;
 var pontoInicioParada = (function() {
     var raw = localStorage.getItem('ponto_inicio_parada');
-    try {
-        return raw ? JSON.parse(raw) : null;
-    } catch (e) {
-        return null;
-    }
+    try { return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
 })();
 var tempoParadoSegundos = 0;
 var jaGravouPontoInicialParada = localStorage.getItem('ja_gravou_parada') === 'true';
@@ -395,7 +386,6 @@ function atualizarTextoTempoParado() {
     document.getElementById('txtTempoParado').textContent = formatarTempoParado(tempoParadoSegundos);
 }
 
-// O setInterval de 1 segundo agora também atualiza o Firebase em TEMPO REAL de forma limpa
 setInterval(function() {
     atualizarTextoTempoParado();
     if (document.getElementById('badStatus').textContent === "PARADO") {
@@ -405,9 +395,9 @@ setInterval(function() {
 
 // ===================== CAPTURA DE GPS =====================
 var DISTANCIA_MINIMA_MOVIMENTO_M = 25; 
-var PRECISAO_MAXIMA_CONFIAVEL_M = 30;
 var RAIO_REUTILIZAR_ENDERECO_M = 40;
 var ultimoEnderecoConhecido = null;
+var ultimoPontoHistoricoTs = localStorage.getItem('ultimo_ponto_historico_ts') ? parseInt(localStorage.getItem('ultimo_ponto_historico_ts'), 10) : 0;
 
 var ultimoPontoRegistrado = historicoCoordenadasLocais.length > 0
     ? historicoCoordenadasLocais[historicoCoordenadasLocais.length - 1]
@@ -434,6 +424,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     var precisao = precisaoRaw ? Math.round(precisaoRaw) : null;
     var vel = velRaw ? Math.round(velRaw * 3.6) : 0;
     var agora = new Date();
+    var agoraTs = agora.getTime();
 
     map.setView([lat, lon], map.getZoom() < 14 ? 16 : map.getZoom());
     marcador.setLatLng([lat, lon]);
@@ -464,29 +455,43 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
             badgeStatus.className = "badge badge-movimento";
         }
         
-        // Se voltou a andar, limpa os estados de parada
         inicioParadaTs = null;
         pontoInicioParada = null;
         jaGravouPontoInicialParada = false;
         localStorage.removeItem('inicio_parada_ts');
         localStorage.removeItem('ponto_inicio_parada');
         localStorage.removeItem('ja_gravou_parada');
+        localStorage.removeItem('ultimo_ponto_recebido_ts');
 
-        deveGravarNoHistorico = true; 
+        // VALIDAÇÃO EM MOVIMENTO CORRIGIDA:
+        // Grava se andou mais de 25 metros OU se faz mais de 30 segundos desde o último ponto gravado.
+        var distanciaDoUltimoPonto = ultimoPontoRegistrado ? calcularDistanciaMetros(ultimoPontoRegistrado[0], ultimoPontoRegistrado[1], lat, lon) : Infinity;
+        var tempoDesdeUltimoPontoMs = agoraTs - ultimoPontoHistoricoTs;
+
+        if (distanciaDoUltimoPonto >= DISTANCIA_MINIMA_MOVIMENTO_M || tempoDesdeUltimoPontoMs >= 30000 || !ultimoPontoRegistrado) {
+            deveGravarNoHistorico = true;
+        }
     } else {
         situacao = "PARADO";
         badgeStatus.textContent = "PARADO";
         badgeStatus.className = "badge badge-parado";
         
+        var ultimoPontoRecebidoTs = localStorage.getItem('ultimo_ponto_recebido_ts') ? parseInt(localStorage.getItem('ultimo_ponto_recebido_ts'), 10) : null;
+        var DEZ_MINUTOS_MS = 10 * 60 * 1000;
+        if (ultimoPontoRecebidoTs && (agoraTs - ultimoPontoRecebidoTs) > DEZ_MINUTOS_MS) {
+            inicioParadaTs = null;
+            jaGravouPontoInicialParada = false;
+        }
+
         if (!inicioParadaTs) {
-            inicioParadaTs = agora.getTime();
+            inicioParadaTs = agoraTs;
             localStorage.setItem('inicio_parada_ts', String(inicioParadaTs));
             pontoInicioParada = [lat, lon];
             localStorage.setItem('ponto_inicio_parada', JSON.stringify(pontoInicioParada));
         }
 
-        // NOVIDADE: Permite gravar APENAS 1 registro inicial de parada no histórico.
-        // Bloqueia leituras subsequentes para eliminar a duplicação de linhas repetidas.
+        localStorage.setItem('ultimo_ponto_recebido_ts', String(agoraTs));
+
         if (!jaGravouPontoInicialParada) {
             deveGravarNoHistorico = true;
             jaGravouPontoInicialParada = true;
@@ -496,41 +501,28 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
 
     atualizarTextoTempoParado();
 
-    // Mantém o objeto de tempo real instantâneo atualizado
     ultimaLeituraCompleta = {
         lat: lat, lon: lon, velocidade: vel, status: situacao,
-        precisao: precisao,
-        hora: agora.toLocaleTimeString('pt-BR'),
-        data: agora.toLocaleDateString('pt-BR'),
+        precisao: precisao, hora: agora.toLocaleTimeString('pt-BR'), data: agora.toLocaleDateString('pt-BR'),
         tempoParado: document.getElementById('txtTempoParado').textContent
     };
     
     sincronizarTempoRealImediato();
 
-    // === VALIDAÇÃO FÍSICA PARA FILTRAR O HISTÓRICO ===
-    var distanciaDoUltimoPonto = ultimoPontoRegistrado
-        ? calcularDistanciaMetros(ultimoPontoRegistrado[0], ultimoPontoRegistrado[1], lat, lon)
-        : Infinity;
-
-    var limiteFiltroDistancia = (precisao && precisao > PRECISAO_MAXIMA_CONFIAVEL_M)
-        ? Math.max(DISTANCIA_MINIMA_MOVIMENTO_M, precisao * 1.3)
-        : DISTANCIA_MINIMA_MOVIMENTO_M;
-
-    // Regra de inserção no histórico: Grava se for o ponto único da parada OU se estiver andando e bateu a distância mínima
-    if (deveGravarNoHistorico && (situacao === "PARADO" || distanciaDoUltimoPonto >= limiteFiltroDistancia || !ultimoPontoRegistrado)) {
+    if (deveGravarNoHistorico) {
         ultimoPontoRegistrado = [lat, lon];
+        ultimoPontoHistoricoTs = agoraTs;
+        localStorage.setItem('ultimo_ponto_historico_ts', String(ultimoPontoHistoricoTs));
+
         historicoCoordenadasLocais.push([lat, lon]);
         if (historicoCoordenadasLocais.length > 2000) historicoCoordenadasLocais.shift();
         polilinhaRota.setLatLngs(historicoCoordenadasLocais);
         agendarEncaixeNasRuas();
         talvezBuscarTemperatura(lat, lon);
 
-        var idPonto = gerarIdPonto(agora.getTime());
+        var idPonto = gerarIdPonto(agoraTs);
         var registro;
-
-        var distanciaDoUltimoEndereco = ultimoEnderecoConhecido
-            ? calcularDistanciaMetros(ultimoEnderecoConhecido.lat, ultimoEnderecoConhecido.lon, lat, lon)
-            : Infinity;
+        var distanciaDoUltimoEndereco = ultimoEnderecoConhecido ? calcularDistanciaMetros(ultimoEnderecoConhecido.lat, ultimoEnderecoConhecido.lon, lat, lon) : Infinity;
 
         if (ultimoEnderecoConhecido && distanciaDoUltimoEndereco <= RAIO_REUTILIZAR_ENDERECO_M) {
             document.getElementById('txtRua').textContent = ultimoEnderecoConhecido.rua;
@@ -543,15 +535,11 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
                 tempoParado: document.getElementById('txtTempoParado').textContent,
                 hora: agora.toLocaleTimeString('pt-BR'), data: agora.toLocaleDateString('pt-BR'),
                 rua: ultimoEnderecoConhecido.rua, bairro: ultimoEnderecoConhecido.bairro,
-                cidade: ultimoEnderecoConhecido.cidade, estado: ultimoEnderecoConhecido.estado,
-                endereco: ultimoEnderecoConhecido.endereco
+                cidade: ultimoEnderecoConhecido.cidade, estado: ultimoEnderecoConhecido.estado, endereco: ultimoEnderecoConhecido.endereco
             };
             registroCompleto.push(registro);
-
             if (listaVeiculos.length > 0) {
-                listaVeiculos.forEach(vNome => {
-                    filaPendentes.push(Object.assign({ vID: vNome, empresaId: EMPRESA_ID }, registro));
-                });
+                listaVeiculos.forEach(vNome => { filaPendentes.push(Object.assign({ vID: vNome, empresaId: EMPRESA_ID }, registro)); });
             }
         } else {
             document.getElementById('txtRua').textContent = "Buscando...";
@@ -563,19 +551,13 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
                 id: idPonto, lat: lat, lon: lon, velocidade: vel, status: situacao,
                 tempoParado: document.getElementById('txtTempoParado').textContent,
                 hora: agora.toLocaleTimeString('pt-BR'), data: agora.toLocaleDateString('pt-BR'),
-                rua: "Buscando endereço...", bairro: "Buscando endereço...",
-                cidade: "Buscando endereço...", estado: "Buscando endereço...",
-                endereco: "Buscando endereço..."
+                rua: "Buscando endereço...", bairro: "Buscando endereço...", cidade: "Buscando endereço...", estado: "Buscando endereço...", endereco: "Buscando endereço..."
             };
             registroCompleto.push(registro);
-
             if (listaVeiculos.length > 0) {
-                listaVeiculos.forEach(vNome => {
-                    filaPendentes.push(Object.assign({ vID: vNome, empresaId: EMPRESA_ID }, registro));
-                });
+                listaVeiculos.forEach(vNome => { filaPendentes.push(Object.assign({ vID: vNome, empresaId: EMPRESA_ID }, registro)); });
             }
-
-            filaGeocodificarDepois.push({ id: idPonto, lat: lat, lon: lon, ts: agora.getTime() });
+            filaGeocodificarDepois.push({ id: idPonto, lat: lat, lon: lon, ts: agoraTs });
         }
 
         salvarTudo();
@@ -598,7 +580,6 @@ function sincronizarTempoRealImediato() {
         updates[basePath + 'status'] = ultimaLeituraCompleta.status;
         updates[basePath + 'hora'] = ultimaLeituraCompleta.hora;
         updates[basePath + 'data'] = ultimaLeituraCompleta.data;
-        // Atualiza dinamicamente no painel admin sem encher o histórico!
         updates[basePath + 'tempoParado'] = document.getElementById('txtTempoParado').textContent; 
     });
     db.ref().update(updates).catch(e => console.warn("Erro Heartbeat RT:", e));
@@ -607,402 +588,181 @@ function sincronizarTempoRealImediato() {
 function tratarErroGps(erro) {
     console.error(erro);
     errosGpsConsecutivos++;
-
     if (erro.code === 1) {
-        mostrarAvisoGps("⚠️ Permissão de localização negada. Ative o GPS nas permissões do app/navegador para este site.");
+        mostrarAvisoGps("⚠️ Permissão de localização negada.");
     } else if (errosGpsConsecutivos >= LIMITE_ERROS_PARA_AVISO) {
-        var msg = erro.code === 2
-            ? "⚠️ Sinal de GPS fraco no momento. Tente em área aberta."
-            : "⚠️ Sinal de GPS instável. Tentando novamente...";
-        mostrarAvisoGps(msg);
+        mostrarAvisoGps(erro.code === 2 ? "⚠️ Sinal de GPS fraco." : "⚠️ Sinal de GPS instável.");
     }
 }
 
 function iniciarRastreioNativoBackground() {
     var BG = window.Capacitor.Plugins.BackgroundGeolocation;
-    if (!BG) {
-        mostrarAvisoGps("⚠️ Plugin de rastreio em segundo plano não instalado. Rode 'npx cap sync' no projeto e reinstale o app.");
-        iniciarRastreioWeb();
-        return;
-    }
-
-    atualizarBarraBackground("🟢 Rastreio em segundo plano ATIVO — grava mesmo com o app minimizado ou a tela apagada", true);
-
+    if (!BG) { iniciarRastreioWeb(); return; }
+    atualizarBarraBackground("🟢 Rastreio em segundo plano ATIVO", true);
     BG.addWatcher({
-        backgroundMessage: "Rastreador Everton GPS está registrando a localização do veículo.",
+        backgroundMessage: "Rastreador Everton GPS ativo.",
         backgroundTitle: "Rastreador ativo",
-        requestPermissions: true,
-        stale: false,
-        distanceFilter: 0
+        requestPermissions: true, stale: false, distanceFilter: 0
     }, function(location, error) {
-        if (error) {
-            if (error.code === "NOT_AUTHORIZED") {
-                mostrarAvisoGps("⚠️ Permissão de localização em segundo plano negada. Nas configurações do app, escolha 'Permitir o tempo todo'.");
-            } else {
-                console.warn("Erro no rastreio em segundo plano:", error);
-            }
-            return;
-        }
-        if (location) {
-            processarNovaPosicao(location.latitude, location.longitude, location.accuracy, location.speed);
-        }
-    }).then(function(id) {
-        bgWatcherId = id;
-    }).catch(function(err) {
-        console.error("Falha ao iniciar rastreio em segundo plano:", err);
-        mostrarAvisoGps("⚠️ Não foi possível iniciar o rastreio em segundo plano: " + (err && err.message ? err.message : err));
-    });
+        if (error) return;
+        if (location) processarNovaPosicao(location.latitude, location.longitude, location.accuracy, location.speed);
+    }).then(id => { bgWatcherId = id; });
 }
 
 function iniciarRastreioWeb() {
     if (!checarContextoSeguro()) return;
-    if (!navigator.geolocation) {
-        mostrarAvisoGps("⚠️ Este navegador não suporta geolocalização.");
-        return;
-    }
-    navigator.geolocation.watchPosition(function(position) {
-        processarNovaPosicao(
-            position.coords.latitude,
-            position.coords.longitude,
-            position.coords.accuracy,
-            position.coords.speed
-        );
+    if (!navigator.geolocation) return;
+    navigator.geolocation.watchPosition(position => {
+        processarNovaPosicao(position.coords.latitude, position.coords.longitude, position.coords.accuracy, position.coords.speed);
     }, tratarErroGps, { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 });
 }
 
-function iniciarRastreioGps() {
-    if (isNative) {
-        iniciarRastreioNativoBackground();
-    } else {
-        atualizarBarraBackground("ℹ️ Rodando no navegador: o rastreio para se a aba for fechada ou o celular travar a tela. Para gravar em segundo plano de verdade, use o app instalado.", true);
-        iniciarRastreioWeb();
-    }
-}
-
+function iniciarRastreioGps() { if (isNative) { iniciarRastreioNativoBackground(); } else { iniciarRastreioWeb(); } }
 iniciarRastreioGps();
 
-// ===================== ENCAIXE DA ROTA NAS RUAS =====================
-var encaixeAgendado = false;
-var ultimoEncaixeTs = 0;
-var INTERVALO_MIN_ENCAIXE_MS = 4000;
-
+// ===================== ENCAIXE RUA =====================
+var encaixeAgendado = false; var ultimoEncaixeTs = 0;
 function agendarEncaixeNasRuas() {
-    var agora = Date.now();
-    var esperar = Math.max(0, INTERVALO_MIN_ENCAIXE_MS - (agora - ultimoEncaixeTs));
-    if (encaixeAgendado) return;
-    encaixeAgendado = true;
+    var agora = Date.now(); var esperar = Math.max(0, 4000 - (agora - ultimoEncaixeTs));
+    if (encaixeAgendado) return; encaixeAgendado = true;
     setTimeout(executarEncaixeNasRuas, esperar);
 }
-
-function GridMatchOSRM(coordsStr) {
-    var url = `https://router.project-osrm.org/match/v1/driving/${coordsStr}?overview=full&geometries=geojson&overview=full`;
-    return fetchComTimeout(url, {}, TIMEOUT_FETCH_MS);
-}
-
 function executarEncaixeNasRuas() {
-    encaixeAgendado = false;
-    ultimoEncaixeTs = Date.now();
-
+    encaixeAgendado = false; ultimoEncaixeTs = Date.now();
     if (historicoCoordenadasLocais.length < 2) return;
-
     var pontos = historicoCoordenadasLocais.slice(-100);
     var coordsStr = pontos.map(p => p[1].toFixed(6) + "," + p[0].toFixed(6)).join(";");
-
-    GridMatchOSRM(coordsStr)
-        .then(res => res.json())
-        .then(data => {
+    fetchComTimeout(`https://router.project-osrm.org/match/v1/driving/${coordsStr}?overview=full&geometries=geojson`, {}, TIMEOUT_FETCH_MS)
+        .then(res => res.json()).then(data => {
             if (data.code === "Ok" && data.matchings && data.matchings.length > 0) {
                 var pontosRua = [];
-                data.matchings.forEach(m => {
-                    m.geometry.coordinates.forEach(c => pontosRua.push([c[1], c[0]]));
-                });
+                data.matchings.forEach(m => { m.geometry.coordinates.forEach(c => pontosRua.push([c[1], c[0]])); });
                 polilinhaRuas.setLatLngs(pontosRua);
             }
-        })
-        .catch(err => console.warn("Encaixe nas ruas indisponível agora:", err));
+        }).catch(e => console.warn(e));
 }
 
 // ===================== TERMÔMETRO =====================
-var ultimaBuscaTempTs = 0;
-var buscandoTemp = false;
-var INTERVALO_MIN_TEMPERATURA_MS = 5 * 60 * 1000;
-
+var ultimaBuscaTempTs = 0; var buscandoTemp = false;
 function talvezBuscarTemperatura(lat, lon) {
-    var agora = Date.now();
-    if (buscandoTemp || (agora - ultimaBuscaTempTs) < INTERVALO_MIN_TEMPERATURA_MS) return;
-    buscandoTemp = true;
-    ultimaBuscaTempTs = agora;
-
-    var url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature&temperature_unit=celsius&timezone=auto`;
-    fetchComTimeout(url, {}, TIMEOUT_FETCH_MS)
-        .then(res => {
-            if (!res.ok) throw new Error("HTTP " + res.status);
-            return res.json();
-        })
-        .then(data => {
+    var agora = Date.now(); if (buscandoTemp || (agora - ultimaBuscaTempTs) < 300000) return;
+    buscandoTemp = true; ultimaBuscaTempTs = agora;
+    fetchComTimeout(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature&temperature_unit=celsius&timezone=auto`, {}, TIMEOUT_FETCH_MS)
+        .then(res => res.json()).then(data => {
             if (data && data.current && typeof data.current.temperature_2m === "number") {
-                var sensacao = typeof data.current.apparent_temperature === "number"
-                    ? ` (sensação ${data.current.apparent_temperature.toFixed(1)}°C)`
-                    : "";
-                document.getElementById('txtTemperatura').textContent =
-                    data.current.temperature_2m.toFixed(1) + " °C" + sensacao;
+                var sensacao = typeof data.current.apparent_temperature === "number" ? ` (sensação ${data.current.apparent_temperature.toFixed(1)}°C)` : "";
+                document.getElementById('txtTemperatura').textContent = data.current.temperature_2m.toFixed(1) + " °C" + sensacao;
             }
-        })
-        .catch(err => console.warn("Falha ao buscar temperatura:", err))
-        .finally(() => { buscandoTemp = false; });
+        }).catch(e => console.warn(e)).finally(() => { buscandoTemp = false; });
 }
 
 // ===================== GEOCODIFICAÇÃO =====================
 var geocodificando = false;
 function processarFilaGeocodificacao() {
     if (geocodificando || filaGeocodificarDepois.length === 0) return;
-    geocodificando = true;
-    atualizarInterfaceEstado();
-
+    geocodificando = true; atualizarInterfaceEstado();
     var ponto = filaGeocodificarDepois[filaGeocodificarDepois.length - 1];
 
-    fetchComTimeout(
-        `https://nominatim.openstreetmap.org/reverse?lat=${ponto.lat}&lon=${ponto.lon}&format=json&zoom=18&addressdetails=1`,
-        { headers: { 'Accept-Language': 'pt-BR' } },
-        TIMEOUT_FETCH_MS
-    )
-        .then(res => {
-            if (!res.ok) throw new Error("HTTP " + res.status);
-            return res.json();
-        })
-        .then(data => {
+    fetchComTimeout(`https://nominatim.openstreetmap.org/reverse?lat=${ponto.lat}&lon=${ponto.lon}&format=json&zoom=18&addressdetails=1`, { headers: { 'Accept-Language': 'pt-BR' } }, TIMEOUT_FETCH_MS)
+        .then(res => res.json()).then(data => {
             var addr = data.address || {};
-            var rua = addr.road || addr.pedestrian || addr.footway || "Rua não localizada";
-            var bairro = addr.suburb || addr.neighbourhood || addr.quarter || "Bairro não localizado";
-            var cidade = addr.city || addr.town || addr.village || addr.municipality || "Cidade não localizada";
+            var rua = addr.road || addr.pedestrian || "Rua não localizada";
+            var bairro = addr.suburb || addr.neighbourhood || "Bairro não localizado";
+            var cidade = addr.city || addr.town || "Cidade não localizada";
             var estado = addr.state || "Estado não localizado";
             aplicarEnderecoNoPonto(ponto.id, rua, bairro, cidade, estado);
             filaGeocodificarDepois.pop();
-        })
-        .catch(err => {
-            console.warn("Falha ao buscar endereço:", err);
+        }).catch(err => {
             ponto.tentativas = (ponto.tentativas || 0) + 1;
-            if (ponto === filaGeocodificarDepois[filaGeocodificarDepois.length - 1]) {
-                var msgErro = "Erro: " + (err && err.name ? err.name + " - " : "") + (err && err.message ? err.message : String(err));
-                document.getElementById('txtRua').textContent = msgErro;
-                document.getElementById('txtBairro').textContent = "(tentativa " + ponto.tentativas + "/" + MAX_TENTATIVAS_GEOCODIFICACAO + ")";
-            }
             if (ponto.tentativas >= MAX_TENTATIVAS_GEOCODIFICACAO) {
                 aplicarEnderecoNoPonto(ponto.id, "Endereço indisponível", "—", "—", "—");
                 filaGeocodificarDepois.pop();
-                mostrarAvisoGps("⚠️ Não foi possível buscar o endereço de alguns pontos. As coordenadas foram salvas normalmente.");
             }
-        })
-        .finally(() => {
-            geocodificando = false;
-            salvarTudo();
-            atualizarInterfaceEstado();
-            if (filaGeocodificarDepois.length > 0) {
-                setTimeout(processarFilaGeocodificacao, INTERVALO_GEOCODIFICACAO_MS);
-            }
+        }).finally(() => {
+            geocodificando = false; salvarTudo(); atualizarInterfaceEstado();
+            if (filaGeocodificarDepois.length > 0) setTimeout(processarFilaGeocodificacao, INTERVALO_GEOCODIFICACAO_MS);
         });
 }
 
 function aplicarEnderecoNoPonto(idPonto, rua, bairro, cidade, estado) {
     var enderecoTxt = `${rua}, ${bairro} - ${cidade}/${estado}`;
-
     var reg = registroCompleto.find(r => r.id === idPonto);
     if (reg) {
-        reg.rua = rua; reg.bairro = bairro; reg.cidade = cidade; reg.estado = estado;
-        reg.endereco = enderecoTxt;
-
-        if (rua !== "Endereço indisponível" && rua.indexOf("Erro:") !== 0) {
-            ultimoEnderecoConhecido = {
-                lat: reg.lat, lon: reg.lon,
-                rua: rua, bairro: bairro, cidade: cidade, estado: estado,
-                endereco: enderecoTxt
-            };
+        reg.rua = rua; reg.bairro = bairro; reg.cidade = cidade; reg.estado = estado; reg.endereco = enderecoTxt;
+        if (rua !== "Endereço indisponível") {
+            ultimoEnderecoConhecido = { lat: reg.lat, lon: reg.lon, rua: rua, bairro: bairro, cidade: cidade, estado: estado, endereco: enderecoTxt };
         }
     }
-
     if (registroCompleto.length > 0 && registroCompleto[registroCompleto.length - 1].id === idPonto) {
-        document.getElementById('txtRua').textContent = rua;
-        document.getElementById('txtBairro').textContent = bairro;
-        document.getElementById('txtCidade').textContent = cidade;
-        document.getElementById('txtEstado').textContent = estado;
+        document.getElementById('txtRua').textContent = rua; document.getElementById('txtBairro').textContent = bairro;
+        document.getElementById('txtCidade').textContent = cidade; document.getElementById('txtEstado').textContent = estado;
     }
-
     filaPendentes.forEach(p => {
-        if (p.id === idPonto) {
-            p.rua = rua; p.bairro = bairro; p.cidade = city = cidade; p.estado = estado; p.endereco = enderecoTxt;
-        }
+        if (p.id === idPonto) { p.rua = rua; p.bairro = bairro; p.cidade = cidade; p.estado = estado; p.endereco = enderecoTxt; }
     });
-
     if (listaVeiculos.length > 0) {
         var patch = {};
         listaVeiculos.forEach(vNome => {
-            var vidSeguro = sanitizarChavePath(vNome);
-            var empresaSegura = sanitizarChavePath(EMPRESA_ID);
-            var base = 'empresas/' + empresaSegura + '/veiculos/' + vidSeguro + '/historico/' + idPonto + '/';
-            patch[base + 'rua'] = rua;
-            patch[base + 'bairro'] = bairro;
-            patch[base + 'cidade'] = cidade;
-            patch[base + 'estado'] = estado;
-            patch[base + 'endereco'] = enderecoTxt;
+            var basePath = 'empresas/' + sanitizarChavePath(EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(vNome) + '/historico/' + idPonto + '/';
+            patch[basePath + 'rua'] = rua; patch[basePath + 'bairro'] = bairro; patch[basePath + 'cidade'] = cidade; patch[basePath + 'estado'] = estado; patch[basePath + 'endereco'] = enderecoTxt;
         });
-        try {
-            db.ref().update(patch).catch(err => console.warn("Falha ao corrigir endereço no Firebase:", err));
-        } catch (erroSincrono) {
-            console.error("Correção de endereço erro síncrono:", erroSincrono);
-        }
+        db.ref().update(patch).catch(e => console.warn(e));
     }
 }
 
-// ===================== ENVIO PARA O FIREBASE =====================
+// ===================== FIREBASE SYNC =====================
 var enviando = false;
-var LIMITE_LOTE_ENVIO = 25;
-var LIMITE_FALHAS_LOTE = 5;
-var falhasConsecutivasLote = 0;
-
-function mostrarErroSync(msg) {
-    var out = document.getElementById('diagnosticoResultado');
-    if (out) out.textContent = "❌ Erro na sincronização (" + new Date().toLocaleTimeString('pt-BR') + "):\n" + msg;
-}
-
 function enviarDadosFila() {
-    if (enviando || filaPendentes.length === 0) {
-        atualizarInterfaceEstado();
-        return;
-    }
+    if (enviando || filaPendentes.length === 0) { atualizarInterfaceEstado(); return; }
     enviando = true;
-
-    var lote = filaPendentes.slice(0, LIMITE_LOTE_ENVIO);
-    var updates = {};
-
+    var lote = filaPendentes.slice(0, 25); var updates = {};
     try {
         lote.forEach(item => {
-            var empresaDoItem = sanitizarChavePath(item.empresaId || EMPRESA_ID);
-            var vidSeguro = sanitizarChavePath(item.vID);
-            var basePath = 'empresas/' + empresaDoItem + '/veiculos/' + vidSeguro + '/';
-            updates[basePath + 'historico/' + item.id] = item;
+            var basePath = 'empresas/' + sanitizarChavePath(item.empresaId || EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(item.vID) + '/historico/' + item.id;
+            updates[basePath] = item;
         });
-
-        db.ref().update(updates)
-            .then(() => {
-                filaPendentes.splice(0, lote.length);
-                falhasConsecutivasLote = 0;
-                salvarTudo();
-            })
-            .catch((error) => {
-                console.warn("Falha ao enviar lote, mantendo na fila:", error);
-                var mensagem = (error && error.code) ? (error.code + ": " + error.message) : String(error);
-                mostrarErroSync(mensagem);
-
-                falhasConsecutivasLote++;
-                if (falhasConsecutivasLote >= LIMITE_FALHAS_LOTE) {
-                    filaPendentes.shift();
-                    falhasConsecutivasLote = 0;
-                    salvarTudo();
-                }
-            })
-            .then(() => {
-                enviando = false;
-                atualizarInterfaceEstado();
-                if (filaPendentes.length > 0) enviarDadosFila();
-            });
-    } catch (erroSincrono) {
-        filaPendentes.shift();
-        enviando = false;
-        atualizarInterfaceEstado();
-        if (filaPendentes.length > 0) enviarDadosFila();
-    }
+        db.ref().update(updates).then(() => {
+            filaPendentes.splice(0, lote.length); falhasConsecutivasLote = 0; salvarTudo();
+        }).catch(e => {
+            console.warn(e); falhasConsecutivasLote++;
+            if (falhasConsecutivasLote >= 5) { filaPendentes.shift(); falhasConsecutivasLote = 0; salvarTudo(); }
+        }).finally(() => { enviando = false; atualizarInterfaceEstado(); if (filaPendentes.length > 0) enviarDadosFila(); });
+    } catch (e) { filaPendentes.shift(); enviando = false; atualizarInterfaceEstado(); }
 }
 
 function atualizarInterfaceEstado() {
-    var barra = document.getElementById('statusConexao');
-    var totalPendente = filaPendentes.length + filaGeocodificarDepois.length;
-
+    var barra = document.getElementById('statusConexao'); var totalPendente = filaPendentes.length + filaGeocodificarDepois.length;
     if (navigator.onLine && totalPendente === 0 && listaVeiculos.length > 0) {
-        barra.className = "status-bar status-online";
-        barra.innerHTML = "📡 SISTEMA ONLINE — Todos os veículos sincronizados!";
+        barra.className = "status-bar status-online"; barra.innerHTML = "📡 SISTEMA ONLINE — Sincronizado!";
     } else if (navigator.onLine && listaVeiculos.length > 0) {
-        barra.className = "status-bar status-online";
-        barra.innerHTML = `📡 ONLINE — sincronizando... <span id="contadorPendentes">(${totalPendente} pendentes)</span>`;
+        barra.className = "status-bar status-online"; barra.innerHTML = `📡 ONLINE — Sincronizando... <span>(${totalPendente} pendentes)</span>`;
     } else {
-        barra.className = "status-bar status-offline";
-        barra.innerHTML = `MODO OFFLINE — gravando localmente no aparelho <span id="contadorPendentes">(${totalPendente} pendentes)</span>`;
+        barra.className = "status-bar status-offline"; barra.innerHTML = `MODO OFFLINE <span>(${totalPendente} pendentes)</span>`;
     }
-
-    document.getElementById('filaInfo').textContent =
-        registroCompleto.length + " pontos da rota real registrados neste aparelho" +
-        " (" + filaPendentes.length + " aguardando envio ao Firebase, " +
-        filaGeocodificarDepois.length + " aguardando endereço)";
+    document.getElementById('filaInfo').textContent = registroCompleto.length + " pontos gravados localmente (" + filaPendentes.length + " no Firebase, " + filaGeocodificarDepois.length + " sem endereço)";
 }
 
-window.addEventListener('online', function() {
-    esconderAvisoGps();
-    atualizarInterfaceEstado();
-    processarFilaGeocodificacao();
-    enviarDadosFila();
-    agendarEncaixeNasRuas();
-});
+window.addEventListener('online', function() { atualizarInterfaceEstado(); processarFilaGeocodificacao(); enviarDadosFila(); agendarEncaixeNasRuas(); });
 window.addEventListener('offline', atualizarInterfaceEstado);
+document.getElementById('btnForcar').addEventListener('click', function() { processarFilaGeocodificacao(); enviarDadosFila(); sincronizarTempoRealImediato(); });
 
-document.getElementById('btnForcar').addEventListener('click', function() {
-    processarFilaGeocodificacao();
-    enviarDadosFila();
-    sincronizarTempoRealImediato();
-});
-
-// ===================== EXPORTAR ROTA REAL (CSV) =====================
+// ===================== EXPORTAR CSV =====================
 document.getElementById('btnExportar').addEventListener('click', function() {
-    if (registroCompleto.length === 0) {
-        alert("Ainda não há pontos de rota registrados para exportar.");
-        return;
-    }
+    if (registroCompleto.length === 0) return alert("Sem pontos registrados.");
     var linhas = ["Data;Hora;Latitude;Longitude;Velocidade(km/h);Situacao;Rua;Bairro;Cidade;Estado"];
-    registroCompleto.forEach(p => {
-        linhas.push([p.data, p.hora, p.lat, p.lon, p.velocidade, p.status, p.rua, p.bairro, p.cidade, p.estado].join(";"));
-    });
+    registroCompleto.forEach(p => { linhas.push([p.data, p.hora, p.lat, p.lon, p.velocidade, p.status, p.rua, p.bairro, p.cidade, p.estado].join(";")); });
     var blob = new Blob([linhas.join("\n")], { type: "text/csv;charset=utf-8;" });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement("a");
-    a.href = url;
-    a.download = "rota_real_" + new Date().toISOString().slice(0,10) + ".csv";
-    a.click();
-    URL.revokeObjectURL(url);
+    var url = URL.createObjectURL(blob); var a = document.createElement("a"); a.href = url; a.download = "rota_real_" + new Date().toISOString().slice(0,10) + ".csv"; a.click(); URL.revokeObjectURL(url);
 });
 
 document.getElementById('btnDiagnostico').addEventListener('click', function() {
-    var out = document.getElementById('diagnosticoResultado');
-    out.textContent = "Testando... (aguarde até 10s)";
-    var inicio = Date.now();
-
-    fetchComTimeout(
-        "https://nominatim.openstreetmap.org/reverse?lat=-29.6133&lon=-52.1919&format=json&zoom=18&addressdetails=1",
-        { headers: { 'Accept-Language': 'pt-BR' } },
-        10000
-    )
-        .then(res => {
-            out.textContent += "\nHTTP status: " + res.status;
-            return res.text();
-        })
-        .then(txt => {
-            var ms = Date.now() - inicio;
-            out.textContent = "✅ SUCESSO em " + ms + "ms\n\nResposta bruta:\n" + txt.slice(0, 500);
-        })
-        .catch(err => {
-            var ms = Date.now() - inicio;
-            out.textContent = "❌ FALHOU após " + ms + "ms\n\nTipo: " + (err && err.name) + "\nMensagem: " + (err && err.message);
-        });
+    var out = document.getElementById('diagnosticoResultado'); out.textContent = "Testando...";
+    fetchComTimeout("https://nominatim.openstreetmap.org/reverse?lat=-29.6133&lon=-52.1919&format=json&zoom=18", {}, 10000)
+        .then(res => res.text()).then(txt => { out.textContent = "✅ SUCESSO\n\n" + txt.slice(0, 300); }).catch(e => { out.textContent = "❌ ERRO: " + e.message; });
 });
 
-renderizarFrotaLocal();
-atualizarInterfaceEstado();
-checarContextoSeguro();
-
-setInterval(function() {
-    if (filaGeocodificarDepois.length > 0) processarFilaGeocodificacao();
-    if (filaPendentes.length > 0) enviarDadosFila();
-    if (historicoCoordenadasLocais.length >= 2) agendarEncaixeNasRuas();
-    sincronizarTempoRealImediato();
-}, 6000);
-
+renderizarFrotaLocal(); atualizarInterfaceEstado(); checarContextoSeguro();
+setInterval(function() { if (filaGeocodificarDepois.length > 0) processarFilaGeocodificacao(); if (filaPendentes.length > 0) enviarDadosFila(); sincronizarTempoRealImediato(); }, 6000);
 </script>
 </body>
 </html>
