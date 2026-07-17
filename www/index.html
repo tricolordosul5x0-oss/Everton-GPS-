@@ -149,8 +149,6 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-<!-- Ponte nativa do Capacitor. Em navegador comum este arquivo não existe e o <script> falha
-     silenciosamente (com erro 404 no console), o que é esperado: o app cai no modo Web normal. -->
 <script src="capacitor.js"></script>
 
 <script>
@@ -171,9 +169,6 @@ var auth = firebase.auth();
 var LIMITE_VELOCIDADE = 80;
 
 // ===================== EMPRESA (MULTI-TENANT) =====================
-// Cada aparelho instalado num veículo pertence a UMA empresa. O ID é
-// configurável na tela (sem precisar recompilar o app para cada cliente novo)
-// e fica salvo no armazenamento local do aparelho.
 var EMPRESA_ID = localStorage.getItem('empresa_id') || "tricolordosul5x0_gmail_com";
 document.getElementById('empresaIdInput').value = EMPRESA_ID;
 atualizarInfoEmpresaSalva();
@@ -202,17 +197,10 @@ function fetchComTimeout(url, opcoes, timeoutMs) {
         .finally(() => clearTimeout(id));
 }
 
-// Gera um identificador único e "seguro" para usar como chave de nó no Firebase
-// (sem caracteres proibidos: . # $ [ ] /). Usado para poder corrigir o endereço
-// de um ponto específico depois, sem precisar reenviar tudo.
 function gerarIdPonto(ts) {
     return ts + "_" + Math.random().toString(36).slice(2, 8);
 }
 
-// Remove caracteres proibidos em chaves de caminho do Firebase Realtime Database
-// (. # $ [ ] /). Sem isso, um nome de veículo ou ID de empresa com um desses
-// caracteres faz o db.ref().update(...) lançar um erro IMEDIATO (síncrono),
-// antes mesmo de tentar a rede — o que pode travar o envio silenciosamente.
 function sanitizarChavePath(valor) {
     return String(valor).replace(/[.#$\[\]\/]/g, "_");
 }
@@ -377,17 +365,6 @@ window.removerVeiculoExigindoSenha = function(index) {
 };
 
 // ===================== TEMPO PARADO =====================
-// Antes, isso era um contador que somava 1 segundo por vez dentro de um
-// setInterval. O problema: quando o app fica em segundo plano com a tela
-// apagada, o Android costuma pausar esse tipo de timer (economia de bateria),
-// e a contagem trava, mesmo com o GPS continuando a funcionar normalmente.
-//
-// Agora guardamos apenas o MOMENTO (timestamp) em que o veículo parou, e
-// calculamos a diferença para "agora" toda vez que precisamos exibir o valor.
-// Assim, mesmo que o app fique horas sem rodar o setInterval, assim que ele
-// voltar a executar (nem que seja só quando chega uma nova posição do GPS em
-// segundo plano) o valor mostrado já vem certo, sem depender de ter contado
-// segundo a segundo o tempo todo.
 var inicioParadaTs = localStorage.getItem('inicio_parada_ts')
     ? parseInt(localStorage.getItem('inicio_parada_ts'), 10)
     : null;
@@ -399,7 +376,6 @@ var pontoInicioParada = (function() {
         return null;
     }
 })();
-var DISTANCIA_MIN_SAIR_DA_PARADA_M = 15;
 var tempoParadoSegundos = 0;
 
 function formatarTempoParado(segundos) {
@@ -421,38 +397,17 @@ function atualizarTextoTempoParado() {
 setInterval(atualizarTextoTempoParado, 1000);
 
 // ===================== CAPTURA DE GPS =====================
-var DISTANCIA_MINIMA_MOVIMENTO_M = 20;
-
-// Filtro de ruído do GPS: uma leitura isolada de velocidade ou um "salto" de
-// posição não são confiáveis sozinhos, especialmente perto de galpões/prédios
-// (multipath do sinal). Proteção: se a precisão do GPS estiver ruim,
-// exigimos que o deslocamento seja bem maior que a margem de erro antes de
-// considerar "andou de verdade" — tanto pra criar ponto de histórico quanto
-// pra confirmar saída do estado "parado" (ver PRECISAO_MAXIMA_CONFIAVEL_M
-// mais abaixo, usado em ambos os lugares).
+var DISTANCIA_MINIMA_MOVIMENTO_M = 25; 
 var PRECISAO_MAXIMA_CONFIAVEL_M = 30;
-
-// Último endereço resolvido com sucesso, para reaproveitar em pontos
-// próximos e economizar consultas ao serviço de geocodificação (limitado a
-// ~1 por segundo).
 var RAIO_REUTILIZAR_ENDERECO_M = 40;
 var ultimoEnderecoConhecido = null;
 
 var ultimoPontoRegistrado = historicoCoordenadasLocais.length > 0
     ? historicoCoordenadasLocais[historicoCoordenadasLocais.length - 1]
     : null;
-// (Removido: "primeiraLeituraDestaSessao" forçava um novo ponto de histórico
-// toda vez que o app/serviço reiniciava em segundo plano, mesmo com o veículo
-// parado no mesmo lugar — era a causa dos pontos "PARADO" duplicados e com o
-// mesmo horário no histórico. Agora só a regra de distância decide, e ela já
-// cobre corretamente o caso do primeiro ponto de todos, já que a distância é
-// tratada como infinita quando não há nenhum ponto anterior registrado.)
+
 var errosGpsConsecutivos = 0;
 var LIMITE_ERROS_PARA_AVISO = 4;
-
-// ---- guarda a leitura mais recente do GPS, mesmo quando o veículo
-// não andou os 20m necessários para virar um "ponto de rota". Isso alimenta
-// o heartbeat abaixo, sem alterar em nada a lógica de histórico/fila existente.
 var ultimaLeituraCompleta = null;
 
 function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
@@ -486,31 +441,24 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     document.getElementById('txtPrecisao').textContent = precisao ? `± ${precisao} m` : "—";
     document.getElementById('txtCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
 
-    var LIMITE_MOVIMENTO_KMH = 5; // abaixo disso é considerado "parado"
+    // === FILTRAGEM DE MOVIMENTO REAL VS OSCILAÇÃO DE GPS ===
+    var LIMITE_MOVIMENTO_KMH = 4; 
+    var estaRealmenteAndando = vel >= LIMITE_MOVIMENTO_KMH;
 
-    // A velocidade instantânea que o celular reporta pode ser instável —
-    // alguns aparelhos "piscam" entre um valor real e 0/nulo mesmo com o
-    // veículo andando, especialmente logo no início do trajeto ou com sinal
-    // fraco. Por isso, a confirmação de movimento agora se baseia na
-    // DISTÂNCIA percorrida desde onde o veículo realmente parou — um dado
-    // bem mais confiável do que a velocidade instantânea de uma única
-    // leitura. A margem exigida cresce se a precisão do GPS estiver ruim,
-    // pra não confundir "tremor" do GPS parado com movimento de verdade.
     var distanciaDesdeParada = pontoInicioParada
         ? calcularDistanciaMetros(pontoInicioParada[0], pontoInicioParada[1], lat, lon)
-        : 0; // sem referência de parada ainda (ex: primeira leitura de todas):
-             // assume-se PARADO por padrão, não movimento — a referência é
-             // criada logo abaixo, no ramo "!movimentoConfirmado".
+        : Infinity;
+
     var limiteConfirmarMovimento = (precisao && precisao > PRECISAO_MAXIMA_CONFIAVEL_M)
-        ? Math.max(DISTANCIA_MIN_SAIR_DA_PARADA_M, precisao * 1.2)
-        : DISTANCIA_MIN_SAIR_DA_PARADA_M;
-    var movimentoConfirmado = pontoInicioParada
-        ? (distanciaDesdeParada >= limiteConfirmarMovimento)
-        : false;
+        ? Math.max(DISTANCIA_MINIMA_MOVIMENTO_M, precisao * 1.3)
+        : DISTANCIA_MINIMA_MOVIMENTO_M;
+
+    var movimentoConfirmado = estaRealmenteAndando && (distanciaDesdeParada > limiteConfirmarMovimento);
 
     var situacao = "EM MOVIMENTO";
     var badgeStatus = document.getElementById('badStatus');
-    if (!movimentoConfirmado) {
+
+    if (!movimentoConfirmado && vel === 0) {
         situacao = "PARADO";
         badgeStatus.textContent = "PARADO";
         badgeStatus.className = "badge badge-parado";
@@ -524,24 +472,23 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         situacao = "VELOCIDADE ACIMA DO LIMITE";
         badgeStatus.textContent = "EXCESSO DE VELOCIDADE";
         badgeStatus.className = "badge badge-perigo";
-        inicioParadaTs = null;
-        pontoInicioParada = null;
-        localStorage.removeItem('inicio_parada_ts');
-        localStorage.removeItem('ponto_inicio_parada');
+        limparEstadoParada();
     } else {
         badgeStatus.textContent = "EM MOVIMENTO";
         badgeStatus.className = "badge badge-movimento";
+        limparEstadoParada();
+    }
+
+    function limparEstadoParada() {
         inicioParadaTs = null;
         pontoInicioParada = null;
         localStorage.removeItem('inicio_parada_ts');
         localStorage.removeItem('ponto_inicio_parada');
     }
-    // Atualiza o texto na hora, sem esperar o próximo tick do setInterval —
-    // importante porque em segundo plano é essa chamada (vinda do GPS) que
-    // pode ser a única chance de atualizar a tela por um bom tempo.
+
     atualizarTextoTempoParado();
 
-    // ---- atualiza sempre a leitura mais recente (não depende do filtro de 20m) ----
+    // Alimenta o painel administrativo em Tempo Real direto na raiz principal
     ultimaLeituraCompleta = {
         lat: lat, lon: lon, velocidade: vel, status: situacao,
         precisao: precisao,
@@ -549,33 +496,16 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         data: agora.toLocaleDateString('pt-BR'),
         tempoParado: document.getElementById('txtTempoParado').textContent
     };
-    enviarHeartbeat(); // tenta a cada leitura nova de GPS, mas só efetivamente envia respeitando o intervalo mínimo (2 minutos)
+    
+    sincronizarTempoRealImediato();
 
-    var distancia = ultimoPontoRegistrado
+    // === REGRAS ESTREITAS PARA O HISTÓRICO DE ROTAS DE VERDADE ===
+    var distanciaDoUltimoPonto = ultimoPontoRegistrado
         ? calcularDistanciaMetros(ultimoPontoRegistrado[0], ultimoPontoRegistrado[1], lat, lon)
         : Infinity;
 
-    // Se a precisão do GPS estiver ruim (círculo de incerteza grande), um
-    // "salto" de posição pode ser só erro de margem, não movimento real.
-    // Exigimos que a distância percorrida supere claramente essa margem.
-    var distanciaMinimaEfetiva = (precisao && precisao > PRECISAO_MAXIMA_CONFIAVEL_M)
-        ? Math.max(DISTANCIA_MINIMA_MOVIMENTO_M, precisao * 1.2)
-        : DISTANCIA_MINIMA_MOVIMENTO_M;
-
-    // Desde que o filtro nativo (distanceFilter) virou 0, o plugin pode
-    // entregar várias leituras bem próximas em sequência rápida — inclusive
-    // parado. Sem essa proteção, um "chacoalhar" do GPS podia passar pelo
-    // filtro de distância antes de o filtro de velocidade conseguir barrar,
-    // gerando pontos "PARADO" duplicados com o mesmo horário.
-    // Regra estrita: só cria ponto novo se for o primeiro de todos (sem
-    // histórico ainda) OU se o movimento estiver CONFIRMADO (leituras
-    // seguidas de velocidade acima do limite). Nada de exceção por tempo —
-    // essa exceção era o que ainda deixava passar ruído de GPS parado.
-    var permiteRegistro = !ultimoPontoRegistrado || movimentoConfirmado;
-
-    if (distancia >= distanciaMinimaEfetiva && permiteRegistro) {
+    if (distanciaDoUltimoPonto >= limiteConfirmarMovimento && (movimentoConfirmado || !ultimoPontoRegistrado)) {
         ultimoPontoRegistrado = [lat, lon];
-
         historicoCoordenadasLocais.push([lat, lon]);
         if (historicoCoordenadasLocais.length > 2000) historicoCoordenadasLocais.shift();
         polilinhaRota.setLatLngs(historicoCoordenadasLocais);
@@ -585,10 +515,6 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         var idPonto = gerarIdPonto(agora.getTime());
         var registro;
 
-        // Reaproveita o endereço já resolvido se o novo ponto está bem perto
-        // do último ponto que teve endereço confirmado — evita gastar mais
-        // uma consulta ao serviço de geocodificação (limitado a ~1 por
-        // segundo) para um ponto que provavelmente é a mesma rua/bairro.
         var distanciaDoUltimoEndereco = ultimoEnderecoConhecido
             ? calcularDistanciaMetros(ultimoEnderecoConhecido.lat, ultimoEnderecoConhecido.lon, lat, lon)
             : Infinity;
@@ -600,12 +526,9 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
             document.getElementById('txtEstado').textContent = ultimoEnderecoConhecido.estado;
 
             registro = {
-                id: idPonto,
-                lat: lat, lon: lon,
-                velocidade: vel, status: situacao,
+                id: idPonto, lat: lat, lon: lon, velocidade: vel, status: situacao,
                 tempoParado: document.getElementById('txtTempoParado').textContent,
-                hora: agora.toLocaleTimeString('pt-BR'),
-                data: agora.toLocaleDateString('pt-BR'),
+                hora: agora.toLocaleTimeString('pt-BR'), data: agora.toLocaleDateString('pt-BR'),
                 rua: ultimoEnderecoConhecido.rua, bairro: ultimoEnderecoConhecido.bairro,
                 cidade: ultimoEnderecoConhecido.cidade, estado: ultimoEnderecoConhecido.estado,
                 endereco: ultimoEnderecoConhecido.endereco
@@ -617,7 +540,6 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
                     filaPendentes.push(Object.assign({ vID: vNome, empresaId: EMPRESA_ID }, registro));
                 });
             }
-            // Não entra na fila de geocodificação — já temos o endereço.
         } else {
             document.getElementById('txtRua').textContent = "Buscando...";
             document.getElementById('txtBairro').textContent = "Buscando...";
@@ -625,12 +547,9 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
             document.getElementById('txtEstado').textContent = "Buscando...";
 
             registro = {
-                id: idPonto,
-                lat: lat, lon: lon,
-                velocidade: vel, status: situacao,
+                id: idPonto, lat: lat, lon: lon, velocidade: vel, status: situacao,
                 tempoParado: document.getElementById('txtTempoParado').textContent,
-                hora: agora.toLocaleTimeString('pt-BR'),
-                data: agora.toLocaleDateString('pt-BR'),
+                hora: agora.toLocaleTimeString('pt-BR'), data: agora.toLocaleDateString('pt-BR'),
                 rua: "Buscando endereço...", bairro: "Buscando endereço...",
                 cidade: "Buscando endereço...", estado: "Buscando endereço...",
                 endereco: "Buscando endereço..."
@@ -651,6 +570,24 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         enviarDadosFila();
         processarFilaGeocodificacao();
     }
+}
+
+function sincronizarTempoRealImediato() {
+    if (!ultimaLeituraCompleta || listaVeiculos.length === 0 || !navigator.onLine) return;
+    var updates = {};
+    listaVeiculos.forEach(vNome => {
+        var vidSeguro = sanitizarChavePath(vNome);
+        var empresaSegura = sanitizarChavePath(EMPRESA_ID);
+        var basePath = 'empresas/' + empresaSegura + '/veiculos/' + vidSeguro + '/atual/';
+        updates[basePath + 'lat'] = ultimaLeituraCompleta.lat;
+        updates[basePath + 'lon'] = ultimaLeituraCompleta.lon;
+        updates[basePath + 'velocidade'] = ultimaLeituraCompleta.velocidade;
+        updates[basePath + 'status'] = ultimaLeituraCompleta.status;
+        updates[basePath + 'hora'] = ultimaLeituraCompleta.hora;
+        updates[basePath + 'data'] = ultimaLeituraCompleta.data;
+        updates[basePath + 'tempoParado'] = ultimaLeituraCompleta.tempoParado;
+    });
+    db.ref().update(updates).catch(e => console.warn("Erro Heartbeat RT:", e));
 }
 
 function tratarErroGps(erro) {
@@ -682,17 +619,6 @@ function iniciarRastreioNativoBackground() {
         backgroundTitle: "Rastreador ativo",
         requestPermissions: true,
         stale: false,
-        // Antes usava DISTANCIA_MINIMA_MOVIMENTO_M (20m) aqui, o que fazia o
-        // plugin nativo simplesmente NÃO chamar este código enquanto o
-        // veículo estivesse parado (economia de bateria do plugin) — por
-        // isso "Horário do último ponto" e o heartbeat ficavam congelados
-        // por longos períodos parado, mesmo com o app rodando.
-        // Com 0, o plugin reporta no ritmo natural do GPS do aparelho,
-        // mesmo parado. Isso é seguro agora porque a filtragem de ruído
-        // (confirmação por leituras seguidas + margem de precisão) já foi
-        // adicionada em processarNovaPosicao() — ela decide corretamente
-        // se é "parado" ou "andando", sem duplicar pontos nem gerar falso
-        // movimento por causa dessa mudança.
         distanceFilter: 0
     }, function(location, error) {
         if (error) {
@@ -815,10 +741,6 @@ function processarFilaGeocodificacao() {
     geocodificando = true;
     atualizarInterfaceEstado();
 
-    // Prioriza o ponto MAIS RECENTE (fim da fila) em vez do mais antigo (início).
-    // Assim, mesmo com a fila grande numa viagem longa, o endereço atual sempre
-    // acaba sendo resolvido rápido — os pontos antigos ainda são processados
-    // depois, na medida em que a fila esvazia, para o histórico ficar completo.
     var ponto = filaGeocodificarDepois[filaGeocodificarDepois.length - 1];
 
     fetchComTimeout(
@@ -850,7 +772,7 @@ function processarFilaGeocodificacao() {
             if (ponto.tentativas >= MAX_TENTATIVAS_GEOCODIFICACAO) {
                 aplicarEnderecoNoPonto(ponto.id, "Endereço indisponível", "—", "—", "—");
                 filaGeocodificarDepois.pop();
-                mostrarAvisoGps("⚠️ Não foi possível buscar o endereço de alguns pontos (sem resposta do serviço de mapas). As coordenadas foram salvas normalmente.");
+                mostrarAvisoGps("⚠️ Não foi possível buscar o endereço de alguns pontos. As coordenadas foram salvas normalmente.");
             }
         })
         .finally(() => {
@@ -868,12 +790,9 @@ function aplicarEnderecoNoPonto(idPonto, rua, bairro, cidade, estado) {
 
     var reg = registroCompleto.find(r => r.id === idPonto);
     if (reg) {
-        reg.rua = rua; reg.bairro = bairro; reg.cidade = cidade; reg.estado = estado;
+        reg.rua = rua; reg.bairro = bairro; reg.cidade = city = cidade; reg.estado = estado;
         reg.endereco = enderecoTxt;
 
-        // Só guarda como "conhecido" se o endereço foi realmente encontrado
-        // (não em caso de erro/indisponível), para não propagar um endereço
-        // ruim para os próximos pontos próximos.
         if (rua !== "Endereço indisponível" && rua.indexOf("Erro:") !== 0) {
             ultimoEnderecoConhecido = {
                 lat: reg.lat, lon: reg.lon,
@@ -896,7 +815,6 @@ function aplicarEnderecoNoPonto(idPonto, rua, bairro, cidade, estado) {
         }
     });
 
-    // Corrige o que já foi enviado ao Firebase (agora dentro do caminho da empresa)
     if (listaVeiculos.length > 0) {
         var patch = {};
         listaVeiculos.forEach(vNome => {
@@ -910,17 +828,14 @@ function aplicarEnderecoNoPonto(idPonto, rua, bairro, cidade, estado) {
             patch[base + 'endereco'] = enderecoTxt;
         });
         try {
-            db.ref().update(patch).catch(err => console.warn("Falha ao corrigir endereço no Firebase (será tentado de novo no próximo ciclo):", err));
+            db.ref().update(patch).catch(err => console.warn("Falha ao corrigir endereço no Firebase:", err));
         } catch (erroSincrono) {
-            console.error("Correção de endereço: erro síncrono ao montar atualização:", erroSincrono);
+            console.error("Correção de endereço erro síncrono:", erroSincrono);
         }
     }
 }
 
 // ===================== ENVIO PARA O FIREBASE =====================
-// Cada ponto pendente já carrega o `empresaId` de quando foi gerado (assim, se
-// você trocar o ID da empresa no meio do caminho, pontos antigos ainda vão
-// para a empresa certa em vez de "vazar" para a nova).
 var enviando = false;
 var LIMITE_LOTE_ENVIO = 25;
 var LIMITE_FALHAS_LOTE = 5;
@@ -947,12 +862,6 @@ function enviarDadosFila() {
             var vidSeguro = sanitizarChavePath(item.vID);
             var basePath = 'empresas/' + empresaDoItem + '/veiculos/' + vidSeguro + '/';
             updates[basePath + 'historico/' + item.id] = item;
-            // NOTA: "atual" não é mais escrito aqui de propósito. Numa viagem longa,
-            // a fila de histórico pode acumular pontos antigos; se este lote atualizasse
-            // "atual" com o último item DELE, corria o risco de sobrescrever a posição
-            // real (mais recente, mandada pelo heartbeat) com uma posição antiga que
-            // ainda estava presa na fila. Quem mantém "atual" em tempo real agora é
-            // só o enviarHeartbeat(), que sempre usa a leitura mais nova do GPS.
         });
 
         db.ref().update(updates)
@@ -968,8 +877,6 @@ function enviarDadosFila() {
 
                 falhasConsecutivasLote++;
                 if (falhasConsecutivasLote >= LIMITE_FALHAS_LOTE) {
-                    console.warn("Descartando o ponto mais antigo da fila após falhas repetidas de sincronização.");
-                    mostrarErroSync(mensagem + "\n\n⚠️ A sincronização falhou " + LIMITE_FALHAS_LOTE + " vezes seguidas. O ponto mais antigo da fila foi descartado para não travar os demais.");
                     filaPendentes.shift();
                     falhasConsecutivasLote = 0;
                     salvarTudo();
@@ -981,60 +888,10 @@ function enviarDadosFila() {
                 if (filaPendentes.length > 0) enviarDadosFila();
             });
     } catch (erroSincrono) {
-        // Isso captura erros que acontecem NA HORA de montar/chamar update(),
-        // antes de qualquer tentativa de rede — o cenário clássico é um
-        // caractere proibido (. # $ [ ] /) em algum dado usado no caminho.
-        // Sem esse catch, "enviando" ficaria travado em true para sempre e a
-        // fila só cresceria, mesmo com internet perfeita.
-        console.error("Erro síncrono ao preparar envio (fila ficaria travada sem este catch):", erroSincrono);
-        mostrarErroSync("Erro ao preparar envio: " + (erroSincrono && erroSincrono.message ? erroSincrono.message : String(erroSincrono)) + "\n\n⚠️ Provavelmente um caractere inválido em algum dado. O ponto mais antigo da fila foi descartado para destravar os demais.");
         filaPendentes.shift();
         enviando = false;
         atualizarInterfaceEstado();
         if (filaPendentes.length > 0) enviarDadosFila();
-    }
-}
-
-// ---- HEARTBEAT ----
-// Só atualiza o nó "atual" de cada veículo com a leitura mais recente do GPS,
-// mesmo que o veículo não tenha andado os 20m necessários para gerar um ponto
-// de rota novo. Não mexe em historico/, na fila offline (filaPendentes) nem
-// na geocodificação — é uma escrita extra e independente, só para o painel
-// admin mostrar a posição mais recente conhecida.
-// Intervalo fixo de 2 minutos (decisão consciente: reduz o volume de escritas
-// no Firebase; em troca, a posição "atual" pode ficar até 2min desatualizada,
-// mesmo com o veículo em movimento).
-var ultimoHeartbeatTs = 0;
-var INTERVALO_HEARTBEAT_MS = 120000; // 2 minutos
-
-function enviarHeartbeat() {
-    if (!ultimaLeituraCompleta) return;
-    if (listaVeiculos.length === 0) return;
-    if (!navigator.onLine) return;
-
-    var agora = Date.now();
-    if (agora - ultimoHeartbeatTs < INTERVALO_HEARTBEAT_MS) return;
-    ultimoHeartbeatTs = agora;
-
-    var updates = {};
-    listaVeiculos.forEach(vNome => {
-        var vidSeguro = sanitizarChavePath(vNome);
-        var empresaSegura = sanitizarChavePath(EMPRESA_ID);
-        var basePath = 'empresas/' + empresaSegura + '/veiculos/' + vidSeguro + '/atual/';
-        updates[basePath + 'lat'] = ultimaLeituraCompleta.lat;
-        updates[basePath + 'lon'] = ultimaLeituraCompleta.lon;
-        updates[basePath + 'velocidade'] = ultimaLeituraCompleta.velocidade;
-        updates[basePath + 'status'] = ultimaLeituraCompleta.status;
-        updates[basePath + 'hora'] = ultimaLeituraCompleta.hora;
-        updates[basePath + 'data'] = ultimaLeituraCompleta.data;
-        updates[basePath + 'tempoParado'] = ultimaLeituraCompleta.tempoParado;
-    });
-
-    try {
-        db.ref().update(updates)
-            .catch(err => console.warn("Heartbeat falhou (sem problema, tenta de novo no próximo ciclo):", err));
-    } catch (erroSincrono) {
-        console.error("Heartbeat: erro síncrono ao montar atualização:", erroSincrono);
     }
 }
 
@@ -1071,7 +928,7 @@ window.addEventListener('offline', atualizarInterfaceEstado);
 document.getElementById('btnForcar').addEventListener('click', function() {
     processarFilaGeocodificacao();
     enviarDadosFila();
-    enviarHeartbeat();
+    sincronizarTempoRealImediato();
 });
 
 // ===================== EXPORTAR ROTA REAL (CSV) =====================
@@ -1125,7 +982,7 @@ setInterval(function() {
     if (filaGeocodificarDepois.length > 0) processarFilaGeocodificacao();
     if (filaPendentes.length > 0) enviarDadosFila();
     if (historicoCoordenadasLocais.length >= 2) agendarEncaixeNasRuas();
-    enviarHeartbeat(); // respeita o intervalo mínimo de 2 minutos internamente
+    sincronizarTempoRealImediato();
 }, 6000);
 
 </script>
