@@ -441,24 +441,29 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     document.getElementById('txtPrecisao').textContent = precisao ? `± ${precisao} m` : "—";
     document.getElementById('txtCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
 
-    // === FILTRAGEM DE MOVIMENTO REAL VS OSCILAÇÃO DE GPS ===
-    var LIMITE_MOVIMENTO_KMH = 4; 
-    var estaRealmenteAndando = vel >= LIMITE_MOVIMENTO_KMH;
-
-    var distanciaDesdeParada = pontoInicioParada
-        ? calcularDistanciaMetros(pontoInicioParada[0], pontoInicioParada[1], lat, lon)
-        : Infinity;
-
-    var limiteConfirmarMovimento = (precisao && precisao > PRECISAO_MAXIMA_CONFIAVEL_M)
-        ? Math.max(DISTANCIA_MINIMA_MOVIMENTO_M, precisao * 1.3)
-        : DISTANCIA_MINIMA_MOVIMENTO_M;
-
-    var movimentoConfirmado = estaRealmenteAndando && (distanciaDesdeParada > limiteConfirmarMovimento);
-
-    var situacao = "EM MOVIMENTO";
+    // === RESOLUÇÃO COMPLETA DO BUG DE MOVIMENTO FALSO ===
+    // Filtro estrito: Abaixo de 5km/h NUNCA é considerado movimento real (elimina ruído de 1km/h a 4km/h do chip)
+    var LIMITE_MOVIMENTO_KMH = 5; 
+    var situacao = "PARADO";
     var badgeStatus = document.getElementById('badStatus');
 
-    if (!movimentoConfirmado && vel === 0) {
+    if (vel >= LIMITE_MOVIMENTO_KMH) {
+        if (vel > LIMITE_VELOCIDADE) {
+            situacao = "VELOCIDADE ACIMA DO LIMITE";
+            badgeStatus.textContent = "EXCESSO DE VELOCIDADE";
+            badgeStatus.className = "badge badge-perigo";
+        } else {
+            situacao = "EM MOVIMENTO";
+            badgeStatus.textContent = "EM MOVIMENTO";
+            badgeStatus.className = "badge badge-movimento";
+        }
+        // Limpa cronômetros se andou de verdade
+        inicioParadaTs = null;
+        pontoInicioParada = null;
+        localStorage.removeItem('inicio_parada_ts');
+        localStorage.removeItem('ponto_inicio_parada');
+    } else {
+        // Força PARADO estrito se a velocidade for baixa, independente da oscilação de metros
         situacao = "PARADO";
         badgeStatus.textContent = "PARADO";
         badgeStatus.className = "badge badge-parado";
@@ -468,27 +473,11 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
             pontoInicioParada = [lat, lon];
             localStorage.setItem('ponto_inicio_parada', JSON.stringify(pontoInicioParada));
         }
-    } else if (vel > LIMITE_VELOCIDADE) {
-        situacao = "VELOCIDADE ACIMA DO LIMITE";
-        badgeStatus.textContent = "EXCESSO DE VELOCIDADE";
-        badgeStatus.className = "badge badge-perigo";
-        limparEstadoParada();
-    } else {
-        badgeStatus.textContent = "EM MOVIMENTO";
-        badgeStatus.className = "badge badge-movimento";
-        limparEstadoParada();
-    }
-
-    function limparEstadoParada() {
-        inicioParadaTs = null;
-        pontoInicioParada = null;
-        localStorage.removeItem('inicio_parada_ts');
-        localStorage.removeItem('ponto_inicio_parada');
     }
 
     atualizarTextoTempoParado();
 
-    // Alimenta o painel administrativo em Tempo Real direto na raiz principal
+    // Sincronização limpa e direta da posição atual instantânea para a tela admin
     ultimaLeituraCompleta = {
         lat: lat, lon: lon, velocidade: vel, status: situacao,
         precisao: precisao,
@@ -499,12 +488,17 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     
     sincronizarTempoRealImediato();
 
-    // === REGRAS ESTREITAS PARA O HISTÓRICO DE ROTAS DE VERDADE ===
+    // === CONTROLE DE GRAVAÇÃO DO HISTÓRICO DE ROTAS ===
     var distanciaDoUltimoPonto = ultimoPontoRegistrado
         ? calcularDistanciaMetros(ultimoPontoRegistrado[0], ultimoPontoRegistrado[1], lat, lon)
         : Infinity;
 
-    if (distanciaDoUltimoPonto >= limiteConfirmarMovimento && (movimentoConfirmado || !ultimoPontoRegistrado)) {
+    var limiteFiltroDistancia = (precisao && precisao > PRECISAO_MAXIMA_CONFIAVEL_M)
+        ? Math.max(DISTANCIA_MINIMA_MOVIMENTO_M, precisao * 1.3)
+        : DISTANCIA_MINIMA_MOVIMENTO_M;
+
+    // Só insere nova linha de rota se o veículo mudou consideravelmente de quadrante físico E está em velocidade
+    if (situacao !== "PARADO" && distanciaDoUltimoPonto >= limiteFiltroDistancia) {
         ultimoPontoRegistrado = [lat, lon];
         historicoCoordenadasLocais.push([lat, lon]);
         if (historicoCoordenadasLocais.length > 2000) historicoCoordenadasLocais.shift();
@@ -790,7 +784,7 @@ function aplicarEnderecoNoPonto(idPonto, rua, bairro, cidade, estado) {
 
     var reg = registroCompleto.find(r => r.id === idPonto);
     if (reg) {
-        reg.rua = rua; reg.bairro = bairro; reg.cidade = city = cidade; reg.estado = estado;
+        reg.rua = rua; reg.bairro = bairro; reg.cidade = cidade; reg.estado = estado;
         reg.endereco = enderecoTxt;
 
         if (rua !== "Endereço indisponível" && rua.indexOf("Erro:") !== 0) {
