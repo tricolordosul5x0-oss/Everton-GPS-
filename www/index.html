@@ -377,6 +377,7 @@ var pontoInicioParada = (function() {
     }
 })();
 var tempoParadoSegundos = 0;
+var jaGravouPontoInicialParada = localStorage.getItem('ja_gravou_parada') === 'true';
 
 function formatarTempoParado(segundos) {
     var hrs = Math.floor(segundos / 3600).toString().padStart(2, '0');
@@ -394,7 +395,13 @@ function atualizarTextoTempoParado() {
     document.getElementById('txtTempoParado').textContent = formatarTempoParado(tempoParadoSegundos);
 }
 
-setInterval(atualizarTextoTempoParado, 1000);
+// O setInterval de 1 segundo agora também atualiza o Firebase em TEMPO REAL de forma limpa
+setInterval(function() {
+    atualizarTextoTempoParado();
+    if (document.getElementById('badStatus').textContent === "PARADO") {
+        sincronizarTempoRealImediato();
+    }
+}, 1000);
 
 // ===================== CAPTURA DE GPS =====================
 var DISTANCIA_MINIMA_MOVIMENTO_M = 25; 
@@ -441,11 +448,10 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     document.getElementById('txtPrecisao').textContent = precisao ? `± ${precisao} m` : "—";
     document.getElementById('txtCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
 
-    // === RESOLUÇÃO COMPLETA DO BUG DE MOVIMENTO FALSO ===
-    // Filtro estrito: Abaixo de 5km/h NUNCA é considerado movimento real (elimina ruído de 1km/h a 4km/h do chip)
     var LIMITE_MOVIMENTO_KMH = 5; 
     var situacao = "PARADO";
     var badgeStatus = document.getElementById('badStatus');
+    var deveGravarNoHistorico = false;
 
     if (vel >= LIMITE_MOVIMENTO_KMH) {
         if (vel > LIMITE_VELOCIDADE) {
@@ -457,27 +463,40 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
             badgeStatus.textContent = "EM MOVIMENTO";
             badgeStatus.className = "badge badge-movimento";
         }
-        // Limpa cronômetros se andou de verdade
+        
+        // Se voltou a andar, limpa os estados de parada
         inicioParadaTs = null;
         pontoInicioParada = null;
+        jaGravouPontoInicialParada = false;
         localStorage.removeItem('inicio_parada_ts');
         localStorage.removeItem('ponto_inicio_parada');
+        localStorage.removeItem('ja_gravou_parada');
+
+        deveGravarNoHistorico = true; 
     } else {
-        // Força PARADO estrito se a velocidade for baixa, independente da oscilação de metros
         situacao = "PARADO";
         badgeStatus.textContent = "PARADO";
         badgeStatus.className = "badge badge-parado";
+        
         if (!inicioParadaTs) {
             inicioParadaTs = agora.getTime();
             localStorage.setItem('inicio_parada_ts', String(inicioParadaTs));
             pontoInicioParada = [lat, lon];
             localStorage.setItem('ponto_inicio_parada', JSON.stringify(pontoInicioParada));
         }
+
+        // NOVIDADE: Permite gravar APENAS 1 registro inicial de parada no histórico.
+        // Bloqueia leituras subsequentes para eliminar a duplicação de linhas repetidas.
+        if (!jaGravouPontoInicialParada) {
+            deveGravarNoHistorico = true;
+            jaGravouPontoInicialParada = true;
+            localStorage.setItem('ja_gravou_parada', 'true');
+        }
     }
 
     atualizarTextoTempoParado();
 
-    // Sincronização limpa e direta da posição atual instantânea para a tela admin
+    // Mantém o objeto de tempo real instantâneo atualizado
     ultimaLeituraCompleta = {
         lat: lat, lon: lon, velocidade: vel, status: situacao,
         precisao: precisao,
@@ -488,7 +507,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     
     sincronizarTempoRealImediato();
 
-    // === CONTROLE DE GRAVAÇÃO DO HISTÓRICO DE ROTAS ===
+    // === VALIDAÇÃO FÍSICA PARA FILTRAR O HISTÓRICO ===
     var distanciaDoUltimoPonto = ultimoPontoRegistrado
         ? calcularDistanciaMetros(ultimoPontoRegistrado[0], ultimoPontoRegistrado[1], lat, lon)
         : Infinity;
@@ -497,8 +516,8 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         ? Math.max(DISTANCIA_MINIMA_MOVIMENTO_M, precisao * 1.3)
         : DISTANCIA_MINIMA_MOVIMENTO_M;
 
-    // Só insere nova linha de rota se o veículo mudou consideravelmente de quadrante físico E está em velocidade
-    if (situacao !== "PARADO" && distanciaDoUltimoPonto >= limiteFiltroDistancia) {
+    // Regra de inserção no histórico: Grava se for o ponto único da parada OU se estiver andando e bateu a distância mínima
+    if (deveGravarNoHistorico && (situacao === "PARADO" || distanciaDoUltimoPonto >= limiteFiltroDistancia || !ultimoPontoRegistrado)) {
         ultimoPontoRegistrado = [lat, lon];
         historicoCoordenadasLocais.push([lat, lon]);
         if (historicoCoordenadasLocais.length > 2000) historicoCoordenadasLocais.shift();
@@ -579,7 +598,8 @@ function sincronizarTempoRealImediato() {
         updates[basePath + 'status'] = ultimaLeituraCompleta.status;
         updates[basePath + 'hora'] = ultimaLeituraCompleta.hora;
         updates[basePath + 'data'] = ultimaLeituraCompleta.data;
-        updates[basePath + 'tempoParado'] = ultimaLeituraCompleta.tempoParado;
+        // Atualiza dinamicamente no painel admin sem encher o histórico!
+        updates[basePath + 'tempoParado'] = document.getElementById('txtTempoParado').textContent; 
     });
     db.ref().update(updates).catch(e => console.warn("Erro Heartbeat RT:", e));
 }
@@ -674,6 +694,11 @@ function agendarEncaixeNasRuas() {
     setTimeout(executarEncaixeNasRuas, esperar);
 }
 
+function GridMatchOSRM(coordsStr) {
+    var url = `https://router.project-osrm.org/match/v1/driving/${coordsStr}?overview=full&geometries=geojson&overview=full`;
+    return fetchComTimeout(url, {}, TIMEOUT_FETCH_MS);
+}
+
 function executarEncaixeNasRuas() {
     encaixeAgendado = false;
     ultimoEncaixeTs = Date.now();
@@ -682,9 +707,8 @@ function executarEncaixeNasRuas() {
 
     var pontos = historicoCoordenadasLocais.slice(-100);
     var coordsStr = pontos.map(p => p[1].toFixed(6) + "," + p[0].toFixed(6)).join(";");
-    var url = `https://router.project-osrm.org/match/v1/driving/${coordsStr}?overview=full&geometries=geojson&overview=full`;
 
-    fetchComTimeout(url, {}, TIMEOUT_FETCH_MS)
+    GridMatchOSRM(coordsStr)
         .then(res => res.json())
         .then(data => {
             if (data.code === "Ok" && data.matchings && data.matchings.length > 0) {
@@ -805,7 +829,7 @@ function aplicarEnderecoNoPonto(idPonto, rua, bairro, cidade, estado) {
 
     filaPendentes.forEach(p => {
         if (p.id === idPonto) {
-            p.rua = rua; p.bairro = bairro; p.cidade = cidade; p.estado = estado; p.endereco = enderecoTxt;
+            p.rua = rua; p.bairro = bairro; p.cidade = city = cidade; p.estado = estado; p.endereco = enderecoTxt;
         }
     });
 
@@ -876,7 +900,7 @@ function enviarDadosFila() {
                     salvarTudo();
                 }
             })
-            .finally(() => {
+            .then(() => {
                 enviando = false;
                 atualizarInterfaceEstado();
                 if (filaPendentes.length > 0) enviarDadosFila();
@@ -893,10 +917,10 @@ function atualizarInterfaceEstado() {
     var barra = document.getElementById('statusConexao');
     var totalPendente = filaPendentes.length + filaGeocodificarDepois.length;
 
-    if (navigator.onLine && totalPendente === 0) {
+    if (navigator.onLine && totalPendente === 0 && listaVeiculos.length > 0) {
         barra.className = "status-bar status-online";
         barra.innerHTML = "📡 SISTEMA ONLINE — Todos os veículos sincronizados!";
-    } else if (navigator.onLine) {
+    } else if (navigator.onLine && listaVeiculos.length > 0) {
         barra.className = "status-bar status-online";
         barra.innerHTML = `📡 ONLINE — sincronizando... <span id="contadorPendentes">(${totalPendente} pendentes)</span>`;
     } else {
