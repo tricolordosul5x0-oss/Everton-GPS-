@@ -425,15 +425,12 @@ var DISTANCIA_MINIMA_MOVIMENTO_M = 20;
 
 // Filtro de ruído do GPS: uma leitura isolada de velocidade ou um "salto" de
 // posição não são confiáveis sozinhos, especialmente perto de galpões/prédios
-// (multipath do sinal). Duas proteções:
-// 1) Se a precisão do GPS estiver ruim, exigimos que o deslocamento seja bem
-//    maior que a margem de erro antes de considerar "andou de verdade".
-// 2) Só confirmamos "EM MOVIMENTO" depois de N leituras seguidas indicando
-//    velocidade acima do limite — um pico isolado (comum e normal em GPS) não
-//    muda mais o status sozinho.
+// (multipath do sinal). Proteção: se a precisão do GPS estiver ruim,
+// exigimos que o deslocamento seja bem maior que a margem de erro antes de
+// considerar "andou de verdade" — tanto pra criar ponto de histórico quanto
+// pra confirmar saída do estado "parado" (ver PRECISAO_MAXIMA_CONFIAVEL_M
+// mais abaixo, usado em ambos os lugares).
 var PRECISAO_MAXIMA_CONFIAVEL_M = 30;
-var LEITURAS_MIN_PARA_CONFIRMAR_MOVIMENTO = 2;
-var leiturasConsecutivasMovimento = 0;
 
 // Último endereço resolvido com sucesso, para reaproveitar em pontos
 // próximos e economizar consultas ao serviço de geocodificação (limitado a
@@ -491,22 +488,21 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
 
     var LIMITE_MOVIMENTO_KMH = 5; // abaixo disso é considerado "parado"
 
-    // Um pico isolado de velocidade (ruído de GPS, comum perto de galpões e
-    // prédios) não muda mais o status sozinho — só depois de confirmar em
-    // leituras seguidas é que tratamos como movimento de verdade. Além disso,
-    // exigimos que a posição tenha realmente se afastado de onde o veículo
-    // parou — porque o "tremor" do GPS parado às vezes também gera 2
-    // leituras seguidas de velocidade alta sem o veículo ter saído do lugar.
-    if (vel > LIMITE_MOVIMENTO_KMH) {
-        leiturasConsecutivasMovimento++;
-    } else {
-        leiturasConsecutivasMovimento = 0;
-    }
+    // A velocidade instantânea que o celular reporta pode ser instável —
+    // alguns aparelhos "piscam" entre um valor real e 0/nulo mesmo com o
+    // veículo andando, especialmente logo no início do trajeto ou com sinal
+    // fraco. Por isso, a confirmação de movimento agora se baseia na
+    // DISTÂNCIA percorrida desde onde o veículo realmente parou — um dado
+    // bem mais confiável do que a velocidade instantânea de uma única
+    // leitura. A margem exigida cresce se a precisão do GPS estiver ruim,
+    // pra não confundir "tremor" do GPS parado com movimento de verdade.
     var distanciaDesdeParada = pontoInicioParada
         ? calcularDistanciaMetros(pontoInicioParada[0], pontoInicioParada[1], lat, lon)
         : Infinity;
-    var movimentoConfirmado = leiturasConsecutivasMovimento >= LEITURAS_MIN_PARA_CONFIRMAR_MOVIMENTO
-        && distanciaDesdeParada >= DISTANCIA_MIN_SAIR_DA_PARADA_M;
+    var limiteConfirmarMovimento = (precisao && precisao > PRECISAO_MAXIMA_CONFIAVEL_M)
+        ? Math.max(DISTANCIA_MIN_SAIR_DA_PARADA_M, precisao * 1.2)
+        : DISTANCIA_MIN_SAIR_DA_PARADA_M;
+    var movimentoConfirmado = distanciaDesdeParada >= limiteConfirmarMovimento;
 
     var situacao = "EM MOVIMENTO";
     var badgeStatus = document.getElementById('badStatus');
@@ -1130,4 +1126,4 @@ setInterval(function() {
 
 </script>
 </body>
-</html>
+    </html>
