@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
@@ -238,6 +237,11 @@ var historicoCoordenadasLocais = JSON.parse(localStorage.getItem('historico_coor
 var registroCompleto = JSON.parse(localStorage.getItem('registro_completo') || "[]");
 var ultimoIdPontoParadaGravado = localStorage.getItem('ultimo_id_ponto_parada_gravado') || null;
 
+var coordenadaParadaFixa = (function() {
+    var raw = localStorage.getItem('coordenada_parada_fixa');
+    try { return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+})();
+
 if (historicoCoordenadasLocais.length > 0) {
     polilinhaRota.setLatLngs(historicoCoordenadasLocais);
     var ultimo = historicoCoordenadasLocais[historicoCoordenadasLocais.length - 1];
@@ -252,6 +256,7 @@ function salvarTudo() {
     if (registroCompleto.length > 5000) registroCompleto = registroCompleto.slice(-5000);
     localStorage.setItem('registro_completo', JSON.stringify(registroCompleto));
     if(ultimoIdPontoParadaGravado) localStorage.setItem('ultimo_id_ponto_parada_gravado', ultimoIdPontoParadaGravado);
+    if(coordenadaParadaFixa) localStorage.setItem('coordenada_parada_fixa', JSON.stringify(coordenadaParadaFixa));
 }
 
 // ===================== MODAL LOGIN =====================
@@ -324,7 +329,6 @@ function atualizarTextoTempoParado() {
     document.getElementById('txtTempoParado').textContent = formatarTempoParado(tempoParadoSegundos);
 }
 
-// Relógio Visual na Tela
 setInterval(function() {
     atualizarTextoTempoParado();
 }, 1000);
@@ -362,21 +366,24 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     document.getElementById('txtPrecisao').textContent = precisao ? `± ${precisao} m` : "—";
     document.getElementById('txtCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
 
+    var distanciaDoCentroDaParada = coordenadaParadaFixa ? calcularDistanciaMetros(coordenadaParadaFixa[0], coordenadaParadaFixa[1], lat, lon) : 0;
+
     var LIMITE_MOVIMENTO_KMH = 5; 
+    var RAIO_FALSO_MOVIMENTO_METROS = 50; 
     var situacao = "PARADO";
     var badgeStatus = document.getElementById('badStatus');
     var deveGravarNoHistorico = false;
 
-    if (vel >= LIMITE_MOVIMENTO_KMH) {
+    if (vel >= LIMITE_MOVIMENTO_KMH && (!coordenadaParadaFixa || distanciaDoCentroDaParada > RAIO_FALSO_MOVIMENTO_METROS)) {
         situacao = (vel > LIMITE_VELOCIDADE) ? "VELOCIDADE ACIMA DO LIMITE" : "EM MOVIMENTO";
         badgeStatus.textContent = situacao;
         badgeStatus.className = (vel > LIMITE_VELOCIDADE) ? "badge badge-perigo" : "badge badge-movimento";
         
-        // Reseta cronômetros de parada de forma definitiva apenas se o carro andou!
-        inicioParadaTs = null; jaGravouPontoInicialParada = false; ultimoIdPontoParadaGravado = null;
+        inicioParadaTs = null; jaGravouPontoInicialParada = false; ultimoIdPontoParadaGravado = null; coordenadaParadaFixa = null;
         localStorage.removeItem('inicio_parada_ts');
         localStorage.removeItem('ja_gravou_parada');
         localStorage.removeItem('ultimo_id_ponto_parada_gravado');
+        localStorage.removeItem('coordenada_parada_fixa');
 
         var distanciaDoUltimoPonto = ultimoPontoRegistrado ? calcularDistanciaMetros(ultimoPontoRegistrado[0], ultimoPontoRegistrado[1], lat, lon) : Infinity;
         var tempoDesdeUltimoPontoMs = agoraTs - ultimoPontoHistoricoTs;
@@ -387,10 +394,13 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     } else {
         situacao = "PARADO"; badgeStatus.textContent = "PARADO"; badgeStatus.className = "badge badge-parado";
         
-        // Sem limites de inatividade arbitrários. Se parou, salva o timestamp fixo na memória física.
         if (!inicioParadaTs) {
             inicioParadaTs = agoraTs;
             localStorage.setItem('inicio_parada_ts', String(inicioParadaTs));
+        }
+        if (!coordenadaParadaFixa) {
+            coordenadaParadaFixa = [lat, lon];
+            localStorage.setItem('coordenada_parada_fixa', JSON.stringify(coordenadaParadaFixa));
         }
 
         if (!jaGravouPontoInicialParada) {
@@ -403,7 +413,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     atualizarTextoTempoParado();
 
     ultimaLeituraCompleta = {
-        lat: lat, lon: lon, velocidade: vel, status: situacao, precisao: precisao,
+        lat: lat, lon: lon, velocidade: (situacao === "PARADO" ? 0 : vel), status: situacao, precisao: precisao,
         hora: agora.toLocaleTimeString('pt-BR'), data: agora.toLocaleDateString('pt-BR'),
         tempoParado: document.getElementById('txtTempoParado').textContent
     };
@@ -421,9 +431,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         agendarEncaixeNasRuas(); talvezBuscarTemperatura(lat, lon);
 
         var idPonto = gerarIdPonto(agoraTs);
-        if (situacao === "PARADO") {
-            ultimoIdPontoParadaGravado = idPonto;
-        }
+        if (situacao === "PARADO") { ultimoIdPontoParadaGravado = idPonto; }
 
         var registro;
         var distanciaDoUltimoEndereco = ultimoEnderecoConhecido ? calcularDistanciaMetros(ultimoEnderecoConhecido.lat, ultimoEnderecoConhecido.lon, lat, lon) : Infinity;
@@ -435,7 +443,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
             document.getElementById('txtEstado').textContent = ultimoEnderecoConhecido.estado;
 
             registro = {
-                id: idPonto, lat: lat, lon: lon, velocidade: vel, status: situacao,
+                id: idPonto, lat: lat, lon: lon, velocidade: (situacao === "PARADO" ? 0 : vel), status: situacao,
                 tempoParado: document.getElementById('txtTempoParado').textContent,
                 hora: agora.toLocaleTimeString('pt-BR'), data: agora.toLocaleDateString('pt-BR'),
                 rua: ultimoEnderecoConhecido.rua, bairro: ultimoEnderecoConhecido.bairro,
@@ -452,7 +460,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
             document.getElementById('txtEstado').textContent = "Buscando...";
 
             registro = {
-                id: idPonto, lat: lat, lon: lon, velocidade: vel, status: situacao,
+                id: idPonto, lat: lat, lon: lon, velocidade: (situacao === "PARADO" ? 0 : vel), status: situacao,
                 tempoParado: document.getElementById('txtTempoParado').textContent,
                 hora: agora.toLocaleTimeString('pt-BR'), data: agora.toLocaleDateString('pt-BR'),
                 rua: "Buscando endereço...", bairro: "Buscando endereço...", cidade: "Buscando endereço...", estado: "Buscando endereço...", endereco: "Buscando endereço..."
@@ -468,7 +476,6 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     }
 }
 
-// Envia dados instantâneos para a aba de Monitoramento em Tempo Real
 function sincronizarTempoRealImediato() {
     if (!ultimaLeituraCompleta || listaVeiculos.length === 0 || !navigator.onLine) return;
     var updates = {};
@@ -485,7 +492,7 @@ function sincronizarTempoRealImediato() {
     db.ref().update(updates).catch(e => console.warn(e));
 }
 
-// --- SOLUÇÃO DO ADMIN: Atualiza o nó do histórico de 30 em 30 segundos enquanto estiver estacionado ---
+// Sincronização Periódica para o Histórico do Admin
 setInterval(function() {
     var statusAtual = document.getElementById('badStatus').textContent;
     if (statusAtual.indexOf("PARADO") !== -1 && ultimoIdPontoParadaGravado && listaVeiculos.length > 0 && navigator.onLine) {
@@ -496,11 +503,10 @@ setInterval(function() {
         listaVeiculos.forEach(vNome => {
             var path = 'empresas/' + sanitizarChavePath(EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(vNome) + '/historico/' + ultimoIdPontoParadaGravado + '/';
             patchHistorico[path + 'tempoParado'] = tempoAtualizado;
-            // Atualiza a hora interna do ponto para o Admin saber que ele continua ali parado agora
             patchHistorico[path + 'horaFinalParada'] = agoraStr; 
         });
         
-        db.ref().update(patchHistorico).catch(e => console.warn("Erro ao atualizar histórico dinâmico:", e));
+        db.ref().update(patchHistorico).catch(e => console.warn(e));
     }
 }, 30000);
 
@@ -542,7 +548,7 @@ function agendarEncaixeNasRuas() {
     if (encaixeAgendado) return; encaixeAgendado = true;
     setTimeout(executarEncaixeNasRuas, esperar);
 }
-function ejecutarEncaixeNasRuas() {
+function executarEncaixeNasRuas() {
     encaixeAgendado = false; ultimoEncaixeTs = Date.now();
     if (historicoCoordenadasLocais.length < 2) return;
     var pontos = historicoCoordenadasLocais.slice(-100);
@@ -599,7 +605,9 @@ function aplicarEnderecoNoPonto(idPonto, rua, bairro, cidade, estado) {
     var reg = registroCompleto.find(r => r.id === idPonto);
     if (reg) {
         reg.rua = rua; reg.bairro = bairro; reg.cidade = cidade; reg.estado = estado; reg.endereco = enderecoTxt;
-        if (rua !== "Endereço indisponível") ultimoEnderecoConhecido = { lat: reg.lat, lon: reg.lon, rua: rua, bairro: bairro, cidade: cidade, estado: estado, endereco: enderecoTxt };
+        if (rua !== "Endereço indisponível") {
+            ultimoEnderecoConhecido = { lat: reg.lat, lon: reg.lon, rua: rua, bairro: bairro, cidade: cidade, estado: estado, endereco: enderecoTxt };
+        }
     }
     if (registroCompleto.length > 0 && registroCompleto[registroCompleto.length - 1].id === idPonto) {
         document.getElementById('txtRua').textContent = rua; document.getElementById('txtBairro').textContent = bairro;
