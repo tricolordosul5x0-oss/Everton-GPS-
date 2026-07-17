@@ -492,7 +492,6 @@ function sincronizarTempoRealImediato() {
     db.ref().update(updates).catch(e => console.warn(e));
 }
 
-// Sincronização Periódica para o Histórico do Admin
 setInterval(function() {
     var statusAtual = document.getElementById('badStatus').textContent;
     if (statusAtual.indexOf("PARADO") !== -1 && ultimoIdPontoParadaGravado && listaVeiculos.length > 0 && navigator.onLine) {
@@ -589,7 +588,7 @@ function processarFilaGeocodificacao() {
             var bairro = addr.suburb || addr.neighbourhood || "Bairro não localizado";
             var cidade = addr.city || addr.town || "Cidade não localizada";
             var estado = addr.state || "Estado não localizado";
-            aplicarEnderecoNoPonto(ponto.id, rua, bairro, city = cidade, estado);
+            aplicarEnderecoNoPonto(ponto.id, rua, bairro, cidade, estado);
             filaGeocodificarDepois.pop();
         }).catch(err => {
             ponto.tentativas = (ponto.tentativas || 0) + 1;
@@ -659,9 +658,9 @@ document.getElementById('btnForcar').addEventListener('click', function() { proc
 
 document.getElementById('btnExportar').addEventListener('click', function() {
     if (registroCompleto.length === 0) return alert("Sem pontos.");
-    var linhas = ["Data;Hora;Latitude;Longitude;Velocidade(km/h);Situacao;Rua;Bairro;Cidade;Estado"];
-    registroCompleto.forEach(p => { linhas.push([p.data, p.hora, p.lat, p.lon, p.velocidade, p.status, p.rua, p.bairro, p.cidade, p.estado].join(";")); });
-    var blob = new Blob([linhas.join("\n")], { type: "text/csv;charset=utf-8;" });
+    var lines = ["Data;Hora;Latitude;Longitude;Velocidade(km/h);Situacao;Rua;Bairro;Cidade;Estado"];
+    registroCompleto.forEach(p => { lines.push([p.data, p.hora, p.lat, p.lon, p.velocidade, p.status, p.rua, p.bairro, p.cidade, p.estado].join(";")); });
+    var blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
     var url = URL.createObjectURL(blob); var a = document.createElement("a"); a.href = url; a.download = "rota_real_" + new Date().toISOString().slice(0,10) + ".csv"; a.click(); URL.revokeObjectURL(url);
 });
 
