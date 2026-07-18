@@ -161,6 +161,19 @@ firebase.initializeApp(firebaseConfig);
 var db = firebase.database();
 var auth = firebase.auth();
 
+// Variável de controle para monitorar a conexão ativa com o Firebase
+var firebaseOnlineConfirmado = false;
+
+// Monitor do estado de conexão interno do próprio Firebase
+db.ref(".info/connected").on("value", function(snap) {
+    if (snap.val() === true) {
+        firebaseOnlineConfirmado = true;
+    } else {
+        firebaseOnlineConfirmado = false;
+    }
+    atualizarInterfaceEstado();
+});
+
 var LIMITE_VELOCIDADE = 80;
 var EMPRESA_ID = localStorage.getItem('empresa_id') || "tricolordosul5x0_gmail_com";
 document.getElementById('empresaIdInput').value = EMPRESA_ID;
@@ -298,12 +311,13 @@ document.getElementById('btnAdicionar').addEventListener('click', function() {
     abrirModalLogin(function() {
         listaVeiculos.push(nome); salvarTudo();
         document.getElementById('veiculoInput').value = ""; renderizarFrotaLocal();
+        atualizarInterfaceEstado();
         auth.signOut();
     });
 });
 window.removerVeiculoExigindoSenha = function(index) {
     abrirModalLogin(function() {
-        if (confirm(`Remover veículo?`)) { listaVeiculos.splice(index, 1); salvarTudo(); renderizarFrotaLocal(); }
+        if (confirm(`Remover veículo?`)) { listaVeiculos.splice(index, 1); salvarTudo(); renderizarFrotaLocal(); atualizarInterfaceEstado(); }
         auth.signOut();
     });
 };
@@ -477,7 +491,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
 }
 
 function sincronizarTempoRealImediato() {
-    if (!ultimaLeituraCompleta || listaVeiculos.length === 0 || !navigator.onLine) return;
+    if (!ultimaLeituraCompleta || listaVeiculos.length === 0 || !firebaseOnlineConfirmado) return;
     var updates = {};
     listaVeiculos.forEach(vNome => {
         var basePath = 'empresas/' + sanitizarChavePath(EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(vNome) + '/atual/';
@@ -489,12 +503,14 @@ function sincronizarTempoRealImediato() {
         updates[basePath + 'data'] = ultimaLeituraCompleta.data;
         updates[basePath + 'tempoParado'] = document.getElementById('txtTempoParado').textContent; 
     });
-    db.ref().update(updates).catch(e => console.warn(e));
+    db.ref().update(updates).then(() => {
+        if(!firebaseOnlineConfirmado) { firebaseOnlineConfirmado = true; atualizarInterfaceEstado(); }
+    }).catch(e => console.warn(e));
 }
 
 setInterval(function() {
     var statusAtual = document.getElementById('badStatus').textContent;
-    if (statusAtual.indexOf("PARADO") !== -1 && ultimoIdPontoParadaGravado && listaVeiculos.length > 0 && navigator.onLine) {
+    if (statusAtual.indexOf("PARADO") !== -1 && ultimoIdPontoParadaGravado && listaVeiculos.length > 0 && firebaseOnlineConfirmado) {
         var tempoAtualizado = document.getElementById('txtTempoParado').textContent;
         var agoraStr = new Date().toLocaleTimeString('pt-BR');
         var patchHistorico = {};
@@ -547,7 +563,7 @@ function agendarEncaixeNasRuas() {
     if (encaixeAgendado) return; encaixeAgendado = true;
     setTimeout(executarEncaixeNasRuas, esperar);
 }
-function executarEncaixeNasRuas() {
+function ejecutarEncaixeNasRuas() {
     encaixeAgendado = false; ultimoEncaixeTs = Date.now();
     if (historicoCoordenadasLocais.length < 2) return;
     var pontos = historicoCoordenadasLocais.slice(-100);
@@ -633,7 +649,7 @@ function enviarDadosFila() {
             updates[basePath] = item;
         });
         db.ref().update(updates).then(() => {
-            filaPendentes.splice(0, lote.length); falhasConsecutivasLote = 0; salvarTudo();
+            filaPendentes.splice(0, lote.length); falhasConsecutivasLote = 0; firebaseOnlineConfirmado = true; salvarTudo();
         }).catch(e => {
             falhasConsecutivasLote++; if (falhasConsecutivasLote >= 5) { filaPendentes.shift(); falhasConsecutivasLote = 0; salvarTudo(); }
         }).finally(() => { enviando = false; atualizarInterfaceEstado(); if (filaPendentes.length > 0) enviarDadosFila(); });
@@ -642,9 +658,11 @@ function enviarDadosFila() {
 
 function atualizarInterfaceEstado() {
     var barra = document.getElementById('statusConexao'); var totalPendente = filaPendentes.length + filaGeocodificarDepois.length;
-    if (navigator.onLine && totalPendente === 0 && listaVeiculos.length > 0) {
+    if (listaVeiculos.length === 0) {
+        barra.className = "status-bar status-offline"; barra.innerHTML = "MODO OFFLINE — Adicione um Veículo";
+    } else if (firebaseOnlineConfirmado && totalPendente === 0) {
         barra.className = "status-bar status-online"; barra.innerHTML = "📡 SISTEMA ONLINE — Sincronizado!";
-    } else if (navigator.onLine && listaVeiculos.length > 0) {
+    } else if (firebaseOnlineConfirmado) {
         barra.className = "status-bar status-online"; barra.innerHTML = `📡 ONLINE — Sincronizando... <span>(${totalPendente} pendentes)</span>`;
     } else {
         barra.className = "status-bar status-offline"; barra.innerHTML = `MODO OFFLINE <span>(${totalPendente} pendentes)</span>`;
@@ -652,9 +670,15 @@ function atualizarInterfaceEstado() {
     document.getElementById('filaInfo').textContent = registroCompleto.length + " pontos gravados localmente (" + filaPendentes.length + " no Firebase)";
 }
 
-window.addEventListener('online', function() { atualizarInterfaceEstado(); processarFilaGeocodificacao(); enviarDadosFila(); agendarEncaixeNasRuas(); });
-window.addEventListener('offline', atualizarInterfaceEstado);
-document.getElementById('btnForcar').addEventListener('click', function() { processarFilaGeocodificacao(); enviarDadosFila(); sincronizarTempoRealImediato(); });
+// Escutadores alternativos para forçar revalidação caso a rede oscile visivelmente
+window.addEventListener('online', function() { firebaseOnlineConfirmado = true; atualizarInterfaceEstado(); processarFilaGeocodificacao(); enviarDadosFila(); agendarEncaixeNasRuas(); });
+window.addEventListener('offline', function() { firebaseOnlineConfirmado = false; atualizarInterfaceEstado(); });
+
+document.getElementById('btnForcar').addEventListener('click', function() { 
+    processarFilaGeocodificacao(); 
+    enviarDadosFila(); 
+    sincronizarTempoRealImediato(); 
+});
 
 document.getElementById('btnExportar').addEventListener('click', function() {
     if (registroCompleto.length === 0) return alert("Sem pontos.");
