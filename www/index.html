@@ -3,1853 +3,728 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy"
-        content="
-            default-src 'self';
-            script-src  'self' 'unsafe-inline'
-                        https://cdnjs.cloudflare.com
-                        https://www.gstatic.com
-                        https://www.googleapis.com;
-            style-src   'self' 'unsafe-inline'
-                        https://fonts.googleapis.com
-                        https://cdnjs.cloudflare.com;
-            font-src    https://fonts.gstatic.com
-                        https://cdnjs.cloudflare.com;
-            img-src     'self' data: https: blob:;
-            connect-src 'self'
-                        https://*.firebaseio.com
-                        https://firebaseinstallations.googleapis.com
-                        wss://*.firebaseio.com
-                        https://*.googleapis.com
-                        https://generativelanguage.googleapis.com;
-            frame-ancestors 'none';
-        ">
-    <meta http-equiv="X-Frame-Options" content="DENY">
-    <meta http-equiv="Strict-Transport-Security" content="max-age=31536000; includeSubDomains">
-    <meta http-equiv="X-Content-Type-Options" content="nosniff">
-    <name="referrer" content="strict-origin-when-cross-origin">
-
-    <title>Josi Doces Gourmet</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
+    <title>Rastreador Everton GPS - Multi-Frota</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
     <style>
         :root {
-            --marrom-escuro: #3e2723;
-            --marrom-medio: #5d4037;
-            --marrom-claro: #8d6e63;
-            --creme-escuro: #d7ccc8;
-            --creme-medio: #efebe9;
-            --creme-fundo: #fdf5e6;
-            --verde-whats: #25D366;
-            --destaque: #c8860a;
-            --sombra-suave: 0 4px 20px rgba(62,39,35,0.1);
-            --sombra-media: 0 6px 25px rgba(62,39,35,0.18);
+            --bg-main: #0a0d12;
+            --bg-card: #131820;
+            --border: rgba(255,255,255,.08);
+            --signal-on: #00ffa6;
+            --signal-off: #ffb020;
+            --danger: #ff5470;
+            --telemetry: #2dd4ff;
+            --text: #eef2f6;
+            --text-dim: #74808f;
         }
-
-        * { box-sizing: border-box; }
-
         body {
-            font-family: 'Lato', 'Segoe UI', Arial, sans-serif;
-            margin: 0;
-            background: var(--creme-fundo);
-            color: var(--marrom-escuro);
-            scroll-behavior: smooth;
+            margin: 0; padding: 0; font-family: system-ui, sans-serif;
+            background: var(--bg-main); color: var(--text);
+            display: flex; flex-direction: column; height: 100vh;
         }
+        #map { width: 100%; height: 32vh; background: #000; }
+        .container { padding: 16px; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
 
-        .splash-boas-vindas {
-            position: fixed;
-            inset: 0;
-            z-index: 10000;
-            background: linear-gradient(155deg, var(--marrom-escuro) 0%, var(--marrom-medio) 55%, var(--marrom-claro) 100%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            padding: 30px;
-            opacity: 1;
-            visibility: visible;
-            animation: splashFade 4s ease-in-out forwards;
-        }
-        .splash-boas-vindas::before {
-            content: '';
-            position: absolute;
-            top: -70px; right: -70px;
-            width: 220px; height: 220px;
-            background: rgba(255,255,255,0.05);
-            border-radius: 50%;
-        }
-        .splash-boas-vindas::after {
-            content: '';
-            position: absolute;
-            bottom: -50px; left: -50px;
-            width: 180px; height: 180px;
-            background: rgba(255,255,255,0.05);
-            border-radius: 50%;
-        }
-        .splash-conteudo {
-            position: relative;
-            z-index: 1;
-            color: #fff;
-            opacity: 0;
-            transform: translateY(14px) scale(0.96);
-            animation: splashConteudoEntra 0.9s ease 0.15s forwards;
-        }
-        .splash-emoji {
-            font-size: 48px;
-            display: block;
-            margin-bottom: 14px;
-            animation: splashFlutuar 2.4s ease-in-out infinite;
-        }
-        .splash-saudacao {
-            display: block;
-            font-family: 'Lato', sans-serif;
-            font-size: 14px;
-            letter-spacing: 2.5px;
-            text-transform: uppercase;
-            color: rgba(255,255,255,0.7);
-            margin-bottom: 8px;
-            font-weight: 700;
-        }
-        .splash-conteudo h1 {
-            font-family: 'Playfair Display', serif;
-            font-size: 28px;
-            font-weight: 700;
-            margin: 0 0 4px;
-            line-height: 1.3;
-        }
-        .splash-conteudo h1 strong {
-            display: block;
-            color: var(--destaque);
-            font-size: 32px;
-        }
-        .splash-linha {
-            width: 56px; height: 2px;
-            background: var(--destaque);
-            margin: 16px auto;
-            opacity: 0.85;
-        }
-        .splash-conteudo p {
-            font-family: 'Lato', sans-serif;
-            font-size: 15px;
-            color: rgba(255,255,255,0.9);
-            max-width: 270px;
-            margin: 0 auto;
-            line-height: 1.55;
-            letter-spacing: 0.2px;
-        }
-        @keyframes splashFade {
-            0%   { opacity: 1; visibility: visible; }
-            85%  { opacity: 1; visibility: visible; }
-            100% { opacity: 0; visibility: hidden; pointer-events: none; }
-        }
-        @keyframes splashConteudoEntra {
-            to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes splashFlutuar {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-8px); }
-        }
+        .input-box { background: var(--bg-card); border: 1px solid var(--border); padding: 12px; border-radius: 8px; }
+        .input-box label { font-size: 0.75em; text-transform: uppercase; color: var(--text-dim); display: block; margin-bottom: 6px; font-weight: bold; }
+        .row { display: flex; gap: 8px; }
+        input { flex: 1; background: #1a212b; border: 1px solid var(--border); padding: 12px; border-radius: 6px; color: white; font-size: 1em; }
+        button { background: var(--signal-on); color: #000; border: none; padding: 12px 20px; font-weight: bold; border-radius: 6px; cursor: pointer; }
 
-        .barra-cupom {
-            background: linear-gradient(90deg, #c8860a, #a06810);
-            color: white;
-            text-align: center;
-            padding: 9px 12px;
-            font-size: 13px;
-            font-weight: 700;
-            font-family: 'Lato', sans-serif;
-            position: sticky;
-            top: 0;
-            z-index: 1005;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.2);
-            letter-spacing: 0.6px;
-        }
+        .frota-container { background: var(--bg-card); border: 1px solid var(--border); padding: 12px; border-radius: 8px; }
+        .frota-lista { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+        .tag-veiculo { background: #1a212b; border: 1px solid var(--border); padding: 6px 12px; border-radius: 20px; font-size: 0.85em; display: flex; align-items: center; gap: 8px; }
+        .btn-remover { color: var(--danger); cursor: pointer; font-weight: bold; border: none; background: none; padding: 0; font-size: 1.1em; }
 
-        .alerta-progresso-cupom {
-            background: linear-gradient(135deg, #fff8e1, #fff3cd);
-            color: #7a5800;
-            border: 1.5px dashed #f0c040;
-            padding: 12px 14px;
-            border-radius: 12px;
-            font-size: 13px;
-            margin-bottom: 12px;
-            font-weight: 600;
-            line-height: 1.5;
-            text-align: left;
-        }
-        .alerta-sucesso-cupom {
-            background: linear-gradient(135deg, #e8f5e9, #d4edda);
-            color: #1b5e20;
-            border: 1.5px dashed #81c784;
-            padding: 12px 14px;
-            border-radius: 12px;
-            font-size: 13px;
-            margin-bottom: 12px;
-            font-weight: 700;
-            text-align: left;
-        }
+        .status-bar { padding: 12px; border-radius: 6px; text-align: center; font-weight: bold; font-size: 0.9em; }
+        .status-online { background: rgba(0, 255, 166, 0.15); color: var(--signal-on); border: 1px solid var(--signal-on); }
+        .status-offline { background: rgba(255, 176, 32, 0.15); color: var(--signal-off); border: 1px solid var(--signal-off); }
+        .status-erro { background: rgba(255, 84, 112, 0.15); color: var(--danger); border: 1px solid var(--danger); }
+        .status-bg { background: rgba(45, 212, 255, 0.15); color: var(--telemetry); border: 1px solid var(--telemetry); }
 
-        header {
-            background: linear-gradient(155deg, var(--marrom-escuro) 0%, var(--marrom-medio) 60%, var(--marrom-claro) 100%);
-            color: #fff;
-            text-align: center;
-            padding: 45px 20px 50px;
-            border-bottom-left-radius: 40px;
-            border-bottom-right-radius: 40px;
-            box-shadow: var(--sombra-media);
-            position: relative;
-            overflow: hidden;
-        }
+        .btn-row { display: flex; gap: 8px; }
+        .btn-force { background: #2dd4ff; color: #000; flex: 2; padding: 14px; font-size: 0.95em; text-transform: uppercase; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; }
+        .btn-export { background: #1a212b; color: var(--text); border: 1px solid var(--border); flex: 1; padding: 14px; font-size: 0.85em; font-weight: bold; border-radius: 6px; cursor: pointer; }
 
-        header::before {
-            content: '';
-            position: absolute;
-            top: -60px; right: -60px;
-            width: 220px; height: 220px;
-            background: rgba(255,255,255,0.04);
-            border-radius: 50%;
-        }
-        header::after {
-            content: '';
-            position: absolute;
-            bottom: -40px; left: -40px;
-            width: 160px; height: 160px;
-            background: rgba(255,255,255,0.04);
-            border-radius: 50%;
-        }
+        .telemetry-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+        .telemetry-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.9em; gap: 8px; }
+        .telemetry-row b, .telemetry-row span { text-align: right; }
+        .telemetry-row:last-child { border-bottom: none; }
 
-        .logo-container {
-            width: 138px; height: 138px;
-            background: linear-gradient(145deg, #fff, var(--creme-medio));
-            border-radius: 50%;
-            margin: 0 auto 18px;
-            display: flex; align-items: center; justify-content: center;
-            border: 4px solid rgba(255,255,255,0.35);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.25), 0 0 0 8px rgba(255,255,255,0.07);
-            position: relative; z-index: 1;
-            overflow: hidden;
-        }
-        
-        .logo-img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
+        .badge { font-size: 0.75em; padding: 3px 8px; border-radius: 4px; font-weight: bold; }
+        .badge-movimento { background: rgba(0,255,166,0.15); color: var(--signal-on); }
+        .badge-parado { background: rgba(255, 176, 32, 0.15); color: var(--signal-off); }
+        .badge-perigo { background: rgba(255, 84, 112, 0.15); color: var(--danger); }
 
-        .logo-content { text-align: center; color: var(--marrom-medio); line-height: 1.1; }
-        .logo-content .name-josi {
-            font-size: 26px; font-weight: 700;
-            font-family: 'Playfair Display', Georgia, serif;
-            display: block; color: var(--marrom-escuro);
-        }
-        .logo-content .name-doces {
-            font-size: 14px; text-transform: uppercase;
-            letter-spacing: 2px; display: block;
-            border-top: 1px solid var(--creme-escuro);
-            margin-top: 3px; padding-top: 3px;
-            color: var(--marrom-claro); font-weight: 700;
-        }
-        .logo-content .name-gourmet {
-            font-size: 10px; font-weight: 700;
-            color: var(--destaque); display: block;
-            letter-spacing: 1px;
-        }
+        .gps-warning { background: rgba(255,84,112,0.12); border: 1px solid var(--danger); color: var(--danger); padding: 10px 12px; border-radius: 6px; font-size: 0.85em; display: none; }
+        .fila-info { font-size: 0.75em; color: var(--text-dim); text-align: center; }
 
-        header h1 {
-            font-family: 'Playfair Display', serif;
-            font-size: 26px; margin: 0 0 5px;
-            letter-spacing: 0.5px;
-            position: relative; z-index: 1;
-        }
-
-        .insta-header {
-            display: inline-flex; align-items: center; justify-content: center;
-            background: rgba(255,255,255,0.15);
-            backdrop-filter: blur(8px);
-            color: #fff !important;
-            padding: 9px 18px;
-            border-radius: 25px;
-            text-decoration: none;
-            font-size: 14px;
-            margin-top: 15px;
-            font-weight: 700;
-            transition: 0.3s ease;
-            border: 1px solid rgba(255,255,255,0.3);
-            position: relative; z-index: 1;
-            letter-spacing: 0.3px;
-        }
-        .insta-header img { margin-right: 8px; filter: brightness(0) invert(1); }
-        .insta-header:hover {
-            transform: scale(1.06);
-            background: rgba(255,255,255,0.25);
-        }
-
-        .insta-float {
-            position: fixed; top: 50px; right: 16px; z-index: 1002;
-            background: white; padding: 10px; border-radius: 50%;
-            box-shadow: var(--sombra-media);
-            width: 46px; height: 46px;
-            display: flex; align-items: center; justify-content: center;
-            transition: 0.3s;
-            border: 2px solid var(--creme-escuro);
-        }
-        .insta-float:hover { transform: rotate(15deg) scale(1.12); }
-
-        .container {
-            padding: 24px 18px;
-            max-width: 500px;
-            margin: auto;
-            padding-bottom: 120px;
-        }
-
-        label {
-            display: block;
-            margin-top: 22px;
-            font-weight: 700;
-            color: var(--marrom-medio);
-            font-size: 14px;
-            letter-spacing: 0.3px;
-            text-transform: uppercase;
-        }
-
-        input, select, textarea {
-            width: 100%; padding: 13px 15px;
-            margin-top: 8px;
-            border-radius: 12px;
-            border: 1.5px solid var(--creme-escuro);
-            background: white;
-            font-size: 15px;
-            color: var(--marrom-escuro);
-            transition: border-color 0.2s, box-shadow 0.2s;
-            font-family: 'Lato', sans-serif;
-        }
-        input:focus, select:focus, textarea:focus {
-            outline: none;
-            border-color: var(--marrom-claro);
-            box-shadow: 0 0 0 3px rgba(141,110,99,0.12);
-        }
-
-        .card-evento {
-            background: linear-gradient(135deg, var(--marrom-medio), var(--marrom-escuro));
-            color: white;
-            padding: 24px 20px;
-            border-radius: 20px;
-            text-align: center;
-            margin-bottom: 28px;
-            box-shadow: var(--sombra-media);
-            border: 1px solid rgba(255,255,255,0.1);
-            position: relative;
-            overflow: hidden;
-        }
-        .card-evento::after {
-            content: '✨';
-            position: absolute; right: 15px; top: 10px;
-            font-size: 32px; opacity: 0.15;
-        }
-        .card-evento h3 {
-            margin-top: 0;
-            font-family: 'Playfair Display', serif;
-            color: #fdf5e6;
-            font-size: 20px;
-        }
-        .card-evento p { color: rgba(255,255,255,0.85); font-size: 14px; margin-bottom: 0; }
-        .btn-evento {
-            background: linear-gradient(135deg, var(--creme-fundo), #fff);
-            color: var(--marrom-medio);
-            border: none; padding: 11px 22px;
-            border-radius: 10px; font-weight: 700;
-            cursor: pointer; margin-top: 14px;
-            display: inline-block; text-decoration: none;
-            transition: 0.3s; font-size: 14px;
-            letter-spacing: 0.2px;
-        }
-        .btn-evento:hover { transform: scale(1.04); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-
-        .card {
-            background: white;
-            padding: 20px 18px;
-            border-radius: 18px;
-            text-align: center;
-            box-shadow: var(--sombra-suave);
-            margin-bottom: 14px;
-            border: 1px solid rgba(215,204,200,0.5);
-            transition: box-shadow 0.25s, transform 0.25s;
-        }
-        .card:hover {
-            box-shadow: var(--sombra-media);
-            transform: translateY(-2px);
-        }
-        .card h3 {
-            margin: 0 0 4px;
-            font-family: 'Playfair Display', serif;
-            font-size: 17px;
-            color: var(--marrom-escuro);
-        }
-
-        .price {
-            color: var(--destaque);
-            font-weight: 700;
-            font-size: 1.35em;
-            margin: 8px 0 4px;
-            font-family: 'Lato', sans-serif;
-        }
-
-        .sabores-tags {
-            font-size: 13px;
-            color: var(--marrom-escuro);
-            margin: 8px auto 12px;
-            max-width: 94%;
-            line-height: 1.5;
-            font-weight: 700;
-            background: linear-gradient(135deg, #fff8e1, #fff3cd);
-            padding: 9px 12px;
-            border-radius: 10px;
-            border: 1.5px dashed var(--destaque);
-            position: relative;
-        }
-        .sabores-tags .sabores-tags-label {
-            display: block;
-            font-size: 10.5px;
-            text-transform: uppercase;
-            letter-spacing: 0.6px;
-            color: var(--destaque);
-            font-weight: 700;
-            margin-bottom: 3px;
-        }
-        .sabores-tags .sabores-tags-lista {
-            font-style: normal;
-        }
-
-        .controles-quantidade {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 16px;
-            margin-top: 12px;
-        }
-
-        .adicionar-texto {
-            font-size: 12px;
-            color: var(--marrom-claro);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            font-weight: 700;
-        }
-
-        .qtd-display {
-            font-weight: 700;
-            font-size: 20px;
-            min-width: 24px;
-            color: var(--marrom-escuro);
-        }
-
-        button {
-            color: white;
-            border: none;
-            padding: 14px;
-            border-radius: 12px;
-            width: 100%;
-            cursor: pointer;
-            font-weight: 700;
-            margin-top: 10px;
-            transition: 0.25s;
-            font-family: 'Lato', sans-serif;
-            letter-spacing: 0.3px;
-        }
-        button:active { transform: scale(0.97); }
-
-        .btn-menor {
-            background: linear-gradient(135deg, #e74c3c, #c0392b) !important;
-            width: 42px !important; height: 42px !important;
-            border-radius: 50% !important;
-            margin: 0 !important; padding: 0 !important;
-            font-size: 20px !important; font-weight: 700 !important;
-            display: flex !important; align-items: center; justify-content: center;
-            box-shadow: 0 3px 8px rgba(231,76,60,0.35);
-        }
-        .btn-maior {
-            background: linear-gradient(135deg, #25D366, #1da851) !important;
-            width: 42px !important; height: 42px !important;
-            border-radius: 50% !important;
-            margin: 0 !important; padding: 0 !important;
-            font-size: 20px !important; font-weight: 700 !important;
-            display: flex !important; align-items: center; justify-content: center;
-            box-shadow: 0 3px 8px rgba(37,211,102,0.35);
-        }
-        .btn-menor:hover, .btn-maior:hover { filter: brightness(1.1); transform: scale(1.08); }
-
-        .btn-finalizar {
-            background: linear-gradient(135deg, #25D366, #1da851);
-            padding: 13px; font-size: 15px; margin-top: 15px;
-            border-radius: 14px;
-            box-shadow: 0 4px 15px rgba(37,211,102,0.3);
-        }
-        .btn-finalizar:not(:disabled):hover { filter: brightness(1.05); transform: translateY(-1px); }
-        .btn-finalizar:disabled, .btn-pix:disabled, .btn-mp:disabled {
-            background: linear-gradient(135deg, #bbb, #ccc) !important;
-            cursor: not-allowed; opacity: 0.65;
-            box-shadow: none; transform: none;
-        }
-
-        .btn-pix {
-            background: linear-gradient(135deg, var(--marrom-medio), var(--marrom-escuro));
-            padding: 13px; font-size: 14px;
-            border-radius: 14px;
-            box-shadow: 0 4px 12px rgba(93,64,55,0.3);
-        }
-        .btn-mp {
-            background: linear-gradient(135deg, #009ee3, #0077b3);
-            padding: 13px; font-size: 14px;
-            border-radius: 14px;
-            box-shadow: 0 4px 12px rgba(0,158,227,0.3);
-        }
-        .btn-limpar {
-            background: linear-gradient(135deg, #e74c3c, #c0392b);
-            padding: 9px; font-size: 12px; margin-top: 10px;
-            opacity: 0.85; border-radius: 10px;
-        }
-        .btn-limpar:hover { opacity: 1; }
-
-        #secaoDadosPedido {
-            display: none;
-            margin-top: 32px;
-            border-top: 2px dashed var(--creme-escuro);
-            padding-top: 15px;
-        }
-
-        .modal-aviso {
-            display: none; position: fixed; z-index: 9999;
-            left: 0; top: 0; width: 100%; height: 100%;
-            background-color: rgba(30,15,10,0.92);
-            backdrop-filter: blur(10px);
-            overflow-y: auto;
-        }
-
-        .modal-conteudo {
-            background-color: #fff;
-            margin: 5% auto;
-            padding: 28px 24px;
-            border-radius: 28px;
-            width: 90%; max-width: 440px;
-            text-align: center;
-            border: 2px solid var(--creme-escuro);
-            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
-            animation: bounceIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-
-        .modal-conteudo h2 {
-            font-family: 'Playfair Display', serif;
-            color: var(--marrom-medio);
-            font-size: 22px;
-            margin-bottom: 8px;
-        }
-
-        .modal-conteudo ul {
-            text-align: left;
-            font-size: 14px;
-            color: #555;
-            line-height: 1.7;
-        }
-
-        @keyframes bounceIn {
-            0% { transform: scale(0.7); opacity: 0; }
-            100% { transform: scale(1); opacity: 1; }
-        }
-
-        .btn-entendi {
-            background: linear-gradient(135deg, var(--marrom-medio), var(--marrom-escuro));
-            color: white; border: none; padding: 13px 30px;
-            border-radius: 12px; font-weight: 700; cursor: pointer;
-            font-size: 15px; width: 100%; margin-top: 10px;
-            font-family: 'Lato', sans-serif;
-            transition: 0.25s;
-        }
-        .btn-entendi:hover { filter: brightness(1.1); }
-
-        .btn-duvida {
-            background: linear-gradient(135deg, var(--verde-whats), #1da851);
-            color: white; border: none; padding: 13px 30px;
-            border-radius: 12px; font-weight: 700; cursor: pointer;
-            font-size: 15px; width: 100%; text-decoration: none;
-            display: block; box-sizing: border-box; margin-bottom: 10px;
-            font-family: 'Lato', sans-serif;
-            transition: 0.25s;
-        }
-        .btn-duvida:hover { filter: brightness(1.08); }
-
-        #modalPromo { display: none; }
-        .promo-fullscreen-content {
-            background: #fff;
-            margin: 5% auto;
-            padding: 14px;
-            border-radius: 24px;
-            width: 85%; max-width: 360px;
-            text-align: center;
-            position: relative;
-            border: 3px solid var(--marrom-medio);
-            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
-            animation: bounceIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-        .promo-fullscreen-content img {
-            width: 100%; max-height: 55vh;
-            object-fit: cover;
-            border-radius: 14px;
-            margin-bottom: 12px;
-            box-shadow: var(--sombra-suave);
-        }
-        .btn-promo-add {
-            background: linear-gradient(135deg, var(--verde-whats), #1da851);
-            color: white; font-size: 15px; padding: 13px;
-            border-radius: 14px; border: none; cursor: pointer;
-            width: 100%; font-weight: 700; margin-bottom: 10px;
-            font-family: 'Lato', sans-serif;
-            box-shadow: 0 4px 15px rgba(37,211,102,0.3);
-        }
-        .btn-promo-close {
-            background: var(--creme-medio); color: var(--marrom-medio);
-            font-size: 13px; padding: 10px; border-radius: 10px;
-            border: 1px solid var(--creme-escuro); cursor: pointer;
-            width: 100%; font-family: 'Lato', sans-serif;
-        }
-
-        .reabrir-promo {
-            position: fixed; top: 110px; left: 12px; z-index: 998;
-            background: linear-gradient(135deg, #c8860a, #a06810);
-            color: white; padding: 8px 13px;
-            border-radius: 20px; font-size: 12px; font-weight: 700;
-            box-shadow: 0 4px 12px rgba(200,134,10,0.35);
-            cursor: pointer; border: 2px solid rgba(255,255,255,0.4);
-            animation: pulse 2s infinite;
-            font-family: 'Lato', sans-serif;
-        }
-
-        #carrinhoBox {
-            position: fixed; bottom: 10px; right: 10px; left: 55px;
-            background: white; padding: 16px;
-            border-radius: 22px;
-            box-shadow: 0 -6px 30px rgba(62,39,35,0.15);
-            z-index: 1000; max-height: 80vh; overflow-y: auto;
-            display: none;
-            border: 1.5px solid var(--creme-escuro);
-        }
-
-        #carrinhoBox h3 {
-            font-family: 'Playfair Display', serif;
-            color: var(--marrom-medio);
-            margin-top: 0; margin-bottom: 12px;
-        }
-
-        .fechar-carrinho-btn {
-            cursor: pointer;
-            font-weight: 700;
-            color: var(--marrom-claro);
-            font-size: 13px;
-            transition: color 0.2s;
-        }
-        .fechar-carrinho-btn:hover { color: var(--marrom-escuro); }
-
-        .toggle-carrinho {
-            position: fixed; bottom: 20px; left: 10px;
-            width: 48px; height: 48px;
-            background: linear-gradient(135deg, #007bff, #0055cc);
-            color: white; border-radius: 50%;
-            display: flex; align-items: center; justify-content: center;
-            z-index: 1001;
-            box-shadow: 0 4px 15px rgba(0,123,255,0.35);
-            font-size: 20px; cursor: pointer;
-            transition: 0.3s;
-        }
-        .toggle-carrinho:hover { transform: scale(1.08); }
-
-        .cart-badge {
-            position: absolute; top: -5px; right: -5px;
-            background: linear-gradient(135deg, #e74c3c, #c0392b);
-            color: white; border-radius: 50%;
-            padding: 2px 6px; font-size: 11px;
-            font-weight: 700; border: 2px solid white;
-            min-width: 20px; text-align: center;
-        }
-
-        .item-carrinho {
-            display: flex; justify-content: space-between;
-            border-bottom: 1px solid var(--creme-medio);
-            padding: 9px 0; font-size: 14px;
-            color: var(--marrom-escuro);
-            line-height: 1.4;
-        }
-        .item-carrinho span:first-child { max-width: 68%; }
-        .remover {
-            color: #e74c3c; cursor: pointer; font-weight: 700;
-            margin-left: 8px; font-size: 16px;
-            transition: transform 0.2s;
-            display: inline-block;
-        }
-        .remover:hover { transform: scale(1.3); }
-
-        #resumo {
-            margin-top: 15px; font-size: 17px;
-            text-align: center; color: var(--marrom-medio);
-            border-top: 2px solid var(--creme-medio);
-            padding-top: 12px;
-        }
-
-        .galeria-inicial {
-            display: flex; overflow-x: auto; gap: 12px;
-            padding: 12px 0; scroll-snap-type: x mandatory;
-            scrollbar-width: none;
-        }
-        .galeria-inicial::-webkit-scrollbar { display: none; }
-        .galeria-inicial img {
-            width: 290px; height: 290px;
-            object-fit: cover; border-radius: 18px;
-            scroll-snap-align: center;
-            box-shadow: var(--sombra-suave);
-            border: 2px solid var(--creme-escuro);
-            flex-shrink: 0;
-        }
-
-        .instrucao-slide {
-            font-size: 12px; color: var(--marrom-claro);
-            margin-bottom: 8px; font-weight: 600;
-            letter-spacing: 0.3px;
-        }
-
-        #pixDisplay {
-            display: none; margin-top: 12px;
-            background: var(--creme-medio);
-            padding: 14px; border-radius: 14px;
-            border: 1px solid var(--creme-escuro);
-        }
-
-        .erro-tel {
-            color: #e74c3c; font-size: 11px; font-weight: 700;
-            display: none; margin-top: 5px;
-        }
-
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.06); }
-            100% { transform: scale(1); }
-        }
-
-        #secaoDadosPedido > label:first-child {
-            font-size: 16px; margin-top: 24px;
-            color: var(--marrom-escuro);
-        }
-
-        #carrinhoBox::-webkit-scrollbar { width: 4px; }
-        #carrinhoBox::-webkit-scrollbar-track { background: var(--creme-medio); border-radius: 4px; }
-        #carrinhoBox::-webkit-scrollbar-thumb { background: var(--creme-escuro); border-radius: 4px; }
-
-        /* ===== Modal de seleção de sabores ===== */
-        .modal-sabores-conteudo {
-            max-width: 420px;
-            padding: 26px 20px;
-        }
-        .sabores-instrucao {
-            font-size: 13px;
-            color: var(--marrom-claro);
-            margin: 0 0 16px;
-            font-weight: 600;
-        }
-        .sabores-lista {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            margin-bottom: 16px;
-            max-height: 46vh;
-            overflow-y: auto;
-            padding: 4px 2px;
-        }
-        .sabor-opcao {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 14px 16px;
-            border-radius: 14px;
-            border: 2px solid var(--creme-escuro);
-            background: var(--creme-medio);
-            text-align: left;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            font-weight: 700;
-            font-size: 15px;
-            color: var(--marrom-escuro);
-        }
-        .sabor-opcao:active { transform: scale(0.98); }
-        .sabor-check {
-            width: 24px; height: 24px;
-            min-width: 24px;
-            border-radius: 50%;
-            border: 2px solid var(--marrom-claro);
-            background: #fff;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 14px; font-weight: 700;
-            color: transparent;
-            transition: all 0.2s ease;
-        }
-        .sabor-nome { flex: 1; }
-        .sabor-opcao.selecionado {
-            background: linear-gradient(135deg, #fff8e1, #fff3cd);
-            border-color: var(--destaque);
-            box-shadow: 0 4px 14px rgba(200,134,10,0.25);
-            color: var(--marrom-escuro);
-        }
-        .sabor-opcao.selecionado .sabor-check {
-            background: var(--destaque);
-            border-color: var(--destaque);
-            color: #fff;
-        }
-        .sabores-preco-resumo {
-            background: var(--creme-medio);
-            border: 1.5px dashed var(--destaque);
-            border-radius: 14px;
-            padding: 12px 14px;
-            margin-bottom: 12px;
-            min-height: 24px;
-        }
-        .sabores-selecionados-tags {
-            display: flex; flex-wrap: wrap; gap: 6px;
-            margin-bottom: 8px;
-        }
-        .tag-sabor-escolhido {
-            background: var(--destaque);
-            color: #fff;
-            font-size: 12px;
-            font-weight: 700;
-            padding: 4px 10px;
-            border-radius: 20px;
-        }
-        .sabores-preco-final {
-            font-size: 15px;
-            font-weight: 700;
-            color: var(--marrom-escuro);
-            text-align: left;
-        }
-        .sabores-preco-final b { color: var(--destaque); font-size: 17px; }
-        .sabores-extra {
-            font-size: 11px;
-            font-weight: 600;
-            color: var(--marrom-claro);
-        }
-        .sabores-aviso-vazio {
-            font-size: 13px;
-            font-weight: 700;
-            color: #b25a00;
-        }
-        #btnConfirmarSabores:disabled {
-            background: linear-gradient(135deg, #bbb, #ccc);
-            cursor: not-allowed;
-            opacity: 0.7;
-        }
-
-        /* ===== Estilos do Chatbot IA ===== */
-        .chatbot-flutuante {
-            position: fixed;
-            bottom: 80px;
-            right: 16px;
-            z-index: 10001;
-            font-family: 'Lato', sans-serif;
-        }
-        .chatbot-botao {
-            width: 52px; height: 52px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, var(--marrom-medio), var(--marrom-escuro));
-            color: white; display: flex; align-items: center; justify-content: center;
-            font-size: 22px; cursor: pointer; box-shadow: var(--sombra-media);
-            transition: transform 0.3s; border: 2px solid var(--creme-escuro);
-        }
-        .chatbot-botao:hover { transform: scale(1.08); }
-        
-        .chatbot-janela {
-            display: none; position: fixed;
-            bottom: 145px; right: 16px;
-            width: 320px; height: 420px;
-            background: white; border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(62,39,35,0.25);
-            border: 1.5px solid var(--creme-escuro);
-            flex-direction: column; overflow: hidden;
-            animation: bounceIn 0.4s ease;
-        }
-        .chatbot-header {
-            background: linear-gradient(135deg, var(--marrom-escuro), var(--marrom-medio));
-            color: white; padding: 14px; display: flex; justify-content: space-between; align-items: center;
-        }
-        .chatbot-header h4 { margin: 0; font-family: 'Playfair Display', serif; font-size: 16px; letter-spacing: 0.5px; }
-        .chatbot-header span { cursor: pointer; opacity: 0.85; font-size: 16px; transition: opacity 0.2s; }
-        .chatbot-header span:hover { opacity: 1; }
-        
-        .chatbot-mensagens {
-            flex: 1; padding: 14px; overflow-y: auto;
-            background: var(--creme-fundo); display: flex; flex-direction: column; gap: 10px;
-        }
-        .msg { max-width: 85%; padding: 10px 14px; border-radius: 14px; font-size: 14px; line-height: 1.45; word-wrap: break-word; }
-        .msg.ia { background: white; align-self: flex-start; color: var(--marrom-escuro); box-shadow: 0 2px 8px rgba(62,39,35,0.06); border: 1px solid rgba(215,204,200,0.4); }
-        .msg.user { background: linear-gradient(135deg, var(--marrom-claro), var(--marrom-medio)); color: white; align-self: flex-end; box-shadow: 0 2px 8px rgba(93,64,55,0.2); }
-        
-        .chatbot-input-area {
-            display: flex; padding: 10px; background: white; border-top: 1px solid var(--creme-medio); align-items: center; gap: 8px;
-        }
-        .chatbot-input-area input { margin-top: 0; padding: 10px 12px; border-radius: 10px; flex: 1; height: 40px; font-size: 14px; }
-        .chatbot-input-area button { margin-top: 0; width: 40px; height: 40px; padding: 0; border-radius: 10px; background: linear-gradient(135deg, #25D366, #1da851); display: flex; align-items: center; justify-content: center; font-size: 14px; }
+        .auth-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 10000; display: none; }
+        .auth-card { background: var(--bg-card); border: 1px solid var(--border); padding: 24px; border-radius: 12px; width: 90%; max-width: 360px; display: flex; flex-direction: column; gap: 16px; position: relative; }
+        .auth-card h3 { margin: 0; color: var(--text); font-size: 1.2em; text-align: center; }
+        .btn-fechar-modal { position: absolute; top: 12px; right: 12px; background: none; border: none; color: var(--text-dim); font-size: 1.2em; cursor: pointer; padding: 0; }
+        .user-logado-info { font-size: 0.75em; color: var(--signal-on); text-align: center; margin-top: -4px; display: none; }
     </style>
 </head>
-<body onload="mostrarSplashBoasVindas(); carregarBannerDinamico(); carregarDados();">
+<body>
 
-<div id="splashBoasVindas" class="splash-boas-vindas" aria-hidden="true">
-    <div class="splash-conteudo">
-        <span class="splash-emoji">🍰</span>
-        <span class="splash-saudacao" id="splashSaudacao">Bem-vindo(a)</span>
-        <h1>Sejam Bem-vindos à<strong>Josi Doces Gourmet</strong></h1>
-        <div class="splash-linha"></div>
-        <p>As melhores tortas de Venâncio Aires</p>
-    </div>
-</div>
-
-<div class="barra-cupom" id="barraCupom">
-    🎉 PROMOÇÃO: Ganhe 5% de DESCONTO + FRETE GRÁTIS em compras a partir de R$ 50,00! 🍰
-</div>
-
-<a href="https://www.instagram.com/josigourmet" target="_blank" class="insta-float">
-    <img src="https://upload.wikimedia.org/wikipedia/commons/a/a5/Instagram_icon.png" width="25" alt="Instagram">
-</a>
-
-<div class="reabrir-promo" id="btnReabrirPromo" onclick="abrirBannerPromo()">🔥 PROMOÇÃO</div>
-
-<div id="modalPromo" class="modal-aviso">
-    <div class="promo-fullscreen-content" id="conteudoBanner"></div>
-</div>
-
-<div id="modalFotosIniciais" class="modal-aviso" style="display: block;">
-    <div class="modal-conteudo">
-        <h2 style="margin-bottom: 5px;">📸 Nossas Delícias</h2>
-        <p class="instrucao-slide">Deslize para o lado para ver mais ➔</p>
-        <div class="galeria-inicial">
-          <img src="https://i.postimg.cc/zBcTdCcZ/IMG-20260621-WA0015.jpg" alt="Doce Josi">
-          <img src="https://i.postimg.cc/SKmLjN9p/IMG-20260621-WA0014.jpg" alt="Doce Josi">
-          <img src="https://i.postimg.cc/BQtwsX6P/IMG-20260508-WA0009.jpg" alt="Doce Josi">
-          <img src="https://i.postimg.cc/0yR3f9k8/IMG-20260508-WA0008.jpg" alt="Doce Josi">
-          <img src="https://i.postimg.cc/tJP0qJqM/IMG-20260507-WA0006.jpg" alt="Doce Josi">
-          <img src="https://i.postimg.cc/T5p2j48b/IMG-20260418-WA0008.jpg" alt="Doce Josi">
-          <img src="https://i.postimg.cc/WF9bkPyX/IMG-20260418-WA0010.jpg" alt="Doce Josi">
-          <img src="https://i.postimg.cc/28M6M4QK/1777779837866.png" alt="Doce Josi">
+<div id="authModal" class="auth-overlay">
+    <div class="auth-card">
+        <button class="btn-fechar-modal" id="btnFecharLogin">×</button>
+        <h3>🔐 Autenticação Requerida</h3>
+        <div>
+            <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">E-mail</label>
+            <input type="email" id="authEmail" placeholder="seu-email@gmail.com" style="width: 100%; box-sizing: border-box;">
         </div>
-        <button class="btn-entendi" onclick="fecharGaleriaAbrirHorarios()">Ver Cardápio e Preços</button>
+        <div>
+            <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">Senha</label>
+            <input type="password" id="authSenha" placeholder="******" style="width: 100%; box-sizing: border-box;">
+        </div>
+        <button id="btnConfirmarLogin" style="background: var(--telemetry); width: 100%;">Entrar e Executar</button>
     </div>
 </div>
 
-<div id="modalAviso" class="modal-aviso">
-    <div class="modal-conteudo">
-        <h2>⚠️ Horários de Funcionamento</h2>
-        <p>Confira nossos horários para pedidos e agendamentos:</p>
-        <ul style="text-align: left; font-size: 14px; color: #555;">
-            <li>🗓️ <b>Segunda a Sexta:</b><br>Pedidos para entrega/retirada das 08h às 23h.</li>
-            <li>🚀 <b>Sáb, Dom e Feriados:</b><br>Pedidos para entrega/retirada das 08h às 17h.</li>
-            <li>⏰ <b>Atenção:</b> Agendamentos fora desses horários serão validados em horário comercial .</li>
-        </ul>
-        <a href="https://wa.me/5551985803243?text=Olá Josi! Tenho uma dúvida sobre agendamentos." target="_blank" class="btn-duvida">💬 Dúvidas no WhatsApp</a>
-        <button class="btn-entendi" onclick="fecharModalAviso()">Fazer meu Pedido ➔</button>
-    </div>
-</div>
-
-<div id="modalSabores" class="modal-aviso">
-    <div class="modal-conteudo modal-sabores-conteudo">
-        <h2 id="saboresTitulo">🍰 Escolha o(s) Sabor(es)</h2>
-        <p class="sabores-instrucao">Toque em um ou mais sabores para selecionar:</p>
-        <div id="saboresLista" class="sabores-lista"></div>
-        <div id="saboresPrecoResumo" class="sabores-preco-resumo"></div>
-        <button class="btn-entendi" id="btnConfirmarSabores" onclick="confirmarSabores()" disabled>✅ Adicionar ao Carrinho</button>
-        <button class="btn-promo-close" onclick="fecharModalSabores()">Cancelar</button>
-    </div>
-</div>
-
-<header>
-    <div class="logo-container">
-        <img src="https://i.postimg.cc/9Q4WLFgY/1783348278210.png" class="logo-img" alt="Logo Josi Doces">
-    </div>
-    <h1>🍬 Josi Doces Gourmet</h1>
-    <a href="https://www.instagram.com/josigourmet" target="_blank" class="insta-header">
-        <img src="https://upload.wikimedia.org/wikipedia/commons/a/a5/Instagram_icon.png" width="18" alt="Instagram Logo"> Siga @josigourmet
-    </a>
-</header>
+<div id="map"></div>
 
 <div class="container">
-    <div class="card-evento">
-        <h3>✨ Encomendas para Eventos</h3>
-        <p>Temos condições especiais para grandes quantidades!</p>
-        <a href="https://wa.me/5551985803243?text=Olá Josi! Gostaria de um orçamento para evento." target="_blank" class="btn-evento">Solicitar Orçamento</a>
-    </div>
+    <div id="avisoGps" class="gps-warning"></div>
 
-    <div class="card">
-        <h3>Torta de bolacha no pote</h3>
-        <p class="price">R$ 10,00</p>
-        <div class="sabores-tags"><span class="sabores-tags-label">🍫 Sabores disponíveis</span><span class="sabores-tags-lista">Nata Ninho, Doce de leite com chocolate amargo e Bombom</span></div>
-        <div class="controles-quantidade">
-            <button class="btn-menor" onclick="removerPorNomeBasico('Torta de bolacha no pote')">-</button>
-            <span class="adicionar-texto">Adicionar</span> <span class="qtd-display" id="qtd-Torta de bolacha no pote">0</span>
-            <button class="btn-maior" onclick="addComSabor('Torta de bolacha no pote', 10, ['Nata e Ninho', 'Doce de leite com chocolate amargo', 'Bombom'])">+</button>
+    <div class="input-box">
+        <label>🏢 Empresa deste aparelho</label>
+        <div class="row">
+            <input type="text" id="empresaIdInput" placeholder="ID da empresa">
+            <button id="btnSalvarEmpresa">Salvar</button>
         </div>
+        <div id="empresaSalvaInfo" style="font-size:0.75em;color:var(--text-dim);margin-top:6px;"></div>
     </div>
 
-    <div class="card">
-        <h3>Torta de Bolacha Grande 1 kg</h3>
-        <p class="price"> R$ 55,00</p>
-        <div class="controles-quantidade">
-            <button class="btn-menor" onclick="removerPorNome('Torta de Bolacha Grande 1 kg')">-</button>
-            <span class="adicionar-texto">Adicionar</span> <span class="qtd-display" id="qtd-Torta de Bolacha Grande 1 kg">0</span>
-            <button class="btn-maior" onclick="add('Torta de Bolacha Grande 1 kg', 55)">+</button>
+    <div class="input-box">
+        <label>Cadastrar Novo Veículo na Lista</label>
+        <div id="userLogadoInfo" class="user-logado-info">Sessão Administrador Ativa</div>
+        <div class="row" style="margin-top: 4px;">
+            <input type="text" id="veiculoInput" placeholder="Ex: NISSAN ISA, FIAT UNO">
+            <button id="btnAdicionar">Adicionar</button>
         </div>
     </div>
 
-    <div class="card">
-        <h3>Bolo grande</h3>
-        <p class="price">R$ 35,00</p>
-        <div class="sabores-tags"><span class="sabores-tags-label">🍰 Sabores disponíveis</span><span class="sabores-tags-lista">Chocolate, Beijinhos e Brigadeiro, Cenoura com brigadeiro, Chocolate amargo e Doce de leite</span></div>
-        <div class="controles-quantidade">
-            <button class="btn-menor" onclick="removerPorNomeBasico('Bolo grande')">-</button>
-            <span class="adicionar-texto">Adicionar</span> <span class="qtd-display" id="qtd-Bolo grande">0</span>
-            <button class="btn-maior" onclick="addComSabor('Bolo grande', 35, ['Chocolate', 'Beijinhos e Brigadeiro', 'Cenoura com brigadeiro', 'Chocolate amargo', 'Doce de leite'])">+</button>
-        </div>
+    <div class="frota-container">
+        <div style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold;">Veículos Monitorados Neste Aparelho</div>
+        <div class="frota-lista" id="listaFrotaLocal"></div>
     </div>
 
-    <div class="card">
-        <h3>Bolo no pote</h3>
-        <p class="price">R$ 10,00</p>
-        <div class="sabores-tags"><span class="sabores-tags-label">🧁 Sabores disponíveis</span><span class="sabores-tags-lista">Beijinho, Coco, Doce de leite, Brigadeiro e Cenoura com brigadeiro</span></div>
-        <div class="controles-quantidade">
-            <button class="btn-menor" onclick="removerPorNomeBasico('Bolo no pote')">-</button>
-            <span class="adicionar-texto">Adicionar</span> <span class="qtd-display" id="qtd-Bolo no pote">0</span>
-            <button class="btn-maior" onclick="addComSabor('Bolo no pote', 10, ['Beijinho', 'Coco', 'Doce de leite', 'Brigadeiro', 'Cenoura com brigadeiro'])">+</button>
-        </div>
+    <div id="statusConexao" class="status-bar status-offline">MODO OFFLINE</div>
+    <div id="statusBackground" class="status-bar status-bg" style="display:none;"></div>
+    <div class="fila-info" id="filaInfo"></div>
+
+    <div class="btn-row">
+        <button id="btnForcar" class="btn-force">📡 Forçar Sincronização</button>
+        <button id="btnExportar" class="btn-export">⬇️ Exportar Rota (CSV)</button>
     </div>
+    <button id="btnDiagnostico" class="btn-export" style="width:100%;">🔍 Testar Conexão com Serviço de Endereço</button>
+    <div id="diagnosticoResultado" class="fila-info" style="text-align:left; white-space:pre-wrap; word-break:break-word;"></div>
 
-    <div class="card">
-        <h3>Torta grande (A partir de 1 kg)</h3>
-        <p class="price">A partir de R$ 60,00</p>
-        <div class="controles-quantidade">
-            <button class="btn-menor" onclick="removerPorNome('Torta grande (A partir de 1 kg)')">-</button>
-            <span class="adicionar-texto">Adicionar</span> <span class="qtd-display" id="qtd-Torta grande (A partir de 1 kg)">0</span>
-            <button class="btn-maior" onclick="add('Torta grande (A partir de 1 kg)', 60)">+</button>
-        </div>
-    </div>
-
-    <div class="card">
-        <h3>Bolo no Pote com Pudim</h3>
-        <p class="price">R$ 14,00</p>
-        <div class="controles-quantidade">
-            <button class="btn-menor" onclick="removerPorNome('Bolo no Pote com Pudim')">-</button>
-            <span class="adicionar-texto">Adicionar</span> <span class="qtd-display" id="qtd-Bolo no Pote com Pudim">0</span>
-            <button class="btn-maior" onclick="add('Bolo no Pote com Pudim', 14)">+</button>
-        </div>
-    </div>
-
-    <div class="card">
-        <h3>Bolo de Stikadinho no Pote</h3>
-        <p class="price">R$ 12,00</p>
-        <div class="controles-quantidade">
-            <button class="btn-menor" onclick="removerPorNome('Bolo de Stikadinho no Pote')">-</button>
-            <span class="adicionar-texto">Adicionar</span> <span class="qtd-display" id="qtd-Bolo de Stikadinho no Pote">0</span>
-            <button class="btn-maior" onclick="add('Bolo de Stikadinho no Pote', 12)">+</button>
-        </div>
-    </div>
-
-    <div id="secaoDadosPedido">
-        <label>👤 Seus Dados</label>
-        <input type="text" id="nome" placeholder="Seu Nome Completo" maxlength="80" oninput="salvarDados(); verificarPgto();">
-        <input type="tel" id="telefone" placeholder="(51) 99999-9999" maxlength="15" oninput="mascaraTelefone(this); salvarDados(); verificarPgto();">
-        <div id="erroTelefone" class="erro-tel">O número deve começar com o dígito 9.</div>
-        
-        <label>🚚 Entrega e Região</label>
-        <select id="bairro" onchange="alternarEndereco(); salvarDados(); verificarPgto();">
-            <option value="retirada">Vou retirar no local (R$ 0,00)</option>
-            <option value="5">Centro (R$ 5,00)</option>
-            <option value="7">Acesso Dona Leopoldina / Parque (R$ 7,00)</option>
-            <option value="7">Cidade Nova (R$ 7,00)</option>
-            <option value="0">Cruzeiro (R$ 0,00)</option>
-            <option value="8">Gressler (R$ 8,00)</option>
-            <option value="30">Interior / Outros (R$ 30,00)</option>
-            <option value="0">Coronel Brito (R$ 0,00)</option>
-            <option value="8">Santa Tecla (R$ 8,00)</option>
-        </select>
-
-        <div id="blocoEndereco">
-            <label>📍 Endereço de Entrega</label>
-            <textarea id="endereco" placeholder="Rua, número e referência" maxlength="300" oninput="salvarDados(); verificarPgto();"></textarea>
-        </div>
-
-        <label>⏰ Data e Horário de Recebimento</label>
-        <div style="display:flex; gap:8px;">
-            <input type="date" id="dataAgendamento" onchange="validarDataHora(); resetPagamentoFluxo(); salvarDados(); verificarPgto();">
-            <input type="time" id="horaAgendamento" onclick="avisoHorario()" onchange="validarDataHora(); resetPagamentoFluxo(); salvarDados(); verificarPgto();">
-        </div>
-
-        <label>💳 Forma de Pagamento</label>
-        <select id="pagamento" onchange="resetPagamentoFluxo(); salvarDados(); verificarPgto();">
-            <option value="Pix">Pix</option>
-            <option value="Cartão de Crédito">Cartão de Crédito</option>
-            <option value="Cartão de Débito">Cartão de Débito</option>
-            <option value="Dinheiro">Dinheiro</option>
-        </select>
+    <div class="telemetry-card">
+        <div style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 8px; font-weight: bold;">Última Telemetria Gerada</div>
+        <div class="telemetry-row"><span>Situação</span><span id="badStatus" class="badge badge-parado">PARADO</span></div>
+        <div class="telemetry-row"><span>Velocidade</span><b id="txtVelocidade">0 km/h</b></div>
+        <div class="telemetry-row"><span>Precisão GPS</span><b id="txtPrecisao">—</b></div>
+        <div class="telemetry-row"><span>Tempo de Parada</span><b id="txtTempoParado">00:00:00</b></div>
+        <div class="telemetry-row"><span>Coordenadas</span><b id="txtCoords">—</b></div>
+        <div class="telemetry-row"><span>Rua</span><b id="txtRua">—</b></div>
+        <div class="telemetry-row"><span>Bairro</span><b id="txtBairro">—</b></div>
+        <div class="telemetry-row"><span>Cidade</span><b id="txtCidade">—</b></div>
+        <div class="telemetry-row"><span>Estado (UF)</span><b id="txtEstado">—</b></div>
+        <div class="telemetry-row"><span>Data</span><b id="txtData">—</b></div>
+        <div class="telemetry-row"><span>Horário do último ponto</span><span id="txtHora" style="color:var(--telemetry)">—</span></div>
+        <div class="telemetry-row"><span>🌡️ Temperatura no local</span><b id="txtTemperatura">—</b></div>
     </div>
 </div>
 
-<div id="btnToggle" class="toggle-carrinho" onclick="toggleVisibilidadeCarrinho()">
-    🛒 <span id="cartBadge" class="cart-badge">0</span>
-</div>
-
-<div id="carrinhoBox">
-    <div style="text-align: right;">
-        <span onclick="toggleVisibilidadeCarrinho()" class="fechar-carrinho-btn">FECHAR [X]</span>
-    </div>
-    <h3>🛒 Seu Pedido</h3>
-    
-    <div id="alertaCupomDinamico"></div>
-    <div id="itensCarrinhoLista"></div>
-    <button class="btn-limpar" onclick="limparCarrinhoCompleto()">🗑️ Esvaziar Carrinho</button>
-    <div id="resumo"><b>Total: R$ 0,00</b></div>
-    <div style="margin-top:15px;">
-        <button id="btnPagarMP" onclick="abrirMercadoPago()" class="btn-mp" style="display:none;">💳 Pagar no Cartão (Link)</button>
-        <button id="btnGerarPix" onclick="gerarPixReal()" class="btn-pix" style="display:none;">💎 Gerar PIX</button>
-        <div id="pixDisplay">
-            <div id="qrcode" style="display: flex; justify-content: center; margin-bottom:10px;"></div>
-            <textarea id="brcode" readonly style="font-size: 10px; height: 50px; width: 100%; border-radius: 8px; border: 1px solid var(--creme-escuro); padding: 8px;"></textarea>
-            <button onclick="copyPix()" style="background: linear-gradient(135deg, #444, #222); padding: 9px; font-size: 12px; width:100%; margin-top:8px; border-radius: 10px;">Copiar Código Pix</button>
-        </div>
-        <button id="btnWhatsapp" onclick="finalizarZap()" class="btn-finalizar" disabled>⚠️ Preencha os dados no formulário</button>
-    </div>
-</div>
-
-<!-- Interface Visual do Chatbot Flutuante IA -->
-<div class="chatbot-flutuante">
-    <div class="chatbot-janela" id="chatJanela">
-        <div class="chatbot-header">
-            <h4>🍰 Josi Doces Assistente</h4>
-            <span onclick="toggleChat()"><i class="fas fa-times"></i></span>
-        </div>
-        <div class="chatbot-mensagens" id="chatMensagens">
-            <div class="msg ia">Olá! Sou a assistente virtual da Josi Doces. Gostaria de tirar alguma dúvida sobre nossos bolos, tortas, entregas ou prazos? 🤎✨</div>
-        </div>
-        <div class="chatbot-input-area">
-            <input type="text" id="chatInput" placeholder="Digite sua dúvida..." onkeypress="if(event.key === 'Enter') enviarMensagemIa()">
-            <button onclick="enviarMensagemIa()"><i class="fas fa-paper-plane"></i></button>
-        </div>
-    </div>
-    <div class="chatbot-botao" onclick="toggleChat()">
-        <i class="fas fa-comments"></i>
-    </div>
-</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="capacitor.js"></script>
 
 <script>
-const _RL = (function(){
-    const JANELA = 60000;
-    const LIMITE = 5;
-    const historico = [];
-    return {
-        ok: function(){
-            const agora = Date.now();
-            while(historico.length && agora - historico[0] > JANELA) historico.shift();
-            if(historico.length >= LIMITE) return false;
-            historico.push(agora);
-            return true;
-        }
-    };
+// ===================== CONFIGURAÇÃO =====================
+var firebaseConfig = {
+    apiKey: "AIzaSyDwKIS8wL3D7OuaysVFV_xyAsFsKo2eXzY",
+    authDomain: "everton-gps.firebaseapp.com",
+    databaseURL: "https://everton-gps-default-rtdb.firebaseio.com",
+    projectId: "everton-gps",
+    storageBucket: "everton-gps.firebasestorage.app",
+    messagingSenderId: "688936933095",
+    appId: "1:688936933095:web:790b2407334e8b148e3442"
+};
+firebase.initializeApp(firebaseConfig);
+var db = firebase.database();
+var auth = firebase.auth();
+
+var firebaseOnlineConfirmado = false;
+
+db.ref(".info/connected").on("value", function(snap) {
+    if (snap.val() === true) {
+        firebaseOnlineConfirmado = true;
+    } else {
+        firebaseOnlineConfirmado = false;
+    }
+    atualizarInterfaceEstado();
+});
+
+var LIMITE_VELOCIDADE = 80;
+var EMPRESA_ID = localStorage.getItem('empresa_id') || "tricolordosul5x0_gmail_com";
+document.getElementById('empresaIdInput').value = EMPRESA_ID;
+atualizarInfoEmpresaSalva();
+
+function atualizarInfoEmpresaSalva() {
+    document.getElementById('empresaSalvaInfo').textContent = "Enviando dados para: " + EMPRESA_ID;
+}
+
+document.getElementById('btnSalvarEmpresa').addEventListener('click', function() {
+    var novo = document.getElementById('empresaIdInput').value.trim();
+    if (!novo) return alert("Digite um ID válido.");
+    localStorage.setItem('empresa_id', novo);
+    EMPRESA_ID = novo;
+    atualizarInfoEmpresaSalva();
+    alert("Empresa salva com sucesso!");
+});
+
+var INTERVALO_GEOCODIFICACAO_MS = 1100;
+var MAX_TENTATIVAS_GEOCODIFICACAO = 3;
+var TIMEOUT_FETCH_MS = 8000;
+
+function fetchComTimeout(url, opcoes, timeoutMs) {
+    var controller = new AbortController();
+    var id = setTimeout(() => controller.abort(), timeoutMs);
+    return fetch(url, Object.assign({}, opcoes, { signal: controller.signal })).finally(() => clearTimeout(id));
+}
+
+function gerarIdPonto(ts) {
+    return ts + "_" + Math.random().toString(36).slice(2, 8);
+}
+
+function sanitizarChavePath(valor) {
+    return String(valor).replace(/[.#$\[\]\/]/g, "_");
+}
+
+var isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+var bgWatcherId = null;
+
+function atualizarBarraBackground(msg, mostrar) {
+    var el = document.getElementById('statusBackground');
+    if (!mostrar) { el.style.display = "none"; return; }
+    el.style.display = "block"; el.textContent = msg;
+}
+
+function checarContextoSeguro() {
+    if (isNative) return true;
+    var seguro = window.isSecureContext || location.hostname === "localhost" || location.hostname === "127.0.0.1";
+    if (!seguro) {
+        mostrarAvisoGps("⚠️ Esta página precisa estar em HTTPS para acessar o GPS.");
+        return false;
+    }
+    return true;
+}
+function mostrarAvisoGps(msg) {
+    var box = document.getElementById('avisoGps');
+    box.textContent = msg; box.style.display = "block";
+}
+function esconderAvisoGps() { document.getElementById('avisoGps').style.display = "none"; }
+
+// ===================== MAPA =====================
+var map = L.map('map', { zoomControl: false }).setView([-29.6133, -52.1919], 13);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+var marcador = L.marker([-29.6133, -52.1919]).addTo(map);
+var circuloPrecisao = L.circle([-29.6133, -52.1919], { radius: 0, color: '#2dd4ff', fillOpacity: 0.1, weight: 1 }).addTo(map);
+var polilinhaRota = L.polyline([], {color: 'rgba(45,212,255,0.35)', weight: 3, dashArray: '4,6'}).addTo(map);
+var polilinhaRuas = L.polyline([], {color: '#2dd4ff', weight: 6}).addTo(map);
+
+// ===================== MEMÓRIA LOCAL =====================
+var listaVeiculos = JSON.parse(localStorage.getItem('frota_veiculos') || "[]");
+var filaPendentes = JSON.parse(localStorage.getItem('fila_rastreio') || "[]");
+var filaGeocodificarDepois = JSON.parse(localStorage.getItem('fila_geocodificar') || "[]");
+var historicoCoordenadasLocais = JSON.parse(localStorage.getItem('historico_coords') || "[]");
+var registroCompleto = JSON.parse(localStorage.getItem('registro_completo') || "[]");
+var ultimoIdPontoParadaGravado = localStorage.getItem('ultimo_id_ponto_parada_gravado') || null;
+
+var coordenadaParadaFixa = (function() {
+    var raw = localStorage.getItem('coordenada_parada_fixa');
+    try { return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
 })();
 
-function _sanitize(str) {
-    if (typeof str !== 'string') return '';
-    return str
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#x27;')
-        .replace(/`/g, '&#x60;')
-        .replace(/javascript:/gi, '')
-        .replace(/on\w+\s*=/gi, '')
-        .trim();
+if (historicoCoordenadasLocais.length > 0) {
+    polilinhaRota.setLatLngs(historicoCoordenadasLocais);
+    var ultimo = historicoCoordenadasLocais[historicoCoordenadasLocais.length - 1];
+    map.setView(ultimo, 16); marcador.setLatLng(ultimo);
 }
 
-function _validarNome(nome) {
-    const re = /^[a-zA-ZÀ-ÿ\s]{2,80}$/;
-    return re.test(nome.trim());
+function salvarTudo() {
+    localStorage.setItem('frota_veiculos', JSON.stringify(listaVeiculos));
+    localStorage.setItem('fila_rastreio', JSON.stringify(filaPendentes));
+    localStorage.setItem('fila_geocodificar', JSON.stringify(filaGeocodificarDepois));
+    localStorage.setItem('historico_coords', JSON.stringify(historicoCoordenadasLocais));
+    if (registroCompleto.length > 5000) registroCompleto = registroCompleto.slice(-5000);
+    localStorage.setItem('registro_completo', JSON.stringify(registroCompleto));
+    if(ultimoIdPontoParadaGravado) localStorage.setItem('ultimo_id_ponto_parada_gravado', ultimoIdPontoParadaGravado);
+    if(coordenadaParadaFixa) localStorage.setItem('coordenada_parada_fixa', JSON.stringify(coordenadaParadaFixa));
 }
 
-function _validarTelefone(tel) {
-    const digits = tel.replace(/\D/g, '');
-    return (digits.length === 11 && digits[2] === '9') ||
-           (digits.length === 9  && digits[0] === '9');
+// ===================== MODAL LOGIN =====================
+var acaoPendente = null;
+function abrirModalLogin(callbackAcao) {
+    if (auth.currentUser) { callbackAcao(); return; }
+    acaoPendente = callbackAcao;
+    document.getElementById('authModal').style.display = "flex";
 }
+document.getElementById('btnFecharLogin').addEventListener('click', function() {
+    document.getElementById('authModal').style.display = "none"; acaoPendente = null;
+});
+document.getElementById('btnConfirmarLogin').addEventListener('click', function() {
+    var email = document.getElementById('authEmail').value.trim();
+    var senha = document.getElementById('authSenha').value;
+    if (!email || !senha) return alert("Preencha tudo!");
+    document.getElementById('btnConfirmarLogin').disabled = true;
+    auth.signInWithEmailAndPassword(email, senha).then(() => {
+        document.getElementById('authModal').style.display = "none";
+        if (acaoPendente) { acaoPendente(); acaoPendente = null; }
+    }).catch(err => alert("Erro: " + err.message)).finally(() => { document.getElementById('btnConfirmarLogin').disabled = false; });
+});
+auth.onAuthStateChanged(user => { document.getElementById('userLogadoInfo').style.display = user ? "block" : "none"; });
 
-function _validarEndereco(end) {
-    return end.trim().length >= 5 && end.trim().length <= 300;
+// ===================== FROTA =====================
+function renderizarFrotaLocal() {
+    var container = document.getElementById('listaFrotaLocal'); container.innerHTML = "";
+    if (listaVeiculos.length === 0) { container.innerHTML = "<span>Nenhum veículo adicionado.</span>"; return; }
+    listaVeiculos.forEach((nome, index) => {
+        var tag = document.createElement('div'); tag.className = "tag-veiculo";
+        tag.innerHTML = `🚗 <b>${nome}</b> <button class="btn-remover" onclick="removerVeiculoExigindoSenha(${index})">×</button>`;
+        container.appendChild(tag);
+    });
 }
-
-function _validarDataFutura(dataStr, horaStr) {
-    if (!dataStr || !horaStr) return false;
-    const dt = new Date(`${dataStr}T${horaStr}`);
-    return dt > new Date();
-}
-
-function _lsGet(chave) {
-    try {
-        const raw = localStorage.getItem(chave);
-        if (!raw) return null;
-        if (raw.length > 51200) { localStorage.removeItem(chave); return null; }
-        return JSON.parse(raw);
-    } catch(e) {
-        localStorage.removeItem(chave);
-        return null;
-    }
-}
-
-function _lsSet(chave, valor) {
-    try {
-        const str = JSON.stringify(valor);
-        if (str.length > 51200) return;
-        localStorage.setItem(chave, str);
-    } catch(e) { }
-}
-
-const PRECOS_OFICIAIS = {
-    'Torta grande (A partir de 1 kg)': 60,
-    'Torta de Bolacha Grande 1 kg': 55,
-    'Bolo no Pote com Pudim': 14,
-    'Bolo de Stikadinho no Pote': 12,
-    'FRETE GRÁTIS (Ativado)': 0,
+document.getElementById('btnAdicionar').addEventListener('click', function() {
+    var nome = document.getElementById('veiculoInput').value.trim().toUpperCase();
+    if (!nome) return alert('Digite um nome!');
+    if (listaVeiculos.includes(nome)) return alert('Já cadastrado!');
+    abrirModalLogin(function() {
+        listaVeiculos.push(nome); salvarTudo();
+        document.getElementById('veiculoInput').value = ""; renderizarFrotaLocal();
+        atualizarInterfaceEstado();
+        auth.signOut();
+    });
+});
+window.removerVeiculoExigindoSenha = function(index) {
+    abrirModalLogin(function() {
+        if (confirm(`Remover veículo?`)) { listaVeiculos.splice(index, 1); salvarTudo(); renderizarFrotaLocal(); atualizarInterfaceEstado(); }
+        auth.signOut();
+    });
 };
 
-function _validarCarrinho(arr) {
-    if (!Array.isArray(arr)) return [];
-    return arr.filter(item => {
-        if (!item || typeof item.nome !== 'string') return false;
-        if (typeof item.qtd !== 'number' || item.qtd < 1 || item.qtd > 999) return false;
+// ===================== TIMER DE PARADA =====================
+var inicioParadaTs = localStorage.getItem('inicio_parada_ts') ? parseInt(localStorage.getItem('inicio_parada_ts'), 10) : null;
+var tempoParadoSegundos = 0;
+var jaGravouPontoInicialParada = localStorage.getItem('ja_gravou_parada') === 'true';
+
+function formatarTempoParado(segundos) {
+    var hrs = Math.floor(segundos / 3600).toString().padStart(2, '0');
+    var mins = Math.floor((segundos % 3600) / 60).toString().padStart(2, '0');
+    var segs = (segundos % 60).toString().padStart(2, '0');
+    return `${hrs}:${mins}:${segs}`;
+}
+
+function atualizarTextoTempoParado() {
+    if (document.getElementById('badStatus').textContent.indexOf("PARADO") !== -1 && inicioParadaTs) {
+        tempoParadoSegundos = Math.max(0, Math.floor((Date.now() - inicioParadaTs) / 1000));
+    } else {
+        tempoParadoSegundos = 0;
+    }
+    document.getElementById('txtTempoParado').textContent = formatarTempoParado(tempoParadoSegundos);
+}
+
+setInterval(function() {
+    atualizarTextoTempoParado();
+}, 1000);
+
+// ===================== CAPTURA E PROCESSAMENTO GPS =====================
+var DISTANCIA_MINIMA_MOVIMENTO_M = 25; 
+var RAIO_REUTILIZAR_ENDERECO_M = 40;
+var ultimoEnderecoConhecido = null;
+var ultimoPontoHistoricoTs = localStorage.getItem('ultimo_ponto_historico_ts') ? parseInt(localStorage.getItem('ultimo_ponto_historico_ts'), 10) : 0;
+var ultimoPontoRegistrado = historicoCoordenadasLocais.length > 0 ? historicoCoordenadasLocais[historicoCoordenadasLocais.length - 1] : null;
+var errosGpsConsecutivos = 0;
+var ultimaLeituraCompleta = null;
+
+function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
+    var R = 6371000;
+    var dLat = (lat2 - lat1) * Math.PI / 180;
+    var dLon = (lon2 - lon1) * Math.PI / 180;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
+    esconderAvisoGps(); errosGpsConsecutivos = 0;
+    var precisao = precisaoRaw ? Math.round(precisaoRaw) : null;
+    var vel = velRaw ? Math.round(velRaw * 3.6) : 0;
+    var agora = new Date(); var agoraTs = agora.getTime();
+
+    map.setView([lat, lon], map.getZoom() < 14 ? 16 : map.getZoom());
+    marcador.setLatLng([lat, lon]);
+    if (precisao) { circuloPrecisao.setLatLng([lat, lon]).setRadius(precisao); }
+
+    document.getElementById('txtVelocidade').textContent = vel + " km/h";
+    document.getElementById('txtData').textContent = agora.toLocaleDateString('pt-BR');
+    document.getElementById('txtHora').textContent = agora.toLocaleTimeString('pt-BR');
+    document.getElementById('txtPrecisao').textContent = precisao ? `± ${precisao} m` : "—";
+    document.getElementById('txtCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+
+    if (document.getElementById('txtTemperatura').textContent === "—") {
+        talvezBuscarTemperatura(lat, lon);
+    }
+
+    var distanciaDoCentroDaParada = coordenadaParadaFixa ? calcularDistanciaMetros(coordenadaParadaFixa[0], coordenadaParadaFixa[1], lat, lon) : 0;
+
+    var LIMITE_MOVIMENTO_KMH = 5; 
+    var RAIO_FALSO_MOVIMENTO_METROS = 50; 
+    var situacao = "PARADO";
+    var badgeStatus = document.getElementById('badStatus');
+    var deveGravarNoHistorico = false;
+
+    if (vel >= LIMITE_MOVIMENTO_KMH && (!coordenadaParadaFixa || distanciaDoCentroDaParada > RAIO_FALSO_MOVIMENTO_METROS)) {
+        situacao = (vel > LIMITE_VELOCIDADE) ? "VELOCIDADE ACIMA DO LIMITE" : "EM MOVIMENTO";
+        badgeStatus.textContent = situacao;
+        badgeStatus.className = (vel > LIMITE_VELOCIDADE) ? "badge badge-perigo" : "badge badge-movimento";
         
-        const baseConhecida = Object.keys(PRECOS_OFICIAIS).some(base => item.nome.startsWith(base)) || 
-                             item.nome.includes('Torta de bolacha no pote') || 
-                             item.nome.includes('Bolo grande') || 
-                             item.nome.includes('Bolo no pote');
-                             
-        if (baseConhecida && typeof item.preco === 'number' && item.preco >= 0 && item.preco < 10000) {
-            return true;
+        inicioParadaTs = null; jaGravouPontoInicialParada = false; ultimoIdPontoParadaGravado = null; coordenadaParadaFixa = null;
+        localStorage.removeItem('inicio_parada_ts');
+        localStorage.removeItem('ja_gravou_parada');
+        localStorage.removeItem('ultimo_id_ponto_parada_gravado');
+        localStorage.removeItem('coordenada_parada_fixa');
+
+        var distanciaDoUltimoPonto = ultimoPontoRegistrado ? calcularDistanciaMetros(ultimoPontoRegistrado[0], ultimoPontoRegistrado[1], lat, lon) : Infinity;
+        var tempoDesdeUltimoPontoMs = agoraTs - ultimoPontoHistoricoTs;
+
+        if (distanciaDoUltimoPonto >= DISTANCIA_MINIMA_MOVIMENTO_M || tempoDesdeUltimoPontoMs >= 30000 || !ultimoPontoRegistrado) {
+            deveGravarNoHistorico = true;
         }
-        return false;
-    });
-}
+    } else {
+        situacao = "PARADO"; badgeStatus.textContent = "PARADO"; badgeStatus.className = "badge badge-parado";
+        
+        if (!inicioParadaTs) {
+            inicioParadaTs = agoraTs;
+            localStorage.setItem('inicio_parada_ts', String(inicioParadaTs));
+        }
+        if (!coordenadaParadaFixa) {
+            coordenadaParadaFixa = [lat, lon];
+            localStorage.setItem('coordenada_parada_fixa', JSON.stringify(coordenadaParadaFixa));
+        }
 
-function _recalcularTotalSeguro(carrinhoLocal, frete) {
-    let subtotal = 0;
-    for (const item of carrinhoLocal) {
-        subtotal += item.preco * item.qtd;
-    }
-    const desconto = subtotal >= 50 ? subtotal * 0.05 : 0;
-    return { subtotal, desconto, total: subtotal - desconto + frete };
-}
-
-let _tokenPedido = null;
-function _novoToken() {
-    _tokenPedido = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    return _tokenPedido;
-}
-function _consumirToken(t) {
-    if (t && t === _tokenPedido) { _tokenPedido = null; return true; }
-    return false;
-}
-_novoToken();
-
-const ENDERECO_RETIRADA = "Rua Marechal Floriano, 3197,  Coronel Brito ";
-
-function avisoHorario() {
-    alert("⏰ Atenção!\n\nPor favor, escolha um horário com pelo menos 1 hora de antecedência.\n\nEsse é o tempo médio para preparo, entrega ou retirada do pedido. 🤎🍰");
-}
-
-const CONFIG_PROMO = {
-    ativa: false,
-    imagemUrl: "https://i.postimg.cc/T3BNcdCq/1777779837866.png",
-    nomeProduto: "COMBO: Bolo Pudim + Torta Bolacha Doce de Leite",
-    preco: 22.90,
-    textoBotao: "🚀 APROVEITAR COMBO: BOLO COM PUDIM + TORTA DE BOLACHA COM DOCE DE LEITE + FRETE GRÁTIS POR (R$ 22,90)",
-    textoBotaoFlutuante: "🔥 PROMOÇÃO"
-};
-
-function mostrarSplashBoasVindas() {
-    const splash = document.getElementById('splashBoasVindas');
-    if (!splash) return;
-    const agora = new Date();
-    const hora = agora.getHours();
-    let saudacao = (hora >= 4 && hora < 12) ? "☀️ Bom dia" : (hora >= 12 && hora < 18) ? "🍰 Boa tarde" : "🌙 Boa noite";
-    const elSaudacao = document.getElementById('splashSaudacao');
-    if (elSaudacao) elSaudacao.textContent = saudacao;
-    setTimeout(function() { if (splash) splash.remove(); }, 4000);
-}
-
-function carregarBannerDinamico() {
-    const container = document.getElementById("conteudoBanner");
-    const btnFlutuante = document.getElementById("btnReabrirPromo");
-    if (!CONFIG_PROMO.ativa) { btnFlutuante.style.display = "none"; return; }
-    btnFlutuante.innerText = CONFIG_PROMO.textoBotaoFlutuante;
-    const img = document.createElement('img');
-    img.alt = 'Promoção';
-    if (/^https:\/\//.test(CONFIG_PROMO.imagemUrl)) img.src = CONFIG_PROMO.imagemUrl;
-    const btnAdd = document.createElement('button');
-    btnAdd.className = 'btn-promo-add';
-    btnAdd.textContent = CONFIG_PROMO.textoBotao;
-    btnAdd.onclick = function(){ addPromoCombo(); fecharBannerPromo(); };
-    const btnClose = document.createElement('button');
-    btnClose.className = 'btn-promo-close';
-    btnClose.textContent = 'Ver outros produtos';
-    btnClose.onclick = fecharBannerPromo;
-    container.innerHTML = ''; container.appendChild(img); container.appendChild(btnAdd); container.appendChild(btnClose);
-}
-
-function fecharGaleriaAbrirHorarios() { document.getElementById("modalFotosIniciais").style.display = "none"; document.getElementById("modalAviso").style.display = "block"; }
-function fecharModalAviso() { document.getElementById("modalAviso").style.display = "none"; abrirBannerPromo(); }
-function abrirBannerPromo() { if(CONFIG_PROMO.ativa) document.getElementById("modalPromo").style.display = "block"; }
-function fecharBannerPromo() { document.getElementById("modalPromo").style.display = "none"; }
-
-let promoAtiva = false;
-let carrinho = [];
-let pixGerado = false;
-const CHAVE_PIX = "00431179026"; 
-const NOME_RECEBEDOR = "JOSI DOCES";
-const CIDADE_RECEBEDOR = "VENANCIO AIRES";
-
-function configuringLimitesData() {
-    const hoje = new Date();
-    const ano = hoje.getFullYear();
-    const mes = String(hoje.getMonth() + 1).padStart(2, '0');
-    const dia = String(hoje.getDate()).padStart(2, '0');
-    document.getElementById('dataAgendamento').setAttribute('min', `${ano}-${mes}-${dia}`);
-}
-
-function validarDataHora() {
-    const dataInput = document.getElementById('dataAgendamento');
-    const horaInput = document.getElementById('horaAgendamento');
-    if (!dataInput.value) return;
-    const agora = new Date();
-    const dataSelecionada = new Date(dataInput.value + 'T00:00:00');
-    const hojeApenasData = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
-    if (dataSelecionada < hojeApenasData) {
-        alert("Ops! Você não pode selecionar uma data que já passou.");
-        dataInput.value = ""; horaInput.value = ""; return;
-    }
-    if (dataSelecionada.getTime() === hojeApenasData.getTime() && horaInput.value) {
-        const [horaSel, minSel] = horaInput.value.split(':');
-        const dataHoraSelecionada = new Date();
-        dataHoraSelecionada.setHours(horaSel, minSel, 0, 0);
-        if (dataHoraSelecionada < agora) {
-            alert("Este horário já passou! Por favor, escolha um horário futuro.");
-            horaInput.value = "";
+        if (!jaGravouPontoInicialParada) {
+            deveGravarNoHistorico = true;
+            jaGravouPontoInicialParada = true;
+            localStorage.setItem('ja_gravou_parada', 'true');
         }
     }
-}
 
-function verificarHorarioValidoParaAgendamento(dataStr, horaStr) {
-    if (!dataStr || !horaStr) return false;
-    
-    const dataAgendada = new Date(dataStr + 'T' + horaStr);
-    const diaSemana = dataAgendada.getDay(); 
-    const horaAtual = dataAgendada.getHours();
-    
-    const feriados = ["01/01", "17/02", "03/04", "21/04", "01/05", "04/06", "07/09", "12/10", "02/11", "15/11", "25/12"];
-    const dataFormatada = dataAgendada.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-    const ehFeriado = feriados.includes(dataFormatada);
-    
-    if (diaSemana >= 1 && diaSemana <= 5 && !ehFeriado) {
-        return (horaAtual >= 10 && horaAtual < 23);
-    } else {
-        return (horaAtual >= 10 && horaAtual < 17);
-    }
-}
-
-function toggleVisibilidadeCarrinho() {
-    const box = document.getElementById("carrinhoBox");
-    box.style.display = (box.style.display === "none" || box.style.display === "") ? "block" : "none";
-    verificarPgto();
-}
-
-function mascaraTelefone(i) {
-    let v = i.value.replace(/\D/g, "");
-    v = v.replace(/^(\d{2})(\d)/g, "($1) $2");
-    v = v.replace(/(\d)(\d{4})$/, "$1-$2");
-    i.value = v;
-}
-
-function salvarDados() {
-    _lsSet('pedidoJosiDoces', {
-        nome: document.getElementById("nome").value,
-        telefone: document.getElementById("telefone").value,
-        bairro: document.getElementById("bairro").value,
-        endereco: document.getElementById("endereco").value,
-        data: document.getElementById('dataAgendamento').value,
-        hora: document.getElementById('horaAgendamento').value,
-        pagamento: document.getElementById("pagamento").value,
-        carrinho: carrinho,
-        promoAtiva: promoAtiva
-    });
-}
-
-function carregarDados() {
-    configuringLimitesData();
-    const d = _lsGet('pedidoJosiDoces');
-    if (d) {
-        document.getElementById("nome").value = d.nome || "";
-        document.getElementById("telefone").value = d.telefone || "";
-        document.getElementById("bairro").value = d.bairro || "retirada";
-        document.getElementById("endereco").value = d.endereco || "";
-        document.getElementById("pagamento").value = d.pagamento || "Pix";
-        carrinho = _validarCarrinho(d.carrinho || []);
-        promoAtiva = d.promoAtiva || false;
-        document.getElementById('dataAgendamento').value = d.data || "";
-        document.getElementById('horaAgendamento').value = d.hora || "";
-        alternarEndereco(); validarDataHora(); verificarPgto();
-    }
-}
-
-let _saboresContexto = null;
-
-function addComSabor(nomeBase, preco, sabores) {
-    _saboresContexto = { nomeBase, preco, sabores, selecionados: new Set() };
-
-    const titulo = document.getElementById('saboresTitulo');
-    titulo.textContent = `🍰 ${nomeBase}`;
-
-    const lista = document.getElementById('saboresLista');
-    lista.innerHTML = '';
-    sabores.forEach((sabor, idx) => {
-        const div = document.createElement('div');
-        div.className = 'sabor-opcao';
-        div.dataset.idx = idx;
-
-        const check = document.createElement('span');
-        check.className = 'sabor-check';
-        check.textContent = '✓';
-
-        const nomeSpan = document.createElement('span');
-        nomeSpan.className = 'sabor-nome';
-        nomeSpan.textContent = sabor;
-
-        div.appendChild(check);
-        div.appendChild(nomeSpan);
-        div.onclick = function () { toggleSabor(idx, div); };
-        lista.appendChild(div);
-    });
-
-    atualizarResumoSabores();
-    document.getElementById('modalSabores').style.display = 'block';
-}
-
-function toggleSabor(idx, el) {
-    if (!_saboresContexto) return;
-    if (_saboresContexto.selecionados.has(idx)) {
-        _saboresContexto.selecionados.delete(idx);
-        el.classList.remove('selecionado');
-    } else {
-        _saboresContexto.selecionados.add(idx);
-        el.classList.add('selecionado');
-    }
-    atualizarResumoSabores();
-}
-
-function atualizarResumoSabores() {
-    const ctx = _saboresContexto;
-    const btn = document.getElementById('btnConfirmarSabores');
-    const resumo = document.getElementById('saboresPrecoResumo');
-    if (!ctx) return;
-    const qtd = ctx.selecionados.size;
-
-    if (qtd === 0) {
-        resumo.innerHTML = '';
-        const aviso = document.createElement('span');
-        aviso.className = 'sabores-aviso-vazio';
-        aviso.textContent = '⚠️ Selecione ao menos 1 sabor para continuar';
-        resumo.appendChild(aviso);
-        btn.disabled = true;
-        return;
-    }
-
-    const precoFinal = ctx.preco + (qtd - 1) * 3;
-    const nomesEscolhidos = Array.from(ctx.selecionados).sort((a, b) => a - b).map(i => ctx.sabores[i]);
-
-    resumo.innerHTML = '';
-    const tagsWrap = document.createElement('div');
-    tagsWrap.className = 'sabores-selecionados-tags';
-    nomesEscolhidos.forEach(nome => {
-        const tag = document.createElement('span');
-        tag.className = 'tag-sabor-escolhido';
-        tag.textContent = nome;
-        tagsWrap.appendChild(tag);
-    });
-
-    const precoLinha = document.createElement('div');
-    precoLinha.className = 'sabores-preco-final';
-    precoLinha.textContent = 'Total do item: ';
-    const bPreco = document.createElement('b');
-    bPreco.textContent = `R$ ${precoFinal.toFixed(2).replace('.', ',')}`;
-    precoLinha.appendChild(bPreco);
-    if (qtd > 1) {
-        const extra = document.createElement('span');
-        extra.className = 'sabores-extra';
-        extra.textContent = ' (+R$ 3,00 por sabor extra)';
-        precoLinha.appendChild(extra);
-    }
-
-    resumo.appendChild(tagsWrap);
-    resumo.appendChild(precoLinha);
-    btn.disabled = false;
-}
-
-function confirmarSabores() {
-    const ctx = _saboresContexto;
-    if (!ctx || ctx.selecionados.size === 0) return;
-
-    const idxOrdenados = Array.from(ctx.selecionados).sort((a, b) => a - b);
-    const saboresEscolhidos = idxOrdenados.map(i => ctx.sabores[i]);
-    const precoFinal = ctx.preco + (saboresEscolhidos.length - 1) * 3;
-    const nomeCompleto = `${ctx.nomeBase} (${saboresEscolhidos.join(' + ')})`;
-
-    const item = carrinho.find(i => i.nome === nomeCompleto);
-    if (item) item.qtd++;
-    else carrinho.push({ nome: nomeCompleto, preco: precoFinal, qtd: 1, base: ctx.nomeBase });
-
-    salvarDados(); resetPagamentoFluxo(); verificarPgto();
-    fecharModalSabores();
-}
-
-function fecharModalSabores() {
-    document.getElementById('modalSabores').style.display = 'none';
-    _saboresContexto = null;
-}
-
-function add(nome, preco) {
-    if (!PRECOS_OFICIAIS.hasOwnProperty(nome)) return;
-    if (PRECOS_OFICIAIS[nome] !== preco) return;
-    const item = carrinho.find(i => i.nome === nome);
-    if (item) item.qtd++;
-    else carrinho.push({ nome, preco, qtd: 1 });
-    salvarDados(); resetPagamentoFluxo(); verificarPgto();
-}
-
-function addPromoCombo() {
-    carrinho = carrinho.filter(i => i.nome !== CONFIG_PROMO.nomeProduto && i.nome !== 'FRETE GRÁTIS (Ativado)');
-    carrinho.push({ nome: CONFIG_PROMO.nomeProduto, preco: CONFIG_PROMO.preco, qtd: 1, fixo: true });
-    carrinho.push({ nome: 'FRETE GRÁTIS (Ativado)', preco: 0, qtd: 1, fixo: true });
-    promoAtiva = true;
-    salvarDados(); resetPagamentoFluxo(); verificarPgto(); toggleVisibilidadeCarrinho();
-}
-
-function alternarEndereco() {
-    const bairro = document.getElementById("bairro").value;
-    document.getElementById("blocoEndereco").style.display = (bairro === "retirada") ? "none" : "block";
-}
-
-function atualizar() {
-    const valorBairro = document.getElementById("bairro").value;
-    let subtotal = carrinho.reduce((acc, item) => acc + (item.preco * (item.qtd || 1)), 0);
-    let frete = (subtotal >= 50 || promoAtiva || valorBairro === "retirada") ? 0 : parseFloat(valorBairro);
-    
-    let desconto = 0;
-    const divAlertaCupom = document.getElementById("alertaCupomDinamico");
-
-    if (subtotal >= 50) {
-        desconto = subtotal * 0.05;
-        if(divAlertaCupom) divAlertaCupom.innerHTML = `<div class="alerta-sucesso-cupom">🎉 Parabéns! Você atingiu R$ 50,00 e ganhou 5% de desconto + FRETE GRÁTIS!</div>`;
-    } else if (subtotal > 0 && subtotal < 50) {
-        let quantoFalta = (50 - subtotal).toFixed(2).replace('.', ',');
-        if(divAlertaCupom) divAlertaCupom.innerHTML = `<div class="alerta-progresso-cupom">🛒 Adicione mais <b>R$ ${quantoFalta}</b> para ganhar <b>5% de DESCONTO + FRETE GRÁTIS</b> no seu pedido!</div>`;
-    } else {
-        if(divAlertaCupom) divAlertaCupom.innerHTML = "";
-    }
-    
-    const total = subtotal - desconto + frete;
-    const qtdTotal = carrinho.reduce((acc, item) => acc + (item.nome !== 'FRETE GRÁTIS (Ativado)' ? item.qtd : 0), 0);
-    
-    document.getElementById("cartBadge").innerText = qtdTotal;
-    document.getElementById("btnToggle").style.background = (qtdTotal > 0) ? "linear-gradient(135deg, #25D366, #1da851)" : "linear-gradient(135deg, #007bff, #0055cc)";
-
-    const todosDisplays = document.querySelectorAll('.qtd-display');
-    todosDisplays.forEach(span => span.innerText = "0");
-    
-    carrinho.forEach(item => {
-        const idAlvo = item.base ? `qtd-${item.base}` : `qtd-${item.nome}`;
-        const span = document.getElementById(idAlvo);
-        if(span) {
-            let totalDaqueleCard = carrinho.filter(i => (i.base && i.base === item.base) || (i.nome === item.nome)).reduce((a, b) => a + b.qtd, 0);
-            span.innerText = totalDaqueleCard;
+    if ((document.getElementById('txtRua').textContent === "—" || document.getElementById('txtRua').textContent === "Buscando endereço...") && !deveGravarNoHistorico) {
+        var idFixoPonto = gerarIdPonto(agoraTs);
+        var jaExisteFila = filaGeocodificarDepois.some(p => calcularDistanciaMetros(p.lat, p.lon, lat, lon) < 15);
+        if (!jaExisteFila) {
+            filaGeocodificarDepois.push({ id: idFixoPonto, lat: lat, lon: lon, ts: agoraTs });
+            document.getElementById('txtRua').textContent = "Buscando...";
+            document.getElementById('txtBairro').textContent = "Buscando...";
+            document.getElementById('txtCidade').textContent = "Buscando...";
+            document.getElementById('txtEstado').textContent = "Buscando...";
+            processarFilaGeocodificacao();
         }
-    });
+    }
 
-    const listaDiv = document.getElementById("itensCarrinhoLista");
-    listaDiv.innerHTML = "";
-    carrinho.forEach((item, index) => {
-        const row = document.createElement('div');
-        row.className = 'item-carrinho';
-        const spanNome = document.createElement('span');
-        spanNome.textContent = `${item.qtd}x ${item.nome}`;
-        const spanPreco = document.createElement('span');
-        spanPreco.textContent = `R$ ${(item.preco*item.qtd).toFixed(2).replace('.', ',')} `;
-        const spanRemover = document.createElement('span');
-        spanRemover.className = 'remover';
-        spanRemover.textContent = '×';
-        spanRemover.onclick = (function(i){ return function(){ remover(i); }; })(index);
-        spanPreco.appendChild(spanRemover); row.appendChild(spanNome); row.appendChild(spanPreco); listaDiv.appendChild(row);
-    });
+    atualizarTextoTempoParado();
 
-    let descontoHtml = desconto > 0 ? `<div style="color: #2e7d32;">🏷️ <b>Desconto (5%):</b> -R$ ${desconto.toFixed(2).replace('.', ',')}</div>` : '';
-    let freteTexto = (frete === 0) ? '<span style="color:#2e7d32; font-weight:700;">GRÁTIS</span>' : `R$ ${frete.toFixed(2).replace('.', ',')}`;
-
-    document.getElementById("resumo").innerHTML = `
-        <div style="font-size:14px; text-align:left; line-height:1.8;">
-            <div>🧁 <b>Itens:</b> ${qtdTotal}</div>
-            <div>💰 <b>Subtotal:</b> R$ ${subtotal.toFixed(2).replace('.', ',')}</div>
-            ${descontoHtml}
-            <div>🚚 <b>Frete:</b> ${freteTexto}</div>
-            <div>📍 <b>Forma:</b> ${valorBairro === "retirada" ? "Retirada no local" : "Entrega"}</div>
-            <hr style="margin:10px 0; border:none; border-top: 1.5px dashed var(--creme-escuro);">
-            <div style="font-size:20px; color: var(--marrom-escuro); font-family: 'Playfair Display', serif;">
-                <b>TOTAL: R$ ${total.toFixed(2).replace('.', ',')}</b>
-            </div>
-        </div>
-    `;
+    ultimaLeituraCompleta = {
+        lat: lat, lon: lon, velocidade: (situacao === "PARADO" ? 0 : vel), status: situacao, precisao: precisao,
+        hora: agora.toLocaleTimeString('pt-BR'), data: agora.toLocaleDateString('pt-BR'),
+        tempoParado: document.getElementById('txtTempoParado').textContent
+    };
     
-    document.getElementById("secaoDadosPedido").style.display = (carrinho.length > 0) ? "block" : "none";
-    document.getElementById("btnToggle").style.display = "flex";
-    return total;
-}
+    sincronizarTempoRealImediato();
 
-function removerPorNome(nome) {
-    const index = carrinho.findIndex(i => i.nome === nome);
-    if (index !== -1) remover(index);
-}
+    if (deveGravarNoHistorico) {
+        ultimoPontoRegistrado = [lat, lon];
+        ultimoPontoHistoricoTs = agoraTs;
+        localStorage.setItem('ultimo_ponto_historico_ts', String(ultimoPontoHistoricoTs));
 
-function removerPorNomeBasico(nomeBase) {
-    const index = carrinho.findIndex(i => i.base === nomeBase || i.nome === nomeBase);
-    if (index !== -1) remover(index);
-}
+        historicoCoordenadasLocais.push([lat, lon]);
+        if (historicoCoordenadasLocais.length > 2000) historicoCoordenadasLocais.shift();
+        polilinhaRota.setLatLngs(historicoCoordenadasLocais);
+        agendarEncaixeNasRuas(); talvezBuscarTemperatura(lat, lon);
 
-function remover(index) {
-    if (carrinho[index].qtd > 1) {
-        carrinho[index].qtd -= 1;
-    } else {
-        const itemRemovido = carrinho[index].nome;
-        carrinho.splice(index, 1);
-        if (itemRemovido === CONFIG_PROMO.nomeProduto) {
-            if (!carrinho.some(i => i.nome === CONFIG_PROMO.nomeProduto)) {
-                carrinho = carrinho.filter(i => i.nome !== 'FRETE GRÁTIS (Ativado)');
-                promoAtiva = false;
+        var idPonto = gerarIdPonto(agoraTs);
+        if (situacao === "PARADO") { ultimoIdPontoParadaGravado = idPonto; }
+
+        var registro;
+        var distanciaDoUltimoEndereco = ultimoEnderecoConhecido ? calcularDistanciaMetros(ultimoEnderecoConhecido.lat, ultimoEnderecoConhecido.lon, lat, lon) : Infinity;
+
+        if (ultimoEnderecoConhecido && distanciaDoUltimoEndereco <= RAIO_REUTILIZAR_ENDERECO_M) {
+            document.getElementById('txtRua').textContent = ultimoEnderecoConhecido.rua;
+            document.getElementById('txtBairro').textContent = ultimoEnderecoConhecido.bairro;
+            document.getElementById('txtCidade').textContent = ultimoEnderecoConhecido.cidade;
+            document.getElementById('txtEstado').textContent = ultimoEnderecoConhecido.estado;
+
+            registro = {
+                id: idPonto, lat: lat, lon: lon, velocidade: (situacao === "PARADO" ? 0 : vel), status: situacao,
+                tempoParado: document.getElementById('txtTempoParado').textContent,
+                hora: agora.toLocaleTimeString('pt-BR'), data: agora.toLocaleDateString('pt-BR'),
+                rua: ultimoEnderecoConhecido.rua, bairro: ultimoEnderecoConhecido.bairro,
+                cidade: ultimoEnderecoConhecido.cidade, estado: ultimoEnderecoConhecido.estado, endereco: ultimoEnderecoConhecido.endereco
+            };
+            registroCompleto.push(registro);
+            if (listaVeiculos.length > 0) {
+                listaVeiculos.forEach(vNome => { filaPendentes.push(Object.assign({ vID: vNome, empresaId: EMPRESA_ID }, registro)); });
             }
-        }
-    }
-    if (carrinho.length === 0) promoAtiva = false;
-    salvarDados(); resetPagamentoFluxo(); verificarPgto();
-}
-
-function resetPagamentoFluxo() { pixGerado = false; document.getElementById("pixDisplay").style.display = "none"; verificarPgto(); }
-
-function verificarPgto() {
-    const pag = document.getElementById("pagamento").value;
-    const btnZap = document.getElementById("btnWhatsapp");
-    const btnPix = document.getElementById("btnGerarPix");
-    const btnMP = document.getElementById("btnPagarMP");
-    const nome = document.getElementById("nome").value.trim();
-    const telRaw = document.getElementById("telefone").value.replace(/\D/g, "");
-    const data = document.getElementById("dataAgendamento").value;
-    const hora = document.getElementById("horaAgendamento").value;
-    const bairro = document.getElementById("bairro").value;
-    const endereco = document.getElementById("endereco").value.trim();
-
-    const totalAtual = atualizar();
-    let telValido = (telRaw.length === 11 && telRaw[2] === "9") || (telRaw.length === 9 && telRaw[0] === "9");
-    document.getElementById("erroTelefone").style.display = (telRaw.length > 0 && !telValido) ? "block" : "none";
-
-    const tudoPronto = (nome !== "" && telValido && data !== "" && hora !== "" && (bairro === "retirada" || endereco !== "") && totalAtual > 0);
-
-    if (data !== "" && hora !== "") {
-        const horarioValido = verificarHorarioValidoParaAgendamento(data, hora);
-        if (!horarioValido) {
-            btnPix.style.display = "none"; btnMP.style.display = "none";
-            btnZap.disabled = true; btnZap.style.background = "linear-gradient(135deg, #e74c3c, #c0392b)"; 
-            btnZap.innerText = "🔴 HORÁRIO DE ATENDIMENTO INVÁLIDO";
-            return;
-        }
-    }
-
-    btnPix.style.display = (pag === "Pix" && !pixGerado) ? "block" : "none";
-    btnMP.style.display = (pag.includes("Cartão")) ? "block" : "none";
-    btnPix.disabled = !tudoPronto; btnMP.disabled = !tudoPronto;
-    
-    if (tudoPronto && (pag === "Pix" ? pixGerado : true)) {
-        btnZap.disabled = false; btnZap.innerText = "✅ Enviar no WhatsApp"; btnZap.style.background = "linear-gradient(135deg, #25D366, #1da851)";
-    } else {
-        btnZap.disabled = true; btnZap.style.background = "linear-gradient(135deg, #bbb, #ccc)";
-        btnZap.innerText = (pag === "Pix" && !pixGerado) ? "💎 Gere o PIX primeiro" : "⚠️ Preencha os dados";
-    }
-}
-
-function gerarPixReal() {
-    const totalCalculado = atualizar();
-    if (totalCalculado <= 0) {
-        alert("⚠️ O valor do pedido está zerado. Adicione itens ao carrinho antes de gerar o PIX.");
-        return;
-    }
-    const valor = totalCalculado.toFixed(2);
-    const chavePix = CHAVE_PIX.replace(/\D/g, "");
-    const nome = NOME_RECEBEDOR.substring(0, 25).toUpperCase();
-    const city = CIDADE_RECEBEDOR.substring(0, 15).toUpperCase();
-
-    function format(id, value) { return id + value.length.toString().padStart(2, '0') + value; }
-    function crc16(payload) {
-        let polinomio = 0x1021, resultado = 0xFFFF;
-        for (let i = 0; i < payload.length; i++) {
-            resultado ^= (payload.charCodeAt(i) << 8);
-            for (let j = 0; j < 8; j++) {
-                if ((resultado <<= 1) & 0x10000) resultado ^= polinomio;
-                resultado &= 0xFFFF;
-            }
-        }
-        return resultado.toString(16).toUpperCase().padStart(4, '0');
-    }
-
-    const payloadSemCRC = format("00", "01") + format("26", format("00", "BR.GOV.BCB.PIX") + format("01", chavePix)) + format("52", "0000") + format("53", "986") + format("54", valor) + format("58", "BR") + format("59", nome) + format("60", city) + format("62", format("05", "***")) + "6304";
-    const pixCopiaECola = payloadSemCRC + crc16(payloadSemCRC);
-    const qrcodeContainer = document.getElementById("qrcode"); qrcodeContainer.innerHTML = "";
-    new QRCode(qrcodeContainer, { text: pixCopiaECola, width: 180, height: 180 });
-    document.getElementById("brcode").value = pixCopiaECola;
-    document.getElementById("pixDisplay").style.display = "block";
-    pixGerado = true; verificarPgto();
-}
-
-function copyPix() { const brcode = document.getElementById("brcode"); brcode.select(); document.execCommand("copy"); alert("Código Pix copiado!"); }
-function abrirMercadoPago() { window.open("https://link.mercadopago.com.br/josidocesgoumert"); }
-function limparCarrinhoCompleto() {
-    if(confirm("Deseja limpar todo o carrinho?")) {
-        carrinho = []; promoAtiva = false; salvarDados(); resetPagamentoFluxo(); verificarPgto(); toggleVisibilidadeCarrinho();
-    }
-}
-</script>
-
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, push, set } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyBwU6G-T2V_Z3F8H4N9M1L0-X7K5J2W8V1",
-  authDomain: "josigourmet-af3ff.firebaseapp.com",
-  databaseURL: "https://josigourmet-af3ff-default-rtdb.firebaseio.com",
-  projectId: "josigourmet-af3ff",
-  storageBucket: "josigourmet-af3ff.firebasestorage.app",
-  messagingSenderId: "373768013260",
-  appId: "1:373768013260:web:bd5fa8dcf6053414d7c969",
-  measurementId: "G-XR4249E0QG"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-
-window.salvarPedidoFirebase = async function(pedido) {
-  try {
-    await set(push(ref(db, "pedidos")), pedido);
-    console.log("Pedido salvo com sucesso!");
-  } catch (erro) {
-    console.error("Erro ao salvar pedido:", erro);
-  }
-};
-</script>
-
-<!-- Logica JavaScript de Funcionamento do Chatbot IA com Gemini API -->
-<script>
-function toggleChat() {
-    const janela = document.getElementById('chatJanela');
-    const aberto = (janela.style.display === 'none' || janela.style.display === '');
-    janela.style.display = aberto ? 'flex' : 'none';
-}
-
-// CONTEXTO DE INSTRUÇÃO PARA A IA
-const CONTEXTO_PROMPT_JOSI = `Você é a assistente virtual super simpática e acolhedora da "Josi Doces Gourmet", localizada em Venâncio Aires.
-Seu objetivo principal é ajudar os clientes do site com dúvidas sobre o cardápio, entregas e pedidos.
-
-Nossos produtos e preços oficiais listados no site são:
-- Torta de bolacha no pote: R$ 10,00 (Sabores: Nata Ninho, Doce de leite com chocolate amargo e Bombom)
-- Torta de Bolacha Grande 1 kg: R$ 55,00
-- Bolo grande: R$ 35,00 (Sabores: Chocolate, Beijinhos e Brigadeiro, Cenoura com brigadeiro, Chocolate amargo, Doce de leite)
-- Bolo no pote: R$ 10,00 (Sabores: Beijinho, Coco, Doce de leite, Brigadeiro, Cenoura com brigadeiro)
-- Torta grande (A partir de 1 kg): A partir de R$ 60,00
-- Bolo no Pote com Pudim: R$ 14,00
-- Bolo de Stikadinho no Pote: R$ 12,00
-
-Regras Importantes da Loja:
-- Oferecemos Frete Grátis + 5% de desconto automático para qualquer compra a partir de R$ 50,00.
-- Atendimento e Entregas: Segunda a Sexta das 08h às 23h. Sábados, Domingos e Feriados das 08h às 17h.
-- Endereço físico para retirada no local: Rua Marechal Floriano, 3197, bairro Coronel Brito.
-- O prazo estimado para o preparo e entrega/retirada após a confirmação do pedido é de 40 a 60 minutos (solicitamos agendamento com pelo menos 1 hora de antecedência no site).
-
-Instruções de Comportamento da IA:
-- Responda sempre de forma curta, prestativa e muito fofa. Use muitos emojis de doces (🍰, 🤎, ✨, 🍬, 🧁).
-- Incentive gentilmente o cliente a escolher e adicionar os itens diretamente nas caixinhas de quantidade do site para montar o carrinho.
-- Se perguntarem coisas muito fora do assunto de confeitaria, mude de assunto ou decline educadamente dizendo que foca em adoçar a vida deles.`;
-
-const GEMINI_API_KEY = "AQ.Ab8RN6J8AxyjfImITZ8SLxoNpFQ7J7Q-W3NUHeBZ0GBhnkA1kg"; 
-
-async function enviarMensagemIa() {
-    const input = document.getElementById('chatInput');
-    const container = document.getElementById('chatMensagens');
-    const texto = input.value.trim();
-    if (!texto) return;
-
-    // 1. Adiciona a mensagem do usuário na tela
-    const msgUser = document.createElement('div');
-    msgUser.className = 'msg user';
-    msgUser.textContent = texto;
-    container.appendChild(msgUser);
-    input.value = '';
-    container.scrollTop = container.scrollHeight;
-
-    // 2. Adiciona o balão de carregamento "Digitando..."
-    const msgDigitando = document.createElement('div');
-    msgDigitando.className = 'msg ia';
-    msgDigitando.textContent = 'Digitando... 🍰';
-    container.appendChild(msgDigitando);
-    container.scrollTop = container.scrollHeight;
-
-    try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
-        
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{
-                        text: `${CONTEXTO_PROMPT_JOSI}\n\nPergunta do cliente: ${texto}`
-                    }]
-                }]
-            })
-        });
-
-        const dados = await response.json();
-        
-        // Remove o balão indicador de "Digitando..."
-        msgDigitando.remove();
-
-        // 3. Captura o texto retornado pela IA e o exibe no chat
-        if (dados.candidates && dados.candidates[0].content.parts[0].text) {
-            const respostaIa = dados.candidates[0].content.parts[0].text;
-            const msgIa = document.createElement('div');
-            msgIa.className = 'msg ia';
-            msgIa.textContent = respostaIa;
-            container.appendChild(msgIa);
         } else {
-            throw new Error("Formato de resposta inválido");
+            document.getElementById('txtRua').textContent = "Buscando...";
+            document.getElementById('txtBairro').textContent = "Buscando...";
+            document.getElementById('txtCidade').textContent = "Buscando...";
+            document.getElementById('txtEstado').textContent = "Buscando...";
+
+            registro = {
+                id: idPonto, lat: lat, lon: lon, velocidade: (situacao === "PARADO" ? 0 : vel), status: situacao,
+                tempoParado: document.getElementById('txtTempoParado').textContent,
+                hora: agora.toLocaleTimeString('pt-BR'), data: agora.toLocaleDateString('pt-BR'),
+                rua: "Buscando endereço...", bairro: "Buscando endereço...", cidade: "Buscando endereço...", estado: "Buscando endereço...", endereco: "Buscando endereço..."
+            };
+            registroCompleto.push(registro);
+            if (listaVeiculos.length > 0) {
+                listaVeiculos.forEach(vNome => { filaPendentes.push(Object.assign({ vID: vNome, empresaId: EMPRESA_ID }, registro)); });
+            }
+            filaGeocodificarDepois.push({ id: idPonto, lat: lat, lon: lon, ts: agoraTs });
         }
 
-    } catch (erro) {
-        console.error("Erro na integração com a IA:", erro);
-        msgDigitando.textContent = "Ops, deu um estalo técnico no meu sistema! 🍫 Se o seu problema for urgente, você pode falar direto com a Josi clicando no botão do WhatsApp! 🤎";
+        salvarTudo(); atualizarInterfaceEstado(); enviarDadosFila(); processarFilaGeocodificacao();
+    }
+}
+
+function sincronizarTempoRealImediato() {
+    if (!ultimaLeituraCompleta || listaVeiculos.length === 0 || !firebaseOnlineConfirmado) return;
+    var updates = {};
+    listaVeiculos.forEach(vNome => {
+        var basePath = 'empresas/' + sanitizarChavePath(EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(vNome) + '/atual/';
+        updates[basePath + 'lat'] = ultimaLeituraCompleta.lat;
+        updates[basePath + 'lon'] = ultimaLeituraCompleta.lon;
+        updates[basePath + 'velocidade'] = ultimaLeituraCompleta.velocidade;
+        updates[basePath + 'status'] = ultimaLeituraCompleta.status;
+        updates[basePath + 'hora'] = ultimaLeituraCompleta.hora;
+        updates[basePath + 'data'] = ultimaLeituraCompleta.data;
+        updates[basePath + 'tempoParado'] = document.getElementById('txtTempoParado').textContent; 
+        
+        // Sincroniza o endereço em tempo real para alimentar o painel do GitHub Pages instantaneamente
+        updates[basePath + 'rua'] = document.getElementById('txtRua').textContent;
+        updates[basePath + 'bairro'] = document.getElementById('txtBairro').textContent;
+        updates[basePath + 'cidade'] = document.getElementById('txtCidade').textContent;
+        updates[basePath + 'estado'] = document.getElementById('txtEstado').textContent;
+    });
+    db.ref().update(updates).then(() => {
+        if(!firebaseOnlineConfirmado) { firebaseOnlineConfirmado = true; atualizarInterfaceEstado(); }
+    }).catch(e => console.warn(e));
+}
+
+setInterval(function() {
+    var statusAtual = document.getElementById('badStatus').textContent;
+    if (statusAtual.indexOf("PARADO") !== -1 && ultimoIdPontoParadaGravado && listaVeiculos.length > 0 && firebaseOnlineConfirmado) {
+        var tempoAtualizado = document.getElementById('txtTempoParado').textContent;
+        var agoraStr = new Date().toLocaleTimeString('pt-BR');
+        var patchHistorico = {};
+        
+        listaVeiculos.forEach(vNome => {
+            var path = 'empresas/' + sanitizarChavePath(EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(vNome) + '/historico/' + ultimoIdPontoParadaGravado + '/';
+            patchHistorico[path + 'tempoParado'] = tempoAtualizado;
+            patchHistorico[path + 'horaFinalParada'] = agoraStr; 
+        });
+        
+        db.ref().update(patchHistorico).catch(e => console.warn(e));
+    }
+}, 30000);
+
+// ===================== NATIVO BACKGROUND GPS =====================
+function tratarErroGps(erro) {
+    console.error(erro); errosGpsConsecutivos++;
+    if (erro.code === 1) mostrarAvisoGps("⚠️ Permissão de localização negada.");
+    else if (errosGpsConsecutivos >= 4) mostrarAvisoGps("⚠️ Instabilidade no sinal do GPS.");
+}
+
+function iniciarRastreioNativoBackground() {
+    var BG = window.Capacitor.Plugins.BackgroundGeolocation;
+    if (!BG) { iniciarRastreioWeb(); return; }
+    atualizarBarraBackground("🟢 Rastreio em segundo plano ATIVO", true);
+    BG.addWatcher({
+        backgroundMessage: "Gravando rotas e telemetria em tempo real...",
+        backgroundTitle: "Everton GPS Corporativo",
+        requestPermissions: true, stale: false, distanceFilter: 0
+    }, function(location, error) {
+        if (error) return;
+        if (location) processarNovaPosicao(location.latitude, location.longitude, location.accuracy, location.speed);
+    }).then(id => { bgWatcherId = id; });
+}
+
+function iniciarRastreioWeb() {
+    if (!checarContextoSeguro() || !navigator.geolocation) return;
+    navigator.geolocation.watchPosition(position => {
+        processarNovaPosicao(position.coords.latitude, position.coords.longitude, position.coords.accuracy, position.coords.speed);
+    }, tratarErroGps, { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 });
+}
+
+function iniciarRastreioGps() { if (isNative) { iniciarRastreioNativoBackground(); } else { iniciarRastreioWeb(); } }
+iniciarRastreioGps();
+
+// ===================== OUTROS SERVIÇOS =====================
+var encaixeAgendado = false; var ultimoEncaixeTs = 0;
+function agendarEncaixeNasRuas() {
+    var agora = Date.now(); var esperar = Math.max(0, 4000 - (agora - ultimoEncaixeTs));
+    if (encaixeAgendado) return; encaixeAgendado = true;
+    setTimeout(executarEncaixeNasRuas, esperar);
+}
+function ejecutarEncaixeNasRuas() {
+    encaixeAgendado = false; ultimoEncaixeTs = Date.now();
+    if (historicoCoordenadasLocais.length < 2) return;
+    var pontos = historicoCoordenadasLocais.slice(-100);
+    var coordsStr = pontos.map(p => p[1].toFixed(6) + "," + p[0].toFixed(6)).join(";");
+    fetchComTimeout(`https://router.project-osrm.org/match/v1/driving/${coordsStr}?overview=full&geometries=geojson`, {}, TIMEOUT_FETCH_MS)
+        .then(res => res.json()).then(data => {
+            if (data.code === "Ok" && data.matchings && data.matchings.length > 0) {
+                var pontosRua = [];
+                data.matchings.forEach(m => { m.geometry.coordinates.forEach(c => pontosRua.push([c[1], c[0]])); });
+                polilinhaRuas.setLatLngs(pontosRua);
+            }
+        }).catch(e => console.warn(e));
+}
+
+var ultimaBuscaTempTs = 0; var buscandoTemp = false;
+function talvezBuscarTemperatura(lat, lon) {
+    var agora = Date.now(); if (buscandoTemp || (agora - ultimaBuscaTempTs) < 300000) return;
+    buscandoTemp = true; ultimaBuscaTempTs = agora;
+    fetchComTimeout(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature&temperature_unit=celsius&timezone=auto`, {}, TIMEOUT_FETCH_MS)
+        .then(res => res.json()).then(data => {
+            if (data && data.current && typeof data.current.temperature_2m === "number") {
+                var sensacao = typeof data.current.apparent_temperature === "number" ? ` (sensação ${data.current.apparent_temperature.toFixed(1)}°C)` : "";
+                document.getElementById('txtTemperatura').textContent = data.current.temperature_2m.toFixed(1) + " °C" + sensacao;
+            }
+        }).catch(e => console.warn(e)).finally(() => { buscandoTemp = false; });
+}
+
+var geocodificando = false;
+function processarFilaGeocodificacao() {
+    if (geocodificando || filaGeocodificarDepois.length === 0) return;
+    geocodificando = true; atualizarInterfaceEstado();
+    var ponto = filaGeocodificarDepois[filaGeocodificarDepois.length - 1];
+
+    fetchComTimeout(`https://nominatim.openstreetmap.org/reverse?lat=${ponto.lat}&lon=${ponto.lon}&format=json&zoom=18&addressdetails=1`, { headers: { 'Accept-Language': 'pt-BR' } }, TIMEOUT_FETCH_MS)
+        .then(res => res.json()).then(data => {
+            var addr = data.address || {};
+            var rua = addr.road || addr.pedestrian || "Rua não localizada";
+            var bairro = addr.suburb || addr.neighbourhood || "Bairro não localizado";
+            var cidade = addr.city || addr.town || "Cidade não localizada";
+            var estado = addr.state || "Estado não localizado";
+            aplicarEnderecoNoPonto(ponto.id, rua, bairro, cidade, estado);
+            filaGeocodificarDepois.pop();
+        }).catch(err => {
+            ponto.tentativas = (ponto.tentativas || 0) + 1;
+            if (ponto.tentativas >= MAX_TENTATIVAS_GEOCODIFICACAO) filaGeocodificarDepois.pop();
+        }).finally(() => {
+            geocodificando = false; salvarTudo(); atualizarInterfaceEstado();
+            if (filaGeocodificarDepois.length > 0) setTimeout(processarFilaGeocodificacao, INTERVALO_GEOCODIFICACAO_MS);
+        });
+}
+
+function aplicarEnderecoNoPonto(idPonto, rua, bairro, cidade, estado) {
+    var enderecoTxt = `${rua}, ${bairro} - ${cidade}/${estado}`;
+    
+    document.getElementById('txtRua').textContent = rua; 
+    document.getElementById('txtBairro').textContent = bairro;
+    document.getElementById('txtCidade').textContent = cidade; 
+    document.getElementById('txtEstado').textContent = estado;
+
+    var reg = registroCompleto.find(r => r.id === idPonto);
+    if (reg) {
+        reg.rua = rua; reg.bairro = bairro; reg.cidade = cidade; reg.estado = estado; reg.endereco = enderecoTxt;
+        if (rua !== "Endereço indisponível") {
+            ultimoEnderecoConhecido = { lat: reg.lat, lon: reg.lon, rua: rua, bairro: bairro, city: cidade, estado: estado, endereco: enderecoTxt };
+        }
     }
     
-    container.scrollTop = container.scrollHeight;
+    filaPendentes.forEach(p => { if (p.id === idPonto) { p.rua = rua; p.bairro = bairro; p.cidade = cidade; p.estado = estado; p.endereco = enderecoTxt; } });
+    if (listaVeiculos.length > 0) {
+        var patch = {};
+        listaVeiculos.forEach(vNome => {
+            var basePath = 'empresas/' + sanitizarChavePath(EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(vNome) + '/historico/' + idPonto + '/';
+            patch[basePath + 'rua'] = rua; 
+            patch[basePath + 'bairro'] = bairro; 
+            patch[basePath + 'cidade'] = cidade; // Corrigido de "path" para "basePath"
+            patch[basePath + 'estado'] = estado; 
+            patch[basePath + 'endereco'] = enderecoTxt;
+        });
+        db.ref().update(patch).then(() => {
+            sincronizarTempoRealImediato(); // Força atualização do nó "atual" junto
+        }).catch(e => console.warn(e));
+    }
 }
+
+var enviando = false; var falhasConsecutivasLote = 0;
+function enviarDadosFila() {
+    if (enviando || filaPendentes.length === 0) { atualizarInterfaceEstado(); return; }
+    enviando = true; var lote = filaPendentes.slice(0, 25); var updates = {};
+    try {
+        lote.forEach(item => {
+            var basePath = 'empresas/' + sanitizarChavePath(item.empresaId || EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(item.vID) + '/historico/' + item.id;
+            updates[basePath] = item;
+        });
+        db.ref().update(updates).then(() => {
+            filaPendentes.splice(0, lote.length); falhasConsecutivasLote = 0; firebaseOnlineConfirmado = true; salvarTudo();
+        }).catch(e => {
+            falhasConsecutivasLote++; if (falhasConsecutivasLote >= 5) { filaPendentes.shift(); falhasConsecutivasLote = 0; salvarTudo(); }
+        }).finally(() => { enviando = false; atualizarInterfaceEstado(); if (filaPendentes.length > 0) enviarDadosFila(); });
+    } catch (e) { filaPendentes.shift(); enviando = false; atualizarInterfaceEstado(); }
+}
+
+function atualizarInterfaceEstado() {
+    var barra = document.getElementById('statusConexao'); var totalPendente = filaPendentes.length + filaGeocodificarDepois.length;
+    if (listaVeiculos.length === 0) {
+        barra.className = "status-bar status-offline"; barra.innerHTML = "MODO OFFLINE — Adicione um Veículo";
+    } else if (firebaseOnlineConfirmado && totalPendente === 0) {
+        barra.className = "status-bar status-online"; barra.innerHTML = "📡 SISTEMA ONLINE — Sincronizado!";
+    } else if (firebaseOnlineConfirmado) {
+        barra.className = "status-bar status-online"; barra.innerHTML = `📡 ONLINE — Sincronizando... <span>(${totalPendente} pendentes)</span>`;
+    } else {
+        barra.className = "status-bar status-offline"; barra.innerHTML = `MODO OFFLINE <span>(${totalPendente} pendentes)</span>`;
+    }
+    document.getElementById('filaInfo').textContent = registroCompleto.length + " pontos gravados localmente (" + filaPendentes.length + " no Firebase)";
+}
+
+window.addEventListener('online', function() { firebaseOnlineConfirmado = true; atualizarInterfaceEstado(); processarFilaGeocodificacao(); enviarDadosFila(); agendarEncaixeNasRuas(); });
+window.addEventListener('offline', function() { firebaseOnlineConfirmado = false; atualizarInterfaceEstado(); });
+
+document.getElementById('btnForcar').addEventListener('click', function() { 
+    processarFilaGeocodificacao(); 
+    enviarDadosFila(); 
+    sincronizarTempoRealImediato(); 
+});
+
+document.getElementById('btnExportar').addEventListener('click', function() {
+    if (registroCompleto.length === 0) return alert("Sem pontos.");
+    var lines = ["Data;Hora;Latitude;Longitude;Velocidade(km/h);Situacao;Rua;Bairro;Cidade;Estado"];
+    registroCompleto.forEach(p => { lines.push([p.data, p.hora, p.lat, p.lon, p.velocidade, p.status, p.rua, p.bairro, p.cidade, p.estado].join(";")); });
+    var blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    var url = URL.createObjectURL(blob); var a = document.createElement("a"); a.href = url; a.download = "rota_real_" + new Date().toISOString().slice(0,10) + ".csv"; a.click(); URL.revokeObjectURL(url);
+});
+
+document.getElementById('btnDiagnostico').addEventListener('click', function() {
+    var out = document.getElementById('diagnosticoResultado'); out.textContent = "Testando...";
+    fetchComTimeout("https://nominatim.openstreetmap.org/reverse?lat=-29.6133&lon=-52.1919&format=json&zoom=18", {}, 10000)
+        .then(res => res.text()).then(txt => { out.textContent = "✅ SUCESSO\n\n" + txt.slice(0, 300); }).catch(e => { out.textContent = "❌ ERRO: " + e.message; });
+});
+
+renderizarFrotaLocal(); atualizarInterfaceEstado(); checarContextoSeguro();
+setInterval(function() { if (filaGeocodificarDepois.length > 0) processarFilaGeocodificacao(); if (filaPendentes.length > 0) enviarDadosFila(); sincronizarTempoRealImediato(); }, 6000);
 </script>
 </body>
 </html>
