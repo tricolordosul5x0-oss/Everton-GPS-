@@ -53,7 +53,7 @@
 
         .badge { font-size: 0.75em; padding: 3px 8px; border-radius: 4px; font-weight: bold; }
         .badge-movimento { background: rgba(0,255,166,0.15); color: var(--signal-on); }
-        .badge-parado { background: rgba(255,176,32,0.15); color: var(--signal-off); }
+        .badge-parado { background: rgba(255, 176, 32, 0.15); color: var(--signal-off); }
         .badge-perigo { background: rgba(255, 84, 112, 0.15); color: var(--danger); }
 
         .gps-warning { background: rgba(255,84,112,0.12); border: 1px solid var(--danger); color: var(--danger); padding: 10px 12px; border-radius: 6px; font-size: 0.85em; display: none; }
@@ -161,10 +161,8 @@ firebase.initializeApp(firebaseConfig);
 var db = firebase.database();
 var auth = firebase.auth();
 
-// Variável de controle para monitorar a conexão ativa com o Firebase
 var firebaseOnlineConfirmado = false;
 
-// Monitor do estado de conexão interno do próprio Firebase
 db.ref(".info/connected").on("value", function(snap) {
     if (snap.val() === true) {
         firebaseOnlineConfirmado = true;
@@ -380,6 +378,11 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     document.getElementById('txtPrecisao').textContent = precisao ? `± ${precisao} m` : "—";
     document.getElementById('txtCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
 
+    // Se os campos de texto estiverem limpos, força buscar temperatura logo de cara
+    if (document.getElementById('txtTemperatura').textContent === "—") {
+        talvezBuscarTemperatura(lat, lon);
+    }
+
     var distanciaDoCentroDaParada = coordenadaParadaFixa ? calcularDistanciaMetros(coordenadaParadaFixa[0], coordenadaParadaFixa[1], lat, lon) : 0;
 
     var LIMITE_MOVIMENTO_KMH = 5; 
@@ -421,6 +424,20 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
             deveGravarNoHistorico = true;
             jaGravouPontoInicialParada = true;
             localStorage.setItem('ja_gravou_parada', 'true');
+        }
+    }
+
+    // AJUSTE CRUCIAL: Se a interface exibir traço nos campos de rua, força a entrada na fila de geocodificação
+    if (document.getElementById('txtRua').textContent === "—" && !deveGravarNoHistorico) {
+        var idFixoPonto = gerarIdPonto(agoraTs);
+        var jaExisteFila = filaGeocodificarDepois.some(p => calcularDistanciaMetros(p.lat, p.lon, lat, lon) < 15);
+        if (!jaExisteFila) {
+            filaGeocodificarDepois.push({ id: idFixoPonto, lat: lat, lon: lon, ts: agoraTs });
+            document.getElementById('txtRua').textContent = "Buscando...";
+            document.getElementById('txtBairro').textContent = "Buscando...";
+            document.getElementById('txtCidade').textContent = "Buscando...";
+            document.getElementById('txtEstado').textContent = "Buscando...";
+            processarFilaGeocodificacao();
         }
     }
 
@@ -617,23 +634,27 @@ function processarFilaGeocodificacao() {
 
 function aplicarEnderecoNoPonto(idPonto, rua, bairro, cidade, estado) {
     var enderecoTxt = `${rua}, ${bairro} - ${cidade}/${estado}`;
+    
+    // Atualiza diretamente os campos de texto principais da interface de telemetria
+    document.getElementById('txtRua').textContent = rua; 
+    document.getElementById('txtBairro').textContent = bairro;
+    document.getElementById('txtCidade').textContent = cidade; 
+    document.getElementById('txtEstado').textContent = estado;
+
     var reg = registroCompleto.find(r => r.id === idPonto);
     if (reg) {
         reg.rua = rua; reg.bairro = bairro; reg.cidade = cidade; reg.estado = estado; reg.endereco = enderecoTxt;
         if (rua !== "Endereço indisponível") {
-            ultimoEnderecoConhecido = { lat: reg.lat, lon: reg.lon, rua: rua, bairro: bairro, cidade: cidade, estado: estado, endereco: enderecoTxt };
+            ultimoEnderecoConhecido = { lat: reg.lat, lon: reg.lon, rua: rua, bairro: bairro, city: cidade, estado: estado, endereco: enderecoTxt };
         }
     }
-    if (registroCompleto.length > 0 && registroCompleto[registroCompleto.length - 1].id === idPonto) {
-        document.getElementById('txtRua').textContent = rua; document.getElementById('txtBairro').textContent = bairro;
-        document.getElementById('txtCidade').textContent = cidade; document.getElementById('txtEstado').textContent = estado;
-    }
+    
     filaPendentes.forEach(p => { if (p.id === idPonto) { p.rua = rua; p.bairro = bairro; p.cidade = cidade; p.estado = estado; p.endereco = enderecoTxt; } });
     if (listaVeiculos.length > 0) {
         var patch = {};
         listaVeiculos.forEach(vNome => {
             var basePath = 'empresas/' + sanitizarChavePath(EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(vNome) + '/historico/' + idPonto + '/';
-            patch[basePath + 'rua'] = rua; patch[basePath + 'bairro'] = bairro; patch[basePath + 'cidade'] = cidade; patch[basePath + 'estado'] = estado; patch[basePath + 'endereco'] = enderecoTxt;
+            patch[basePath + 'rua'] = rua; patch[basePath + 'bairro'] = bairro; patch[path + 'cidade'] = cidade; patch[basePath + 'estado'] = estado; patch[basePath + 'endereco'] = enderecoTxt;
         });
         db.ref().update(patch).catch(e => console.warn(e));
     }
@@ -670,7 +691,6 @@ function atualizarInterfaceEstado() {
     document.getElementById('filaInfo').textContent = registroCompleto.length + " pontos gravados localmente (" + filaPendentes.length + " no Firebase)";
 }
 
-// Escutadores alternativos para forçar revalidação caso a rede oscile visivelmente
 window.addEventListener('online', function() { firebaseOnlineConfirmado = true; atualizarInterfaceEstado(); processarFilaGeocodificacao(); enviarDadosFila(); agendarEncaixeNasRuas(); });
 window.addEventListener('offline', function() { firebaseOnlineConfirmado = false; atualizarInterfaceEstado(); });
 
