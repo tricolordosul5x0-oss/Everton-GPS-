@@ -378,7 +378,6 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     document.getElementById('txtPrecisao').textContent = precisao ? `± ${precisao} m` : "—";
     document.getElementById('txtCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
 
-    // Se os campos de texto estiverem limpos, força buscar temperatura logo de cara
     if (document.getElementById('txtTemperatura').textContent === "—") {
         talvezBuscarTemperatura(lat, lon);
     }
@@ -427,8 +426,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         }
     }
 
-    // AJUSTE CRUCIAL: Se a interface exibir traço nos campos de rua, força a entrada na fila de geocodificação
-    if (document.getElementById('txtRua').textContent === "—" && !deveGravarNoHistorico) {
+    if ((document.getElementById('txtRua').textContent === "—" || document.getElementById('txtRua').textContent === "Buscando endereço...") && !deveGravarNoHistorico) {
         var idFixoPonto = gerarIdPonto(agoraTs);
         var jaExisteFila = filaGeocodificarDepois.some(p => calcularDistanciaMetros(p.lat, p.lon, lat, lon) < 15);
         if (!jaExisteFila) {
@@ -519,6 +517,12 @@ function sincronizarTempoRealImediato() {
         updates[basePath + 'hora'] = ultimaLeituraCompleta.hora;
         updates[basePath + 'data'] = ultimaLeituraCompleta.data;
         updates[basePath + 'tempoParado'] = document.getElementById('txtTempoParado').textContent; 
+        
+        // Sincroniza o endereço em tempo real para alimentar o painel do GitHub Pages instantaneamente
+        updates[basePath + 'rua'] = document.getElementById('txtRua').textContent;
+        updates[basePath + 'bairro'] = document.getElementById('txtBairro').textContent;
+        updates[basePath + 'cidade'] = document.getElementById('txtCidade').textContent;
+        updates[basePath + 'estado'] = document.getElementById('txtEstado').textContent;
     });
     db.ref().update(updates).then(() => {
         if(!firebaseOnlineConfirmado) { firebaseOnlineConfirmado = true; atualizarInterfaceEstado(); }
@@ -635,7 +639,6 @@ function processarFilaGeocodificacao() {
 function aplicarEnderecoNoPonto(idPonto, rua, bairro, cidade, estado) {
     var enderecoTxt = `${rua}, ${bairro} - ${cidade}/${estado}`;
     
-    // Atualiza diretamente os campos de texto principais da interface de telemetria
     document.getElementById('txtRua').textContent = rua; 
     document.getElementById('txtBairro').textContent = bairro;
     document.getElementById('txtCidade').textContent = cidade; 
@@ -654,9 +657,15 @@ function aplicarEnderecoNoPonto(idPonto, rua, bairro, cidade, estado) {
         var patch = {};
         listaVeiculos.forEach(vNome => {
             var basePath = 'empresas/' + sanitizarChavePath(EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(vNome) + '/historico/' + idPonto + '/';
-            patch[basePath + 'rua'] = rua; patch[basePath + 'bairro'] = bairro; patch[path + 'cidade'] = cidade; patch[basePath + 'estado'] = estado; patch[basePath + 'endereco'] = enderecoTxt;
+            patch[basePath + 'rua'] = rua; 
+            patch[basePath + 'bairro'] = bairro; 
+            patch[basePath + 'cidade'] = cidade; // Corrigido de "path" para "basePath"
+            patch[basePath + 'estado'] = estado; 
+            patch[basePath + 'endereco'] = enderecoTxt;
         });
-        db.ref().update(patch).catch(e => console.warn(e));
+        db.ref().update(patch).then(() => {
+            sincronizarTempoRealImediato(); // Força atualização do nó "atual" junto
+        }).catch(e => console.warn(e));
     }
 }
 
