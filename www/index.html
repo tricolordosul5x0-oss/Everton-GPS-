@@ -256,17 +256,20 @@ var coordenadaParadaFixa = (function() {
 // Estado da via atual (rua ou rodovia). É isto que decide QUANDO sincronizar.
 // tipo: 'rua' | 'rodovia' | null
 // nome: nome da via atualmente reconhecida
-// odometroM: metros acumulados percorridos nesta rodovia desde o último km sincronizado
-// kmSincronizado: último km cheio (inteiro) já enviado ao banco, nesta rodovia
+// kmBase: último km REAL (oficial ou estimado) confirmado nesta rodovia
+// odometroM: metros acumulados por GPS desde que kmBase foi confirmado
+// kmSincronizado: último km cheio já enviado ao banco, nesta rodovia (null = ainda nenhum)
 var viaState = (function() {
     var raw = localStorage.getItem('via_state');
+    var padrao = { tipo: null, nome: null, kmBase: 0, odometroM: 0, kmSincronizado: null };
     try {
-        return raw ? JSON.parse(raw) : { tipo: null, nome: null, odometroM: 0, kmSincronizado: 0 };
+        return raw ? Object.assign(padrao, JSON.parse(raw)) : padrao;
     } catch (e) {
-        return { tipo: null, nome: null, odometroM: 0, kmSincronizado: 0 };
+        return padrao;
     }
 })();
 function salvarViaState() { localStorage.setItem('via_state', JSON.stringify(viaState)); }
+var atualizandoKmRodovia = false; // evita duas buscas de marco de km simultâneas
 
 // Reconhece nomes de rodovia comuns no Brasil (BR-xxx, RS-xxx, ERS-xxx, RSC-xxx, SC-xxx, etc.)
 var REGEX_RODOVIA = /\b(br|rs|ers|rsc|sc|prc|pr|sp|mg|contorno)[\s-]?\d{2,4}\b/i;
@@ -278,6 +281,57 @@ function classificarVia(rua, dadosResposta) {
     if (classe === "highway" && TIPOS_OSM_RODOVIA.indexOf(tipo) !== -1) return "rodovia";
     if (rua && REGEX_RODOVIA.test(rua)) return "rodovia";
     return "rua";
+}
+
+// ===================== MARCO DE KM OFICIAL (Overpass / OpenStreetMap) =====================
+// Busca o marco quilométrico (highway=milestone) mais próximo do ponto informado.
+// Cobertura depende do que está mapeado no OpenStreetMap para aquela rodovia — não é
+// garantido para 100% das estradas. Quando não encontra, quem chamou usa a estimativa por GPS.
+var SERVIDORES_OVERPASS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter"
+];
+var ultimaBuscaKmOficialTs = 0;
+var RAIO_BUSCA_MARCO_M = 1500;
+
+function extrairNumeroKm(tags) {
+    var candidatos = [tags.distance, tags.ref, tags.name, tags.note, tags["addr:housenumber"]];
+    for (var i = 0; i < candidatos.length; i++) {
+        var v = candidatos[i];
+        if (!v) continue;
+        var m = String(v).match(/(\d+(?:[.,]\d+)?)/);
+        if (m) return parseFloat(m[1].replace(',', '.'));
+    }
+    return null;
+}
+
+function consultarOverpass(servidorIndex, query) {
+    if (servidorIndex >= SERVIDORES_OVERPASS.length) return Promise.resolve(null);
+    var url = SERVIDORES_OVERPASS[servidorIndex] + "?data=" + encodeURIComponent(query);
+    return fetchComTimeout(url, {}, 9000)
+        .then(res => res.json())
+        .catch(() => consultarOverpass(servidorIndex + 1, query));
+}
+
+function buscarKmOficial(lat, lon) {
+    return new Promise(function(resolve) {
+        var agora = Date.now();
+        // limita a frequência de chamadas ao Overpass (servidor público, uso justo)
+        if (agora - ultimaBuscaKmOficialTs < 4000) { resolve(null); return; }
+        ultimaBuscaKmOficialTs = agora;
+        var query = `[out:json][timeout:8];node(around:${RAIO_BUSCA_MARCO_M},${lat},${lon})["highway"="milestone"];out body;`;
+        consultarOverpass(0, query).then(function(data) {
+            if (!data || !data.elements || data.elements.length === 0) { resolve(null); return; }
+            var melhorKm = null; var menorDist = Infinity;
+            data.elements.forEach(el => {
+                var km = extrairNumeroKm(el.tags || {});
+                if (km === null) return;
+                var d = calcularDistanciaMetros(lat, lon, el.lat, el.lon);
+                if (d < menorDist) { menorDist = d; melhorKm = km; }
+            });
+            resolve(melhorKm);
+        }).catch(function() { resolve(null); });
+    });
 }
 
 if (historicoCoordenadasLocais.length > 0) {
@@ -394,8 +448,10 @@ function registrarESincronizarPonto(lat, lon, situacao, velKmh, precisao, agora,
     if (situacao === "PARADO") { ultimoIdPontoParadaGravado = idPonto; }
 
     var ehRodovia = enderecoInfo.tipoVia === "rodovia";
+    var kmTxt = (enderecoInfo.km != null ? enderecoInfo.km : viaState.kmSincronizado);
+    var sufixoFonteKm = (ehRodovia && enderecoInfo.fonteKm === 'estimado') ? " (aprox.)" : "";
     var ruaExibida = ehRodovia
-        ? (enderecoInfo.rua || "Rodovia") + " - Km " + (enderecoInfo.km != null ? enderecoInfo.km : viaState.kmSincronizado)
+        ? (enderecoInfo.rua || "Rodovia") + " - Km " + kmTxt + sufixoFonteKm
         : (enderecoInfo.rua || "Rua não localizada");
     var bairroExibido = ehRodovia ? "—" : (enderecoInfo.bairro || "—");
     var cidadeExibida = enderecoInfo.cidade || document.getElementById('txtCidade').textContent || "—";
@@ -412,7 +468,7 @@ function registrarESincronizarPonto(lat, lon, situacao, velKmh, precisao, agora,
         hora: agora.toLocaleTimeString('pt-BR'), data: agora.toLocaleDateString('pt-BR'),
         rua: ruaExibida, bairro: bairroExibido, cidade: cidadeExibida, estado: estadoExibido,
         endereco: ehRodovia ? ruaExibida : (ruaExibida + ", " + bairroExibido + " - " + cidadeExibida + "/" + estadoExibido),
-        tipoVia: enderecoInfo.tipoVia, motivo: motivo
+        tipoVia: enderecoInfo.tipoVia, motivo: motivo, fonteKm: enderecoInfo.fonteKm || null
     };
     registroCompleto.push(registro);
     if (listaVeiculos.length > 0) {
@@ -482,12 +538,11 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
 
     // ---- Odômetro de rodovia: soma a cada posição (não depende de geocodificação) ----
     var kmMudou = false;
-    if (ultimoPontoBruto && viaState.tipo === 'rodovia') {
+    if (ultimoPontoBruto && viaState.tipo === 'rodovia' && !atualizandoKmRodovia) {
         var delta = calcularDistanciaMetros(ultimoPontoBruto[0], ultimoPontoBruto[1], lat, lon);
         if (delta > 2 && delta < 500) { viaState.odometroM += delta; } // ignora ruído de GPS e saltos absurdos
-        var kmAtual = Math.floor(viaState.odometroM / 1000);
-        if (kmAtual > viaState.kmSincronizado) {
-            viaState.kmSincronizado = kmAtual;
+        var kmEstimadoAtual = viaState.kmBase + Math.floor(viaState.odometroM / 1000);
+        if (viaState.kmSincronizado === null || kmEstimadoAtual !== viaState.kmSincronizado) {
             kmMudou = true;
         }
         salvarViaState();
@@ -505,9 +560,23 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
             km: viaState.kmSincronizado
         }, 'inicio_parada');
     } else if (kmMudou) {
-        registrarESincronizarPonto(lat, lon, situacao, vel, precisao, agora, {
-            rua: viaState.nome, tipoVia: 'rodovia', km: viaState.kmSincronizado
-        }, 'km_rodovia');
+        // Antes de gravar o novo km, tenta confirmar com o marco oficial mais próximo (Overpass/OSM).
+        // Isso também recalibra a base, corrigindo desvios acumulados do GPS.
+        atualizandoKmRodovia = true;
+        buscarKmOficial(lat, lon).then(function(kmOficial) {
+            var kmFinal, fonte;
+            if (kmOficial !== null) {
+                kmFinal = Math.round(kmOficial); fonte = 'oficial';
+            } else {
+                kmFinal = viaState.kmBase + Math.round(viaState.odometroM / 1000); fonte = 'estimado';
+            }
+            viaState.kmBase = kmFinal; viaState.odometroM = 0; viaState.kmSincronizado = kmFinal;
+            salvarViaState();
+            atualizandoKmRodovia = false;
+            registrarESincronizarPonto(lat, lon, situacao, vel, precisao, agora, {
+                rua: viaState.nome, tipoVia: 'rodovia', km: kmFinal, fonteKm: fonte
+            }, 'km_rodovia');
+        }).catch(function() { atualizandoKmRodovia = false; });
     } else {
         // Nenhum fato novo: apenas mantém a posição "ao vivo" atualizada (não cria ponto no histórico)
         sincronizarTempoRealImediato();
@@ -643,7 +712,8 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
     var tipoVia = classificarVia(rua, dadosResposta);
 
     if (tipoVia === "rodovia") {
-        document.getElementById('txtRua').textContent = rua + " (rodovia) - Km " + viaState.kmSincronizado;
+        var kmExibicao = viaState.kmSincronizado !== null && viaState.tipo === 'rodovia' && viaState.nome === rua ? viaState.kmSincronizado : "—";
+        document.getElementById('txtRua').textContent = rua + " (rodovia) - Km " + kmExibicao;
         document.getElementById('txtBairro').textContent = "—";
     } else {
         document.getElementById('txtRua').textContent = rua;
@@ -654,17 +724,30 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
 
     var mudouDeVia = (viaState.tipo !== tipoVia) || (viaState.nome !== rua);
 
-    if (mudouDeVia) {
-        viaState = { tipo: tipoVia, nome: rua, odometroM: 0, kmSincronizado: 0 };
+    if (mudouDeVia && tipoVia === "rodovia" && !atualizandoKmRodovia) {
+        // Entrando numa rodovia (ou trocando de rodovia): busca o marco de km oficial mais
+        // próximo para já começar a contagem no valor real, em vez de "Km 0".
+        atualizandoKmRodovia = true;
+        buscarKmOficial(lat, lon).then(function(kmOficial) {
+            var kmFinal = (kmOficial !== null) ? Math.round(kmOficial) : 0;
+            var fonte = (kmOficial !== null) ? 'oficial' : 'estimado';
+            viaState = { tipo: 'rodovia', nome: rua, kmBase: kmFinal, odometroM: 0, kmSincronizado: kmFinal };
+            salvarViaState();
+            atualizandoKmRodovia = false;
 
-        var agora = new Date();
-        var velAtual = ultimaLeituraCompleta ? ultimaLeituraCompleta.velocidade : 0;
-        var statusAtual = ultimaLeituraCompleta ? ultimaLeituraCompleta.status : "PARADO";
-        var infoVia = (tipoVia === "rodovia")
-            ? { rua: rua, tipoVia: "rodovia", km: 0 }
-            : { rua: rua, bairro: bairro, cidade: cidade, estado: estado, tipoVia: "rua" };
+            var agora = new Date();
+            var velAtual = ultimaLeituraCompleta ? ultimaLeituraCompleta.velocidade : 0;
+            var statusAtual = ultimaLeituraCompleta ? ultimaLeituraCompleta.status : "PARADO";
+            registrarESincronizarPonto(lat, lon, statusAtual, velAtual, null, agora, { rua: rua, tipoVia: "rodovia", km: kmFinal, fonteKm: fonte }, "entrada_rodovia");
+        }).catch(function() { atualizandoKmRodovia = false; });
+    } else if (mudouDeVia) {
+        viaState = { tipo: 'rua', nome: rua, kmBase: 0, odometroM: 0, kmSincronizado: null };
+        salvarViaState();
 
-        registrarESincronizarPonto(lat, lon, statusAtual, velAtual, null, agora, infoVia, tipoVia === "rodovia" ? "entrada_rodovia" : "troca_rua");
+        var agora2 = new Date();
+        var velAtual2 = ultimaLeituraCompleta ? ultimaLeituraCompleta.velocidade : 0;
+        var statusAtual2 = ultimaLeituraCompleta ? ultimaLeituraCompleta.status : "PARADO";
+        registrarESincronizarPonto(lat, lon, statusAtual2, velAtual2, null, agora2, { rua: rua, bairro: bairro, cidade: cidade, estado: estado, tipoVia: "rua" }, "troca_rua");
     } else {
         salvarTudo();
         sincronizarTempoRealImediato();
@@ -737,8 +820,8 @@ document.getElementById('btnForcar').addEventListener('click', function() {
 
 document.getElementById('btnExportar').addEventListener('click', function() {
     if (registroCompleto.length === 0) return alert("Sem pontos.");
-    var lines = ["Data;Hora;Latitude;Longitude;Velocidade(km/h);Situacao;Rua;Bairro;Cidade;Estado;Motivo"];
-    registroCompleto.forEach(p => { lines.push([p.data, p.hora, p.lat, p.lon, p.velocidade, p.status, p.rua, p.bairro, p.cidade, p.estado, p.motivo || ""].join(";")); });
+    var lines = ["Data;Hora;Latitude;Longitude;Velocidade(km/h);Situacao;Rua;Bairro;Cidade;Estado;Motivo;FonteKm"];
+    registroCompleto.forEach(p => { lines.push([p.data, p.hora, p.lat, p.lon, p.velocidade, p.status, p.rua, p.bairro, p.cidade, p.estado, p.motivo || "", p.fonteKm || ""].join(";")); });
     var blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
     var url = URL.createObjectURL(blob); var a = document.createElement("a"); a.href = url; a.download = "rota_real_" + new Date().toISOString().slice(0,10) + ".csv"; a.click(); URL.revokeObjectURL(url);
 });
