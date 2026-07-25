@@ -441,6 +441,13 @@ function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// Evita mostrar o texto de fallback do Nominatim (ex: "Bairro não localizado") como se fosse dado real
+function valorOuTraco(valor, textoAusente) {
+    if (!valor) return "—";
+    if (textoAusente && valor === textoAusente) return "—";
+    return valor;
+}
+
 // Monta e envia (histórico + nó "atual") um novo ponto sincronizado.
 // motivo: 'inicio_parada' | 'km_rodovia' | 'entrada_rodovia' | 'troca_rua'
 function registrarESincronizarPonto(lat, lon, situacao, velKmh, precisao, agora, enderecoInfo, motivo) {
@@ -453,7 +460,9 @@ function registrarESincronizarPonto(lat, lon, situacao, velKmh, precisao, agora,
     var ruaExibida = ehRodovia
         ? (enderecoInfo.rua || "Rodovia") + " - Km " + kmTxt + sufixoFonteKm
         : (enderecoInfo.rua || "Rua não localizada");
-    var bairroExibido = ehRodovia ? "—" : (enderecoInfo.bairro || "—");
+    // O bairro é exibido sempre que disponível — inclusive em rodovias que passam por
+    // perímetro urbano/industrial (ex: "RSC-287 - Km 78" + bairro "Industrial").
+    var bairroExibido = valorOuTraco(enderecoInfo.bairro, "Bairro não localizado");
     var cidadeExibida = enderecoInfo.cidade || document.getElementById('txtCidade').textContent || "—";
     var estadoExibido = enderecoInfo.estado || document.getElementById('txtEstado').textContent || "—";
 
@@ -467,7 +476,7 @@ function registrarESincronizarPonto(lat, lon, situacao, velKmh, precisao, agora,
         tempoParado: document.getElementById('txtTempoParado').textContent,
         hora: agora.toLocaleTimeString('pt-BR'), data: agora.toLocaleDateString('pt-BR'),
         rua: ruaExibida, bairro: bairroExibido, cidade: cidadeExibida, estado: estadoExibido,
-        endereco: ehRodovia ? ruaExibida : (ruaExibida + ", " + bairroExibido + " - " + cidadeExibida + "/" + estadoExibido),
+        endereco: ruaExibida + (bairroExibido !== "—" ? ", " + bairroExibido : "") + (cidadeExibida !== "—" ? " - " + cidadeExibida + "/" + estadoExibido : ""),
         tipoVia: enderecoInfo.tipoVia, motivo: motivo, fonteKm: enderecoInfo.fonteKm || null
     };
     registroCompleto.push(registro);
@@ -574,7 +583,11 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
             salvarViaState();
             atualizandoKmRodovia = false;
             registrarESincronizarPonto(lat, lon, situacao, vel, precisao, agora, {
-                rua: viaState.nome, tipoVia: 'rodovia', km: kmFinal, fonteKm: fonte
+                rua: viaState.nome,
+                bairro: document.getElementById('txtBairro').textContent,
+                cidade: document.getElementById('txtCidade').textContent,
+                estado: document.getElementById('txtEstado').textContent,
+                tipoVia: 'rodovia', km: kmFinal, fonteKm: fonte
             }, 'km_rodovia');
         }).catch(function() { atualizandoKmRodovia = false; });
     } else {
@@ -714,10 +727,12 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
     if (tipoVia === "rodovia") {
         var kmExibicao = viaState.kmSincronizado !== null && viaState.tipo === 'rodovia' && viaState.nome === rua ? viaState.kmSincronizado : "—";
         document.getElementById('txtRua').textContent = rua + " (rodovia) - Km " + kmExibicao;
-        document.getElementById('txtBairro').textContent = "—";
+        // O bairro é exibido normalmente se o Nominatim retornar um (comum em trechos de
+        // rodovia dentro de perímetro urbano/industrial); só vira "—" se não houver dado.
+        document.getElementById('txtBairro').textContent = valorOuTraco(bairro, "Bairro não localizado");
     } else {
         document.getElementById('txtRua').textContent = rua;
-        document.getElementById('txtBairro').textContent = bairro;
+        document.getElementById('txtBairro').textContent = valorOuTraco(bairro, "Bairro não localizado");
     }
     document.getElementById('txtCidade').textContent = cidade;
     document.getElementById('txtEstado').textContent = estado;
@@ -738,7 +753,7 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
             var agora = new Date();
             var velAtual = ultimaLeituraCompleta ? ultimaLeituraCompleta.velocidade : 0;
             var statusAtual = ultimaLeituraCompleta ? ultimaLeituraCompleta.status : "PARADO";
-            registrarESincronizarPonto(lat, lon, statusAtual, velAtual, null, agora, { rua: rua, tipoVia: "rodovia", km: kmFinal, fonteKm: fonte }, "entrada_rodovia");
+            registrarESincronizarPonto(lat, lon, statusAtual, velAtual, null, agora, { rua: rua, bairro: bairro, cidade: cidade, estado: estado, tipoVia: "rodovia", km: kmFinal, fonteKm: fonte }, "entrada_rodovia");
         }).catch(function() { atualizandoKmRodovia = false; });
     } else if (mudouDeVia) {
         viaState = { tipo: 'rua', nome: rua, kmBase: 0, odometroM: 0, kmSincronizado: null };
