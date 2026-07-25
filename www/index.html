@@ -130,7 +130,7 @@
         <div class="telemetry-row"><span>Precisão GPS</span><b id="txtPrecisao">—</b></div>
         <div class="telemetry-row"><span>Tempo de Parada</span><b id="txtTempoParado">00:00:00</b></div>
         <div class="telemetry-row"><span>Coordenadas</span><b id="txtCoords">—</b></div>
-        <div class="telemetry-row"><span>Rua</span><b id="txtRua">—</b></div>
+        <div class="telemetry-row"><span>Rua / Rodovia</span><b id="txtRua">—</b></div>
         <div class="telemetry-row"><span>Bairro</span><b id="txtBairro">—</b></div>
         <div class="telemetry-row"><span>Cidade</span><b id="txtCidade">—</b></div>
         <div class="telemetry-row"><span>Estado (UF)</span><b id="txtEstado">—</b></div>
@@ -253,6 +253,33 @@ var coordenadaParadaFixa = (function() {
     try { return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
 })();
 
+// Estado da via atual (rua ou rodovia). É isto que decide QUANDO sincronizar.
+// tipo: 'rua' | 'rodovia' | null
+// nome: nome da via atualmente reconhecida
+// odometroM: metros acumulados percorridos nesta rodovia desde o último km sincronizado
+// kmSincronizado: último km cheio (inteiro) já enviado ao banco, nesta rodovia
+var viaState = (function() {
+    var raw = localStorage.getItem('via_state');
+    try {
+        return raw ? JSON.parse(raw) : { tipo: null, nome: null, odometroM: 0, kmSincronizado: 0 };
+    } catch (e) {
+        return { tipo: null, nome: null, odometroM: 0, kmSincronizado: 0 };
+    }
+})();
+function salvarViaState() { localStorage.setItem('via_state', JSON.stringify(viaState)); }
+
+// Reconhece nomes de rodovia comuns no Brasil (BR-xxx, RS-xxx, ERS-xxx, RSC-xxx, SC-xxx, etc.)
+var REGEX_RODOVIA = /\b(br|rs|ers|rsc|sc|prc|pr|sp|mg|contorno)[\s-]?\d{2,4}\b/i;
+var TIPOS_OSM_RODOVIA = ["motorway", "trunk", "primary", "motorway_link", "trunk_link", "primary_link"];
+
+function classificarVia(rua, dadosResposta) {
+    var classe = (dadosResposta && (dadosResposta.class || dadosResposta.category)) || null;
+    var tipo = (dadosResposta && dadosResposta.type) || null;
+    if (classe === "highway" && TIPOS_OSM_RODOVIA.indexOf(tipo) !== -1) return "rodovia";
+    if (rua && REGEX_RODOVIA.test(rua)) return "rodovia";
+    return "rua";
+}
+
 if (historicoCoordenadasLocais.length > 0) {
     polilinhaRota.setLatLngs(historicoCoordenadasLocais);
     var ultimo = historicoCoordenadasLocais[historicoCoordenadasLocais.length - 1];
@@ -268,6 +295,7 @@ function salvarTudo() {
     localStorage.setItem('registro_completo', JSON.stringify(registroCompleto));
     if(ultimoIdPontoParadaGravado) localStorage.setItem('ultimo_id_ponto_parada_gravado', ultimoIdPontoParadaGravado);
     if(coordenadaParadaFixa) localStorage.setItem('coordenada_parada_fixa', JSON.stringify(coordenadaParadaFixa));
+    salvarViaState();
 }
 
 // ===================== MODAL LOGIN =====================
@@ -346,11 +374,8 @@ setInterval(function() {
 }, 1000);
 
 // ===================== CAPTURA E PROCESSAMENTO GPS =====================
-var DISTANCIA_MINIMA_MOVIMENTO_M = 25; 
-var RAIO_REUTILIZAR_ENDERECO_M = 40;
-var ultimoEnderecoConhecido = null;
-var ultimoPontoHistoricoTs = localStorage.getItem('ultimo_ponto_historico_ts') ? parseInt(localStorage.getItem('ultimo_ponto_historico_ts'), 10) : 0;
-var ultimoPontoRegistrado = historicoCoordenadasLocais.length > 0 ? historicoCoordenadasLocais[historicoCoordenadasLocais.length - 1] : null;
+var ultimoPontoBruto = historicoCoordenadasLocais.length > 0 ? historicoCoordenadasLocais[historicoCoordenadasLocais.length - 1] : null;
+var ultimoPontoChecadoEndereco = null;
 var errosGpsConsecutivos = 0;
 var ultimaLeituraCompleta = null;
 
@@ -362,12 +387,47 @@ function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// Monta e envia (histórico + nó "atual") um novo ponto sincronizado.
+// motivo: 'inicio_parada' | 'km_rodovia' | 'entrada_rodovia' | 'troca_rua'
+function registrarESincronizarPonto(lat, lon, situacao, velKmh, precisao, agora, enderecoInfo, motivo) {
+    var idPonto = gerarIdPonto(agora.getTime());
+    if (situacao === "PARADO") { ultimoIdPontoParadaGravado = idPonto; }
+
+    var ehRodovia = enderecoInfo.tipoVia === "rodovia";
+    var ruaExibida = ehRodovia
+        ? (enderecoInfo.rua || "Rodovia") + " - Km " + (enderecoInfo.km != null ? enderecoInfo.km : viaState.kmSincronizado)
+        : (enderecoInfo.rua || "Rua não localizada");
+    var bairroExibido = ehRodovia ? "—" : (enderecoInfo.bairro || "—");
+    var cidadeExibida = enderecoInfo.cidade || document.getElementById('txtCidade').textContent || "—";
+    var estadoExibido = enderecoInfo.estado || document.getElementById('txtEstado').textContent || "—";
+
+    document.getElementById('txtRua').textContent = ruaExibida;
+    document.getElementById('txtBairro').textContent = bairroExibido;
+    if (enderecoInfo.cidade) document.getElementById('txtCidade').textContent = enderecoInfo.cidade;
+    if (enderecoInfo.estado) document.getElementById('txtEstado').textContent = enderecoInfo.estado;
+
+    var registro = {
+        id: idPonto, lat: lat, lon: lon, velocidade: (situacao === "PARADO" ? 0 : velKmh), status: situacao,
+        tempoParado: document.getElementById('txtTempoParado').textContent,
+        hora: agora.toLocaleTimeString('pt-BR'), data: agora.toLocaleDateString('pt-BR'),
+        rua: ruaExibida, bairro: bairroExibido, cidade: cidadeExibida, estado: estadoExibido,
+        endereco: ehRodovia ? ruaExibida : (ruaExibida + ", " + bairroExibido + " - " + cidadeExibida + "/" + estadoExibido),
+        tipoVia: enderecoInfo.tipoVia, motivo: motivo
+    };
+    registroCompleto.push(registro);
+    if (listaVeiculos.length > 0) {
+        listaVeiculos.forEach(vNome => { filaPendentes.push(Object.assign({ vID: vNome, empresaId: EMPRESA_ID }, registro)); });
+    }
+    salvarTudo(); atualizarInterfaceEstado(); enviarDadosFila(); sincronizarTempoRealImediato();
+}
+
 function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     esconderAvisoGps(); errosGpsConsecutivos = 0;
     var precisao = precisaoRaw ? Math.round(precisaoRaw) : null;
     var vel = velRaw ? Math.round(velRaw * 3.6) : 0;
     var agora = new Date(); var agoraTs = agora.getTime();
 
+    // ---- Atualização local imediata (mapa, velocidade, coordenadas) — sempre, a cada posição ----
     map.setView([lat, lon], map.getZoom() < 14 ? 16 : map.getZoom());
     marcador.setLatLng([lat, lon]);
     if (precisao) { circuloPrecisao.setLatLng([lat, lon]).setRadius(precisao); }
@@ -382,63 +442,36 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         talvezBuscarTemperatura(lat, lon);
     }
 
-    var distanciaDoCentroDaParada = coordenadaParadaFixa ? calcularDistanciaMetros(coordenadaParadaFixa[0], coordenadaParadaFixa[1], lat, lon) : 0;
+    // Trilha visual no mapa: sempre atualizada localmente, não gera tráfego no banco
+    historicoCoordenadasLocais.push([lat, lon]);
+    if (historicoCoordenadasLocais.length > 2000) historicoCoordenadasLocais.shift();
+    polilinhaRota.setLatLngs(historicoCoordenadasLocais);
+    agendarEncaixeNasRuas();
 
-    var LIMITE_MOVIMENTO_KMH = 5; 
-    var RAIO_FALSO_MOVIMENTO_METROS = 50; 
+    // ---- Situação (parado / em movimento) ----
+    var distanciaDoCentroDaParada = coordenadaParadaFixa ? calcularDistanciaMetros(coordenadaParadaFixa[0], coordenadaParadaFixa[1], lat, lon) : 0;
+    var LIMITE_MOVIMENTO_KMH = 5;
+    var RAIO_FALSO_MOVIMENTO_METROS = 50;
     var situacao = "PARADO";
     var badgeStatus = document.getElementById('badStatus');
-    var deveGravarNoHistorico = false;
+    var iniciouParadaAgora = false;
 
     if (vel >= LIMITE_MOVIMENTO_KMH && (!coordenadaParadaFixa || distanciaDoCentroDaParada > RAIO_FALSO_MOVIMENTO_METROS)) {
         situacao = (vel > LIMITE_VELOCIDADE) ? "VELOCIDADE ACIMA DO LIMITE" : "EM MOVIMENTO";
         badgeStatus.textContent = situacao;
         badgeStatus.className = (vel > LIMITE_VELOCIDADE) ? "badge badge-perigo" : "badge badge-movimento";
-        
+
         inicioParadaTs = null; jaGravouPontoInicialParada = false; ultimoIdPontoParadaGravado = null; coordenadaParadaFixa = null;
         localStorage.removeItem('inicio_parada_ts');
         localStorage.removeItem('ja_gravou_parada');
         localStorage.removeItem('ultimo_id_ponto_parada_gravado');
         localStorage.removeItem('coordenada_parada_fixa');
-
-        var distanciaDoUltimoPonto = ultimoPontoRegistrado ? calcularDistanciaMetros(ultimoPontoRegistrado[0], ultimoPontoRegistrado[1], lat, lon) : Infinity;
-        var tempoDesdeUltimoPontoMs = agoraTs - ultimoPontoHistoricoTs;
-
-        if (distanciaDoUltimoPonto >= DISTANCIA_MINIMA_MOVIMENTO_M || tempoDesdeUltimoPontoMs >= 30000 || !ultimoPontoRegistrado) {
-            deveGravarNoHistorico = true;
-        }
     } else {
         situacao = "PARADO"; badgeStatus.textContent = "PARADO"; badgeStatus.className = "badge badge-parado";
-        
-        if (!inicioParadaTs) {
-            inicioParadaTs = agoraTs;
-            localStorage.setItem('inicio_parada_ts', String(inicioParadaTs));
-        }
-        if (!coordenadaParadaFixa) {
-            coordenadaParadaFixa = [lat, lon];
-            localStorage.setItem('coordenada_parada_fixa', JSON.stringify(coordenadaParadaFixa));
-        }
-
-        if (!jaGravouPontoInicialParada) {
-            deveGravarNoHistorico = true;
-            jaGravouPontoInicialParada = true;
-            localStorage.setItem('ja_gravou_parada', 'true');
-        }
+        if (!inicioParadaTs) { inicioParadaTs = agoraTs; localStorage.setItem('inicio_parada_ts', String(inicioParadaTs)); }
+        if (!coordenadaParadaFixa) { coordenadaParadaFixa = [lat, lon]; localStorage.setItem('coordenada_parada_fixa', JSON.stringify(coordenadaParadaFixa)); }
+        if (!jaGravouPontoInicialParada) { iniciouParadaAgora = true; jaGravouPontoInicialParada = true; localStorage.setItem('ja_gravou_parada', 'true'); }
     }
-
-    if ((document.getElementById('txtRua').textContent === "—" || document.getElementById('txtRua').textContent === "Buscando endereço...") && !deveGravarNoHistorico) {
-        var idFixoPonto = gerarIdPonto(agoraTs);
-        var jaExisteFila = filaGeocodificarDepois.some(p => calcularDistanciaMetros(p.lat, p.lon, lat, lon) < 15);
-        if (!jaExisteFila) {
-            filaGeocodificarDepois.push({ id: idFixoPonto, lat: lat, lon: lon, ts: agoraTs });
-            document.getElementById('txtRua').textContent = "Buscando...";
-            document.getElementById('txtBairro').textContent = "Buscando...";
-            document.getElementById('txtCidade').textContent = "Buscando...";
-            document.getElementById('txtEstado').textContent = "Buscando...";
-            processarFilaGeocodificacao();
-        }
-    }
-
     atualizarTextoTempoParado();
 
     ultimaLeituraCompleta = {
@@ -446,62 +479,54 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         hora: agora.toLocaleTimeString('pt-BR'), data: agora.toLocaleDateString('pt-BR'),
         tempoParado: document.getElementById('txtTempoParado').textContent
     };
-    
-    sincronizarTempoRealImediato();
 
-    if (deveGravarNoHistorico) {
-        ultimoPontoRegistrado = [lat, lon];
-        ultimoPontoHistoricoTs = agoraTs;
-        localStorage.setItem('ultimo_ponto_historico_ts', String(ultimoPontoHistoricoTs));
-
-        historicoCoordenadasLocais.push([lat, lon]);
-        if (historicoCoordenadasLocais.length > 2000) historicoCoordenadasLocais.shift();
-        polilinhaRota.setLatLngs(historicoCoordenadasLocais);
-        agendarEncaixeNasRuas(); talvezBuscarTemperatura(lat, lon);
-
-        var idPonto = gerarIdPonto(agoraTs);
-        if (situacao === "PARADO") { ultimoIdPontoParadaGravado = idPonto; }
-
-        var registro;
-        var distanciaDoUltimoEndereco = ultimoEnderecoConhecido ? calcularDistanciaMetros(ultimoEnderecoConhecido.lat, ultimoEnderecoConhecido.lon, lat, lon) : Infinity;
-
-        if (ultimoEnderecoConhecido && distanciaDoUltimoEndereco <= RAIO_REUTILIZAR_ENDERECO_M) {
-            document.getElementById('txtRua').textContent = ultimoEnderecoConhecido.rua;
-            document.getElementById('txtBairro').textContent = ultimoEnderecoConhecido.bairro;
-            document.getElementById('txtCidade').textContent = ultimoEnderecoConhecido.cidade;
-            document.getElementById('txtEstado').textContent = ultimoEnderecoConhecido.estado;
-
-            registro = {
-                id: idPonto, lat: lat, lon: lon, velocidade: (situacao === "PARADO" ? 0 : vel), status: situacao,
-                tempoParado: document.getElementById('txtTempoParado').textContent,
-                hora: agora.toLocaleTimeString('pt-BR'), data: agora.toLocaleDateString('pt-BR'),
-                rua: ultimoEnderecoConhecido.rua, bairro: ultimoEnderecoConhecido.bairro,
-                cidade: ultimoEnderecoConhecido.cidade, estado: ultimoEnderecoConhecido.estado, endereco: ultimoEnderecoConhecido.endereco
-            };
-            registroCompleto.push(registro);
-            if (listaVeiculos.length > 0) {
-                listaVeiculos.forEach(vNome => { filaPendentes.push(Object.assign({ vID: vNome, empresaId: EMPRESA_ID }, registro)); });
-            }
-        } else {
-            document.getElementById('txtRua').textContent = "Buscando...";
-            document.getElementById('txtBairro').textContent = "Buscando...";
-            document.getElementById('txtCidade').textContent = "Buscando...";
-            document.getElementById('txtEstado').textContent = "Buscando...";
-
-            registro = {
-                id: idPonto, lat: lat, lon: lon, velocidade: (situacao === "PARADO" ? 0 : vel), status: situacao,
-                tempoParado: document.getElementById('txtTempoParado').textContent,
-                hora: agora.toLocaleTimeString('pt-BR'), data: agora.toLocaleDateString('pt-BR'),
-                rua: "Buscando endereço...", bairro: "Buscando endereço...", cidade: "Buscando endereço...", estado: "Buscando endereço...", endereco: "Buscando endereço..."
-            };
-            registroCompleto.push(registro);
-            if (listaVeiculos.length > 0) {
-                listaVeiculos.forEach(vNome => { filaPendentes.push(Object.assign({ vID: vNome, empresaId: EMPRESA_ID }, registro)); });
-            }
-            filaGeocodificarDepois.push({ id: idPonto, lat: lat, lon: lon, ts: agoraTs });
+    // ---- Odômetro de rodovia: soma a cada posição (não depende de geocodificação) ----
+    var kmMudou = false;
+    if (ultimoPontoBruto && viaState.tipo === 'rodovia') {
+        var delta = calcularDistanciaMetros(ultimoPontoBruto[0], ultimoPontoBruto[1], lat, lon);
+        if (delta > 2 && delta < 500) { viaState.odometroM += delta; } // ignora ruído de GPS e saltos absurdos
+        var kmAtual = Math.floor(viaState.odometroM / 1000);
+        if (kmAtual > viaState.kmSincronizado) {
+            viaState.kmSincronizado = kmAtual;
+            kmMudou = true;
         }
+        salvarViaState();
+    }
+    ultimoPontoBruto = [lat, lon];
 
-        salvarTudo(); atualizarInterfaceEstado(); enviarDadosFila(); processarFilaGeocodificacao();
+    // ---- Regras de sincronização: só grava novo ponto de histórico quando há informação NOVA ----
+    if (iniciouParadaAgora) {
+        registrarESincronizarPonto(lat, lon, situacao, vel, precisao, agora, {
+            rua: document.getElementById('txtRua').textContent === "—" ? null : document.getElementById('txtRua').textContent,
+            bairro: document.getElementById('txtBairro').textContent,
+            cidade: document.getElementById('txtCidade').textContent,
+            estado: document.getElementById('txtEstado').textContent,
+            tipoVia: viaState.tipo || 'rua',
+            km: viaState.kmSincronizado
+        }, 'inicio_parada');
+    } else if (kmMudou) {
+        registrarESincronizarPonto(lat, lon, situacao, vel, precisao, agora, {
+            rua: viaState.nome, tipoVia: 'rodovia', km: viaState.kmSincronizado
+        }, 'km_rodovia');
+    } else {
+        // Nenhum fato novo: apenas mantém a posição "ao vivo" atualizada (não cria ponto no histórico)
+        sincronizarTempoRealImediato();
+    }
+
+    // ---- Verifica de tempos em tempos se a via mudou (rua nova ou saiu/entrou em rodovia) ----
+    // Na rodovia a checagem é mais espaçada (o nome da via muda pouco); na cidade é mais frequente
+    // (para pegar a troca de rua o quanto antes).
+    var limiarChecagemM = (viaState.tipo === 'rodovia') ? 300 : 60;
+    var distanciaChecagem = ultimoPontoChecadoEndereco ? calcularDistanciaMetros(ultimoPontoChecadoEndereco[0], ultimoPontoChecadoEndereco[1], lat, lon) : Infinity;
+    if (distanciaChecagem >= limiarChecagemM) {
+        ultimoPontoChecadoEndereco = [lat, lon];
+        var idFixoPonto = gerarIdPonto(agoraTs);
+        var jaExisteFila = filaGeocodificarDepois.some(p => calcularDistanciaMetros(p.lat, p.lon, lat, lon) < 20);
+        if (!jaExisteFila) {
+            filaGeocodificarDepois.push({ id: idFixoPonto, lat: lat, lon: lon, ts: agoraTs });
+            salvarTudo();
+            processarFilaGeocodificacao();
+        }
     }
 }
 
@@ -516,9 +541,9 @@ function sincronizarTempoRealImediato() {
         updates[basePath + 'status'] = ultimaLeituraCompleta.status;
         updates[basePath + 'hora'] = ultimaLeituraCompleta.hora;
         updates[basePath + 'data'] = ultimaLeituraCompleta.data;
-        updates[basePath + 'tempoParado'] = document.getElementById('txtTempoParado').textContent; 
-        
-        // Sincroniza o endereço em tempo real para alimentar o painel do GitHub Pages instantaneamente
+        updates[basePath + 'tempoParado'] = document.getElementById('txtTempoParado').textContent;
+
+        // Sincroniza o endereço/rodovia em tempo real para alimentar o painel instantaneamente
         updates[basePath + 'rua'] = document.getElementById('txtRua').textContent;
         updates[basePath + 'bairro'] = document.getElementById('txtBairro').textContent;
         updates[basePath + 'cidade'] = document.getElementById('txtCidade').textContent;
@@ -535,13 +560,13 @@ setInterval(function() {
         var tempoAtualizado = document.getElementById('txtTempoParado').textContent;
         var agoraStr = new Date().toLocaleTimeString('pt-BR');
         var patchHistorico = {};
-        
+
         listaVeiculos.forEach(vNome => {
             var path = 'empresas/' + sanitizarChavePath(EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(vNome) + '/historico/' + ultimoIdPontoParadaGravado + '/';
             patchHistorico[path + 'tempoParado'] = tempoAtualizado;
-            patchHistorico[path + 'horaFinalParada'] = agoraStr; 
+            patchHistorico[path + 'horaFinalParada'] = agoraStr;
         });
-        
+
         db.ref().update(patchHistorico).catch(e => console.warn(e));
     }
 }, 30000);
@@ -584,7 +609,7 @@ function agendarEncaixeNasRuas() {
     if (encaixeAgendado) return; encaixeAgendado = true;
     setTimeout(executarEncaixeNasRuas, esperar);
 }
-function ejecutarEncaixeNasRuas() {
+function executarEncaixeNasRuas() {
     encaixeAgendado = false; ultimoEncaixeTs = Date.now();
     if (historicoCoordenadasLocais.length < 2) return;
     var pontos = historicoCoordenadasLocais.slice(-100);
@@ -612,6 +637,40 @@ function talvezBuscarTemperatura(lat, lon) {
         }).catch(e => console.warn(e)).finally(() => { buscandoTemp = false; });
 }
 
+// Aplica o endereço/tipo de via encontrado e decide se isso representa uma TROCA
+// (mudou de rua, ou entrou/saiu de rodovia) — só nesse caso grava no histórico.
+function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResposta) {
+    var tipoVia = classificarVia(rua, dadosResposta);
+
+    if (tipoVia === "rodovia") {
+        document.getElementById('txtRua').textContent = rua + " (rodovia) - Km " + viaState.kmSincronizado;
+        document.getElementById('txtBairro').textContent = "—";
+    } else {
+        document.getElementById('txtRua').textContent = rua;
+        document.getElementById('txtBairro').textContent = bairro;
+    }
+    document.getElementById('txtCidade').textContent = cidade;
+    document.getElementById('txtEstado').textContent = estado;
+
+    var mudouDeVia = (viaState.tipo !== tipoVia) || (viaState.nome !== rua);
+
+    if (mudouDeVia) {
+        viaState = { tipo: tipoVia, nome: rua, odometroM: 0, kmSincronizado: 0 };
+
+        var agora = new Date();
+        var velAtual = ultimaLeituraCompleta ? ultimaLeituraCompleta.velocidade : 0;
+        var statusAtual = ultimaLeituraCompleta ? ultimaLeituraCompleta.status : "PARADO";
+        var infoVia = (tipoVia === "rodovia")
+            ? { rua: rua, tipoVia: "rodovia", km: 0 }
+            : { rua: rua, bairro: bairro, cidade: cidade, estado: estado, tipoVia: "rua" };
+
+        registrarESincronizarPonto(lat, lon, statusAtual, velAtual, null, agora, infoVia, tipoVia === "rodovia" ? "entrada_rodovia" : "troca_rua");
+    } else {
+        salvarTudo();
+        sincronizarTempoRealImediato();
+    }
+}
+
 var geocodificando = false;
 function processarFilaGeocodificacao() {
     if (geocodificando || filaGeocodificarDepois.length === 0) return;
@@ -625,7 +684,7 @@ function processarFilaGeocodificacao() {
             var bairro = addr.suburb || addr.neighbourhood || "Bairro não localizado";
             var cidade = addr.city || addr.town || "Cidade não localizada";
             var estado = addr.state || "Estado não localizado";
-            aplicarEnderecoNoPonto(ponto.id, rua, bairro, cidade, estado);
+            aplicarEnderecoNoPonto(ponto.lat, ponto.lon, rua, bairro, cidade, estado, data);
             filaGeocodificarDepois.pop();
         }).catch(err => {
             ponto.tentativas = (ponto.tentativas || 0) + 1;
@@ -634,39 +693,6 @@ function processarFilaGeocodificacao() {
             geocodificando = false; salvarTudo(); atualizarInterfaceEstado();
             if (filaGeocodificarDepois.length > 0) setTimeout(processarFilaGeocodificacao, INTERVALO_GEOCODIFICACAO_MS);
         });
-}
-
-function aplicarEnderecoNoPonto(idPonto, rua, bairro, cidade, estado) {
-    var enderecoTxt = `${rua}, ${bairro} - ${cidade}/${estado}`;
-    
-    document.getElementById('txtRua').textContent = rua; 
-    document.getElementById('txtBairro').textContent = bairro;
-    document.getElementById('txtCidade').textContent = cidade; 
-    document.getElementById('txtEstado').textContent = estado;
-
-    var reg = registroCompleto.find(r => r.id === idPonto);
-    if (reg) {
-        reg.rua = rua; reg.bairro = bairro; reg.cidade = cidade; reg.estado = estado; reg.endereco = enderecoTxt;
-        if (rua !== "Endereço indisponível") {
-            ultimoEnderecoConhecido = { lat: reg.lat, lon: reg.lon, rua: rua, bairro: bairro, city: cidade, estado: estado, endereco: enderecoTxt };
-        }
-    }
-    
-    filaPendentes.forEach(p => { if (p.id === idPonto) { p.rua = rua; p.bairro = bairro; p.cidade = cidade; p.estado = estado; p.endereco = enderecoTxt; } });
-    if (listaVeiculos.length > 0) {
-        var patch = {};
-        listaVeiculos.forEach(vNome => {
-            var basePath = 'empresas/' + sanitizarChavePath(EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(vNome) + '/historico/' + idPonto + '/';
-            patch[basePath + 'rua'] = rua; 
-            patch[basePath + 'bairro'] = bairro; 
-            patch[basePath + 'cidade'] = cidade; // Corrigido de "path" para "basePath"
-            patch[basePath + 'estado'] = estado; 
-            patch[basePath + 'endereco'] = enderecoTxt;
-        });
-        db.ref().update(patch).then(() => {
-            sincronizarTempoRealImediato(); // Força atualização do nó "atual" junto
-        }).catch(e => console.warn(e));
-    }
 }
 
 var enviando = false; var falhasConsecutivasLote = 0;
@@ -703,16 +729,16 @@ function atualizarInterfaceEstado() {
 window.addEventListener('online', function() { firebaseOnlineConfirmado = true; atualizarInterfaceEstado(); processarFilaGeocodificacao(); enviarDadosFila(); agendarEncaixeNasRuas(); });
 window.addEventListener('offline', function() { firebaseOnlineConfirmado = false; atualizarInterfaceEstado(); });
 
-document.getElementById('btnForcar').addEventListener('click', function() { 
-    processarFilaGeocodificacao(); 
-    enviarDadosFila(); 
-    sincronizarTempoRealImediato(); 
+document.getElementById('btnForcar').addEventListener('click', function() {
+    processarFilaGeocodificacao();
+    enviarDadosFila();
+    sincronizarTempoRealImediato();
 });
 
 document.getElementById('btnExportar').addEventListener('click', function() {
     if (registroCompleto.length === 0) return alert("Sem pontos.");
-    var lines = ["Data;Hora;Latitude;Longitude;Velocidade(km/h);Situacao;Rua;Bairro;Cidade;Estado"];
-    registroCompleto.forEach(p => { lines.push([p.data, p.hora, p.lat, p.lon, p.velocidade, p.status, p.rua, p.bairro, p.cidade, p.estado].join(";")); });
+    var lines = ["Data;Hora;Latitude;Longitude;Velocidade(km/h);Situacao;Rua;Bairro;Cidade;Estado;Motivo"];
+    registroCompleto.forEach(p => { lines.push([p.data, p.hora, p.lat, p.lon, p.velocidade, p.status, p.rua, p.bairro, p.cidade, p.estado, p.motivo || ""].join(";")); });
     var blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
     var url = URL.createObjectURL(blob); var a = document.createElement("a"); a.href = url; a.download = "rota_real_" + new Date().toISOString().slice(0,10) + ".csv"; a.click(); URL.revokeObjectURL(url);
 });
