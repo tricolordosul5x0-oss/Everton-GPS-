@@ -164,8 +164,17 @@ var auth = firebase.auth();
 var firebaseOnlineConfirmado = false;
 
 db.ref(".info/connected").on("value", function(snap) {
+    var estavaOffline = !firebaseOnlineConfirmado;
     if (snap.val() === true) {
         firebaseOnlineConfirmado = true;
+        // CORREÇÃO: ao reconectar, dispara a sincronização na hora em vez de esperar
+        // o próximo tick do setInterval de 6s — reduz a demora percebida após ficar offline.
+        if (estavaOffline) {
+            geocodificando = false; enviando = false;
+            processarFilaGeocodificacao();
+            enviarDadosFila();
+            sincronizarTempoRealImediato();
+        }
     } else {
         firebaseOnlineConfirmado = false;
     }
@@ -198,6 +207,19 @@ function fetchComTimeout(url, opcoes, timeoutMs) {
     var controller = new AbortController();
     var id = setTimeout(() => controller.abort(), timeoutMs);
     return fetch(url, Object.assign({}, opcoes, { signal: controller.signal })).finally(() => clearTimeout(id));
+}
+
+// CORREÇÃO: o SDK do Firebase pode deixar uma escrita "pendurada" (nem resolve nem rejeita)
+// enquanto está offline, o que travava as flags "enviando"/"geocodificando" para sempre e
+// fazia o botão "Forçar Sincronização" parecer que não fazia nada. Este helper força a
+// promessa a rejeitar depois de um tempo, liberando a flag para tentar de novo.
+function comLimiteDeTempo(promessa, timeoutMs) {
+    return Promise.race([
+        promessa,
+        new Promise(function(_, reject) {
+            setTimeout(function() { reject(new Error("tempo esgotado")); }, timeoutMs);
+        })
+    ]);
 }
 
 function gerarIdPonto(ts) {
@@ -613,7 +635,11 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
 }
 
 function sincronizarTempoRealImediato() {
-    if (!ultimaLeituraCompleta || listaVeiculos.length === 0 || !firebaseOnlineConfirmado) return;
+    // CORREÇÃO: antes isso não rodava se "firebaseOnlineConfirmado" ainda estivesse falso,
+    // mas esse indicador pode demorar a atualizar mesmo com a conexão já disponível — e o
+    // próprio Firebase enfileira a escrita sozinho quando está offline. Tirar essa trava
+    // faz o app tentar sincronizar imediatamente sempre que houver leitura nova.
+    if (!ultimaLeituraCompleta || listaVeiculos.length === 0) return;
     var updates = {};
     listaVeiculos.forEach(vNome => {
         var basePath = 'empresas/' + sanitizarChavePath(EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(vNome) + '/atual/';
@@ -631,7 +657,7 @@ function sincronizarTempoRealImediato() {
         updates[basePath + 'cidade'] = document.getElementById('txtCidade').textContent;
         updates[basePath + 'estado'] = document.getElementById('txtEstado').textContent;
     });
-    db.ref().update(updates).then(() => {
+    comLimiteDeTempo(db.ref().update(updates), 10000).then(() => {
         if(!firebaseOnlineConfirmado) { firebaseOnlineConfirmado = true; atualizarInterfaceEstado(); }
     }).catch(e => console.warn(e));
 }
@@ -769,8 +795,29 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
     }
 }
 
+// CORREÇÃO: a fila de endereços a resolver crescia sem limite. Como sempre pegávamos o
+// ponto MAIS RECENTE primeiro (de propósito, para a tela mostrar o endereço mais atual),
+// pontos antigos que ficassem para trás na fila podiam nunca ser processados numa rota
+// longa/com muitas trocas de rua — é o "acumula muito endereço que não vence sincronizar".
+// As duas constantes abaixo dão um limite de idade e de tamanho para a fila.
+var IDADE_MAXIMA_FILA_ENDERECO_MS = 45000; // pontos com mais de 45s são descartados: já não representam a posição atual
+var TAMANHO_MAXIMO_FILA_ENDERECO = 8;
+
+function podarFilaGeocodificacao() {
+    var agora = Date.now();
+    var tamanhoAntes = filaGeocodificarDepois.length;
+    filaGeocodificarDepois = filaGeocodificarDepois.filter(function(p) {
+        return (agora - p.ts) <= IDADE_MAXIMA_FILA_ENDERECO_MS;
+    });
+    if (filaGeocodificarDepois.length > TAMANHO_MAXIMO_FILA_ENDERECO) {
+        filaGeocodificarDepois.splice(0, filaGeocodificarDepois.length - TAMANHO_MAXIMO_FILA_ENDERECO);
+    }
+    if (filaGeocodificarDepois.length !== tamanhoAntes) salvarTudo();
+}
+
 var geocodificando = false;
 function processarFilaGeocodificacao() {
+    podarFilaGeocodificacao();
     if (geocodificando || filaGeocodificarDepois.length === 0) return;
     geocodificando = true; atualizarInterfaceEstado();
     var ponto = filaGeocodificarDepois[filaGeocodificarDepois.length - 1];
@@ -802,7 +849,7 @@ function enviarDadosFila() {
             var basePath = 'empresas/' + sanitizarChavePath(item.empresaId || EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(item.vID) + '/historico/' + item.id;
             updates[basePath] = item;
         });
-        db.ref().update(updates).then(() => {
+        comLimiteDeTempo(db.ref().update(updates), 10000).then(() => {
             filaPendentes.splice(0, lote.length); falhasConsecutivasLote = 0; firebaseOnlineConfirmado = true; salvarTudo();
         }).catch(e => {
             falhasConsecutivasLote++; if (falhasConsecutivasLote >= 5) { filaPendentes.shift(); falhasConsecutivasLote = 0; salvarTudo(); }
@@ -828,6 +875,10 @@ window.addEventListener('online', function() { firebaseOnlineConfirmado = true; 
 window.addEventListener('offline', function() { firebaseOnlineConfirmado = false; atualizarInterfaceEstado(); });
 
 document.getElementById('btnForcar').addEventListener('click', function() {
+    // CORREÇÃO: força a liberação das flags de controle antes de tentar de novo,
+    // caso alguma tenha ficado travada por uma tentativa anterior sem resposta.
+    geocodificando = false;
+    enviando = false;
     processarFilaGeocodificacao();
     enviarDadosFila();
     sincronizarTempoRealImediato();
@@ -848,7 +899,12 @@ document.getElementById('btnDiagnostico').addEventListener('click', function() {
 });
 
 renderizarFrotaLocal(); atualizarInterfaceEstado(); checarContextoSeguro();
-setInterval(function() { if (filaGeocodificarDepois.length > 0) processarFilaGeocodificacao(); if (filaPendentes.length > 0) enviarDadosFila(); sincronizarTempoRealImediato(); }, 6000);
+
+// CORREÇÃO: a sincronização em tempo real ("atual") agora tem seu próprio intervalo,
+// independente da fila de histórico/endereços. Antes, tudo rodava junto a cada 6s, então
+// se a fila de geocodificação estivesse ocupada/travada a posição ao vivo também atrasava.
+setInterval(function() { sincronizarTempoRealImediato(); }, 3000);
+setInterval(function() { if (filaGeocodificarDepois.length > 0) processarFilaGeocodificacao(); if (filaPendentes.length > 0) enviarDadosFila(); }, 6000);
 </script>
 </body>
 </html>
