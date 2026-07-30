@@ -451,6 +451,7 @@ setInterval(function() {
 
 // ===================== CAPTURA E PROCESSAMENTO GPS =====================
 var ultimoPontoBruto = historicoCoordenadasLocais.length > 0 ? historicoCoordenadasLocais[historicoCoordenadasLocais.length - 1] : null;
+var ultimoTsPosicaoBruta = null; // usado para calcular velocidade por distância quando o GPS não informa "speed"
 var ultimoPontoChecadoEndereco = null;
 var errosGpsConsecutivos = 0;
 var ultimaLeituraCompleta = null;
@@ -511,8 +512,23 @@ function registrarESincronizarPonto(lat, lon, situacao, velKmh, precisao, agora,
 function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     esconderAvisoGps(); errosGpsConsecutivos = 0;
     var precisao = precisaoRaw ? Math.round(precisaoRaw) : null;
-    var vel = velRaw ? Math.round(velRaw * 3.6) : 0;
     var agora = new Date(); var agoraTs = agora.getTime();
+
+    // CORREÇÃO: em muitos aparelhos/navegadores o campo "speed" do GPS não vem preenchido
+    // de forma confiável (fica null ou 0 mesmo com o veículo em movimento) — é por isso
+    // que o status/cor nunca mudava de PARADO. Quando o valor do GPS não for útil,
+    // calculamos a velocidade pela distância percorrida entre os dois últimos pontos e o
+    // tempo decorrido entre eles.
+    var velCalculadaPorDistancia = 0;
+    if (ultimoPontoBruto && ultimoTsPosicaoBruta) {
+        var distDesdeUltimoBruto = calcularDistanciaMetros(ultimoPontoBruto[0], ultimoPontoBruto[1], lat, lon);
+        var deltaSegundosBruto = (agoraTs - ultimoTsPosicaoBruta) / 1000;
+        if (deltaSegundosBruto > 0.5 && distDesdeUltimoBruto > 3) { // ignora ruído de GPS parado (<3m)
+            velCalculadaPorDistancia = (distDesdeUltimoBruto / deltaSegundosBruto) * 3.6;
+        }
+    }
+    var vel = (velRaw && velRaw > 0) ? Math.round(velRaw * 3.6) : Math.round(velCalculadaPorDistancia);
+    ultimoTsPosicaoBruta = agoraTs;
 
     // ---- Atualização local imediata (mapa, velocidade, coordenadas) — sempre, a cada posição ----
     map.setView([lat, lon], map.getZoom() < 14 ? 16 : map.getZoom());
