@@ -54,6 +54,19 @@
         .live-indicator { display: inline-block; width: 7px; height: 7px; background: var(--signal-on); border-radius: 50%; margin-right: 5px; animation: blink 1s infinite; }
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
+        /* CORREÇÃO/MELHORIA: marcador do veículo no mapa muda de cor conforme o status
+           chega em tempo real do rastreador (verde = em movimento, laranja = parado,
+           vermelho = acima do limite). O pulso ajuda a perceber que está "ao vivo". */
+        .icone-veiculo { width: 22px; height: 22px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 0 2px rgba(0,0,0,0.4); }
+        .icone-veiculo.mov { background: var(--signal-on); animation: pulso-veiculo 1.4s infinite; }
+        .icone-veiculo.par { background: var(--signal-off); }
+        .icone-veiculo.per { background: var(--danger); animation: pulso-veiculo 0.8s infinite; }
+        @keyframes pulso-veiculo {
+            0% { box-shadow: 0 0 0 2px rgba(0,0,0,0.4), 0 0 0 0 rgba(0,255,166,0.55); }
+            70% { box-shadow: 0 0 0 2px rgba(0,0,0,0.4), 0 0 0 14px rgba(0,255,166,0); }
+            100% { box-shadow: 0 0 0 2px rgba(0,0,0,0.4), 0 0 0 0 rgba(0,255,166,0); }
+        }
+
         .lista-ruas { display: flex; flex-direction: column; gap: 4px; max-height: 280px; overflow-y: auto; }
         .item-rua {
             background: #1a212b; border: 1px solid var(--border); border-radius: 6px;
@@ -218,6 +231,20 @@ var polilinhaRuas = L.polyline([], { color: '#00ffa6', weight: 5, opacity: 0.9 }
 var marcadorSelecionado = null;
 var marcadores = [];
 
+// MELHORIA: ícone colorido do veículo — verde (em movimento), laranja (parado) ou
+// vermelho (acima do limite) — para o status aparecer direto no mapa em tempo real.
+function criarIconeVeiculo(status, velocidade) {
+    var classe = "par";
+    if (velocidade > 80 || (status && status.indexOf("ACIMA") !== -1)) classe = "per";
+    else if (velocidade > LIMITE_MOVIMENTO_KMH || (status && status.indexOf("MOVIMENTO") !== -1)) classe = "mov";
+    return L.divIcon({
+        className: "",
+        html: '<div class="icone-veiculo ' + classe + '"></div>',
+        iconSize: [22, 22],
+        iconAnchor: [11, 11]
+    });
+}
+
 // ===================== ESTADO =====================
 var veiculoSelecionado = "";
 var listenerTempoReal = null;
@@ -328,10 +355,12 @@ function ativarTempoReal() {
     listenerTempoReal = db.ref(base + '/atual').on('value', function(snap) {
         if (!snap.exists()) return;
         var d = snap.val();
+        var icone = criarIconeVeiculo(d.status, d.velocidade || 0);
         if (!marcadorVeiculo) {
-            marcadorVeiculo = L.marker([d.lat, d.lon]).addTo(map);
+            marcadorVeiculo = L.marker([d.lat, d.lon], { icon: icone }).addTo(map);
         } else {
             marcadorVeiculo.setLatLng([d.lat, d.lon]);
+            marcadorVeiculo.setIcon(icone);
         }
         map.setView([d.lat, d.lon], map.getZoom() < 14 ? 16 : map.getZoom());
         atualizarPainel(d);
@@ -545,10 +574,12 @@ function encaixarNasRuas(coords) {
 function mostrarPonto(p, idx) {
     if (!p) return;
 
+    var icone = criarIconeVeiculo(p.status, p.velocidade || 0);
     if (!marcadorVeiculo) {
-        marcadorVeiculo = L.marker([p.lat, p.lon]).addTo(map);
+        marcadorVeiculo = L.marker([p.lat, p.lon], { icon: icone }).addTo(map);
     } else {
         marcadorVeiculo.setLatLng([p.lat, p.lon]);
+        marcadorVeiculo.setIcon(icone);
     }
 
     atualizarPainel(p);
