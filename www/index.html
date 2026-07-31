@@ -147,6 +147,30 @@
 <script src="capacitor.js"></script>
 
 <script>
+// DIAGNÓSTICO: se algum erro de JavaScript acontecer em qualquer lugar do app (mesmo
+// durante o carregamento), ele normalmente fica "escondido" — os botões parecem não
+// fazer nada e não tem como saber o motivo. Este bloco mostra qualquer erro assim numa
+// faixa vermelha na tela, com a mensagem exata, pra dar pra identificar o problema.
+window.onerror = function(mensagem, origem, linha, coluna, erro) {
+    try {
+        var caixa = document.getElementById('avisoGps');
+        if (caixa) {
+            caixa.style.display = "block";
+            caixa.textContent = "⚠️ ERRO NO APP: " + mensagem + " (linha " + linha + ")";
+        }
+    } catch (e) {}
+    return false;
+};
+window.addEventListener('unhandledrejection', function(evento) {
+    try {
+        var caixa = document.getElementById('avisoGps');
+        if (caixa) {
+            caixa.style.display = "block";
+            caixa.textContent = "⚠️ ERRO (promise): " + (evento.reason && evento.reason.message ? evento.reason.message : evento.reason);
+        }
+    } catch (e) {}
+});
+
 // ===================== CONFIGURAÇÃO =====================
 var firebaseConfig = {
     apiKey: "AIzaSyDwKIS8wL3D7OuaysVFV_xyAsFsKo2eXzY",
