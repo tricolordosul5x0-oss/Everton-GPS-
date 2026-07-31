@@ -523,7 +523,12 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     if (ultimoPontoBruto && ultimoTsPosicaoBruta) {
         var distDesdeUltimoBruto = calcularDistanciaMetros(ultimoPontoBruto[0], ultimoPontoBruto[1], lat, lon);
         var deltaSegundosBruto = (agoraTs - ultimoTsPosicaoBruta) / 1000;
-        if (deltaSegundosBruto > 0.5 && distDesdeUltimoBruto > 3) { // ignora ruído de GPS parado (<3m)
+        // O piso de ruído agora usa a própria precisão informada pelo GPS (em vez de um
+        // valor fixo de 3m) — assim, com um GPS bom (± poucos metros) o app reconhece
+        // movimento real mesmo devagar, e só ignora deslocamento menor que a margem de
+        // erro atual do aparelho.
+        var limiarRuidoM = Math.max(3, precisao || 5);
+        if (deltaSegundosBruto > 0.5 && distDesdeUltimoBruto > limiarRuidoM) {
             velCalculadaPorDistancia = (distDesdeUltimoBruto / deltaSegundosBruto) * 3.6;
         }
     }
@@ -555,11 +560,20 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     var distanciaDoCentroDaParada = coordenadaParadaFixa ? calcularDistanciaMetros(coordenadaParadaFixa[0], coordenadaParadaFixa[1], lat, lon) : 0;
     var LIMITE_MOVIMENTO_KMH = 5;
     var RAIO_FALSO_MOVIMENTO_METROS = 50;
+    // CORREÇÃO: em velocidade claramente real (acima deste valor), o veículo está em
+    // movimento de verdade — não faz sentido esperar ele se afastar 50m do ponto de
+    // parada antes de considerar "em movimento". O raio de 50m continua valendo só para
+    // velocidades baixas/limítrofes, onde pode ser só ruído do GPS parado.
+    var VELOCIDADE_MOVIMENTO_CONFIAVEL_KMH = 15;
     var situacao = "PARADO";
     var badgeStatus = document.getElementById('badStatus');
     var iniciouParadaAgora = false;
 
-    if (vel >= LIMITE_MOVIMENTO_KMH && (!coordenadaParadaFixa || distanciaDoCentroDaParada > RAIO_FALSO_MOVIMENTO_METROS)) {
+    var estaEmMovimento = vel >= VELOCIDADE_MOVIMENTO_CONFIAVEL_KMH
+        ? true
+        : (vel >= LIMITE_MOVIMENTO_KMH && (!coordenadaParadaFixa || distanciaDoCentroDaParada > RAIO_FALSO_MOVIMENTO_METROS));
+
+    if (estaEmMovimento) {
         situacao = (vel > LIMITE_VELOCIDADE) ? "VELOCIDADE ACIMA DO LIMITE" : "EM MOVIMENTO";
         badgeStatus.textContent = situacao;
         badgeStatus.className = (vel > LIMITE_VELOCIDADE) ? "badge badge-perigo" : "badge badge-movimento";
@@ -638,7 +652,13 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     // (para pegar a troca de rua o quanto antes).
     var limiarChecagemM = (viaState.tipo === 'rodovia') ? 300 : 60;
     var distanciaChecagem = ultimoPontoChecadoEndereco ? calcularDistanciaMetros(ultimoPontoChecadoEndereco[0], ultimoPontoChecadoEndereco[1], lat, lon) : Infinity;
-    if (distanciaChecagem >= limiarChecagemM) {
+    // CORREÇÃO: perto de rodovias/estruturas grandes o GPS do celular pode ter erro de
+    // dezenas de metros (reflexo do sinal), e isso fazia às vezes registrar o endereço do
+    // outro lado da via. Com um erro muito grande (>60m) é melhor esperar uma leitura
+    // melhor do que travar um endereço errado.
+    var PRECISAO_MAXIMA_ACEITAVEL_M = 60;
+    var precisaoAceitavel = !precisao || precisao <= PRECISAO_MAXIMA_ACEITAVEL_M;
+    if (distanciaChecagem >= limiarChecagemM && precisaoAceitavel) {
         ultimoPontoChecadoEndereco = [lat, lon];
         var idFixoPonto = gerarIdPonto(agoraTs);
         var jaExisteFila = filaGeocodificarDepois.some(p => calcularDistanciaMetros(p.lat, p.lon, lat, lon) < 20);
