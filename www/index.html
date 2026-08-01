@@ -760,18 +760,29 @@ function iniciarRastreioNativoBackground() {
     var BG = window.Capacitor.Plugins.BackgroundGeolocation;
     if (!BG) { iniciarRastreioWeb(); return; }
     atualizarBarraBackground("🟢 Rastreio em segundo plano ATIVO", true);
-    BG.addWatcher({
+    var resultadoWatcher = BG.addWatcher({
         backgroundMessage: "Gravando rotas e telemetria em tempo real...",
         backgroundTitle: "Everton GPS Corporativo",
         requestPermissions: true, stale: false, distanceFilter: 0
     }, function(location, error) {
         if (error) return;
         if (location) processarNovaPosicao(location.latitude, location.longitude, location.accuracy, location.speed);
-    }).then(id => { bgWatcherId = id; }).catch(function(erro) {
-        console.error(erro);
-        mostrarAvisoGps("⚠️ Falha ao iniciar GPS em segundo plano (plugin nativo): " + (erro && erro.message ? erro.message : erro) + " — usando GPS padrão do navegador.");
-        iniciarRastreioWeb();
     });
+    // CORREÇÃO: dependendo da versão do plugin instalado, "addWatcher" pode devolver uma
+    // Promise OU o próprio ID do watcher direto (sem Promise). Sem essa checagem, quando
+    // não vinha uma Promise, o app achava que tinha FALHADO (erro "...then is not a
+    // function") e ativava o GPS do navegador por engano — mesmo o rastreio nativo já
+    // tendo iniciado normalmente.
+    if (resultadoWatcher && typeof resultadoWatcher.then === 'function') {
+        resultadoWatcher.then(function(id) { bgWatcherId = id; }).catch(function(erro) {
+            console.error(erro);
+            mostrarAvisoGps("⚠️ Falha ao iniciar GPS em segundo plano (plugin nativo): " + (erro && erro.message ? erro.message : erro) + " — usando GPS padrão do navegador.");
+            atualizarBarraBackground("", false);
+            iniciarRastreioWeb();
+        });
+    } else {
+        bgWatcherId = resultadoWatcher;
+    }
 }
 
 function iniciarRastreioWeb() {
@@ -792,6 +803,7 @@ function iniciarRastreioGps() {
     } catch (erro) {
         console.error(erro);
         mostrarAvisoGps("⚠️ Erro ao iniciar o GPS nativo: " + (erro && erro.message ? erro.message : erro) + " — usando GPS padrão do navegador.");
+        atualizarBarraBackground("", false);
         iniciarRastreioWeb();
     }
 }
