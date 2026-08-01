@@ -515,7 +515,7 @@ function registrarESincronizarPonto(lat, lon, situacao, velKmh, precisao, agora,
     var kmTxt = (enderecoInfo.km != null ? enderecoInfo.km : viaState.kmSincronizado);
     var sufixoFonteKm = (ehRodovia && enderecoInfo.fonteKm === 'estimado') ? " (aprox.)" : "";
     var ruaExibida = ehRodovia
-        ? (enderecoInfo.rua || "Rodovia") + " - Km " + kmTxt + sufixoFonteKm
+        ? (enderecoInfo.rua || "Rodovia") + (kmTxt != null ? (" - Km " + kmTxt + sufixoFonteKm) : " - Km não identificado")
         : (enderecoInfo.rua || "Rua não localizada");
     // O bairro é exibido sempre que disponível — inclusive em rodovias que passam por
     // perímetro urbano/industrial (ex: "RSC-287 - Km 78" + bairro "Industrial").
@@ -869,9 +869,14 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
         // próximo para já começar a contagem no valor real, em vez de "Km 0".
         atualizandoKmRodovia = true;
         buscarKmOficial(lat, lon).then(function(kmOficial) {
-            var kmFinal = (kmOficial !== null) ? Math.round(kmOficial) : 0;
-            var fonte = (kmOficial !== null) ? 'oficial' : 'estimado';
-            viaState = { tipo: 'rodovia', nome: rua, kmBase: kmFinal, odometroM: 0, kmSincronizado: kmFinal };
+            // CORREÇÃO: se o OpenStreetMap não tiver um marco de km cadastrado perto daqui
+            // (comum — a cobertura não é 100% das rodovias), o km fica como "não
+            // identificado" em vez de mostrar "Km 0" (que sugere, errado, que é bem no
+            // início da rodovia). O odômetro por GPS continua contando por baixo, e assim
+            // que acumular 1km ele tenta essa busca de novo sozinho.
+            var kmFinal = (kmOficial !== null) ? Math.round(kmOficial) : null;
+            var fonte = (kmOficial !== null) ? 'oficial' : 'desconhecido';
+            viaState = { tipo: 'rodovia', nome: rua, kmBase: kmFinal != null ? kmFinal : 0, odometroM: 0, kmSincronizado: kmFinal };
             salvarViaState();
             atualizandoKmRodovia = false;
 
