@@ -173,6 +173,19 @@ window.addEventListener('unhandledrejection', function(evento) {
     } catch (e) {}
 });
 
+// ===================== MEMÓRIA LOCAL =====================
+// CORREÇÃO: essas variáveis foram movidas pra cá (bem no início) porque o listener
+// ".info/connected" do Firebase, logo abaixo, pode disparar muito rapidamente — às vezes
+// antes do resto do script terminar de rodar. Quando isso acontecia, a tela de status
+// tentava usar essas variáveis antes delas existirem e travava o app inteiro
+// silenciosamente (é a causa do "os botões não fazem nada" que vínhamos vendo).
+var listaVeiculos = JSON.parse(localStorage.getItem('frota_veiculos') || "[]");
+var filaPendentes = JSON.parse(localStorage.getItem('fila_rastreio') || "[]");
+var filaGeocodificarDepois = JSON.parse(localStorage.getItem('fila_geocodificar') || "[]");
+var historicoCoordenadasLocais = JSON.parse(localStorage.getItem('historico_coords') || "[]");
+var registroCompleto = JSON.parse(localStorage.getItem('registro_completo') || "[]");
+var ultimoIdPontoParadaGravado = localStorage.getItem('ultimo_id_ponto_parada_gravado') || null;
+
 // ===================== CONFIGURAÇÃO =====================
 var firebaseConfig = {
     apiKey: "AIzaSyDwKIS8wL3D7OuaysVFV_xyAsFsKo2eXzY",
@@ -289,12 +302,7 @@ var polilinhaRota = L.polyline([], {color: 'rgba(45,212,255,0.35)', weight: 3, d
 var polilinhaRuas = L.polyline([], {color: '#2dd4ff', weight: 6}).addTo(map);
 
 // ===================== MEMÓRIA LOCAL =====================
-var listaVeiculos = JSON.parse(localStorage.getItem('frota_veiculos') || "[]");
-var filaPendentes = JSON.parse(localStorage.getItem('fila_rastreio') || "[]");
-var filaGeocodificarDepois = JSON.parse(localStorage.getItem('fila_geocodificar') || "[]");
-var historicoCoordenadasLocais = JSON.parse(localStorage.getItem('historico_coords') || "[]");
-var registroCompleto = JSON.parse(localStorage.getItem('registro_completo') || "[]");
-var ultimoIdPontoParadaGravado = localStorage.getItem('ultimo_id_ponto_parada_gravado') || null;
+// (declaradas mais acima agora, antes do listener do Firebase — ver comentário lá em cima)
 
 var coordenadaParadaFixa = (function() {
     var raw = localStorage.getItem('coordenada_parada_fixa');
