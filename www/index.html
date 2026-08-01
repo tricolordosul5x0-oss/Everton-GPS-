@@ -156,7 +156,9 @@ window.onerror = function(mensagem, origem, linha, coluna, erro) {
         var caixa = document.getElementById('avisoGps');
         if (caixa) {
             caixa.style.display = "block";
-            caixa.textContent = "⚠️ ERRO NO APP: " + mensagem + " (linha " + linha + ")";
+            var arquivo = origem ? origem.split('/').pop() : "?";
+            var pilha = (erro && erro.stack) ? (" | " + erro.stack.split("\n").slice(0, 3).join(" › ")) : "";
+            caixa.textContent = "⚠️ ERRO NO APP: " + mensagem + " [arquivo: " + arquivo + ", linha " + linha + ":" + coluna + "]" + pilha;
         }
     } catch (e) {}
     return false;
@@ -757,7 +759,11 @@ function iniciarRastreioNativoBackground() {
     }, function(location, error) {
         if (error) return;
         if (location) processarNovaPosicao(location.latitude, location.longitude, location.accuracy, location.speed);
-    }).then(id => { bgWatcherId = id; });
+    }).then(id => { bgWatcherId = id; }).catch(function(erro) {
+        console.error(erro);
+        mostrarAvisoGps("⚠️ Falha ao iniciar GPS em segundo plano (plugin nativo): " + (erro && erro.message ? erro.message : erro) + " — usando GPS padrão do navegador.");
+        iniciarRastreioWeb();
+    });
 }
 
 function iniciarRastreioWeb() {
@@ -767,7 +773,20 @@ function iniciarRastreioWeb() {
     }, tratarErroGps, { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 });
 }
 
-function iniciarRastreioGps() { if (isNative) { iniciarRastreioNativoBackground(); } else { iniciarRastreioWeb(); } }
+function iniciarRastreioGps() {
+    // CORREÇÃO: antes, se "iniciarRastreioNativoBackground()" travasse (o plugin nativo de
+    // GPS em segundo plano lançando um erro), isso interrompia a execução do script bem
+    // aqui — e tudo que vem depois no arquivo (botões, os setInterval de sincronização)
+    // nunca chegava a ser configurado. Com o try/catch, mesmo que o plugin trave, o app
+    // continua funcionando (cai pro GPS padrão do navegador) em vez de travar tudo.
+    try {
+        if (isNative) { iniciarRastreioNativoBackground(); } else { iniciarRastreioWeb(); }
+    } catch (erro) {
+        console.error(erro);
+        mostrarAvisoGps("⚠️ Erro ao iniciar o GPS nativo: " + (erro && erro.message ? erro.message : erro) + " — usando GPS padrão do navegador.");
+        iniciarRastreioWeb();
+    }
+}
 iniciarRastreioGps();
 
 // ===================== OUTROS SERVIÇOS =====================
