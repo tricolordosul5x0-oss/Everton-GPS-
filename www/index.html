@@ -740,7 +740,14 @@ function sincronizarTempoRealImediato() {
     });
     comLimiteDeTempo(db.ref().update(updates), 10000).then(() => {
         if(!firebaseOnlineConfirmado) { firebaseOnlineConfirmado = true; atualizarInterfaceEstado(); }
-    }).catch(e => console.warn(e));
+    }).catch(e => {
+        console.warn(e);
+        var agora = Date.now();
+        if (agora - ultimoAvisoErroEnvioTs > 60000) {
+            ultimoAvisoErroEnvioTs = agora;
+            mostrarAvisoGps("⚠️ Firebase recusou salvar posição ao vivo: " + (e && e.message ? e.message : e) + " [empresaId: " + EMPRESA_ID + ", logado: " + (auth.currentUser ? auth.currentUser.email : "NÃO") + "]");
+        }
+    });
 }
 
 setInterval(function() {
@@ -956,6 +963,7 @@ function processarFilaGeocodificacao() {
 }
 
 var enviando = false; var falhasConsecutivasLote = 0;
+var ultimoAvisoErroEnvioTs = 0;
 function enviarDadosFila() {
     if (enviando || filaPendentes.length === 0) { atualizarInterfaceEstado(); return; }
     enviando = true; var lote = filaPendentes.slice(0, 25); var updates = {};
@@ -968,6 +976,14 @@ function enviarDadosFila() {
             filaPendentes.splice(0, lote.length); falhasConsecutivasLote = 0; firebaseOnlineConfirmado = true; salvarTudo();
         }).catch(e => {
             falhasConsecutivasLote++; if (falhasConsecutivasLote >= 5) { filaPendentes.shift(); falhasConsecutivasLote = 0; salvarTudo(); }
+            // CORREÇÃO: antes esse erro só ia pro console (escondido). Agora mostra na
+            // faixa vermelha (no máximo 1x por minuto, pra não lotar a tela) — assim dá
+            // pra ver se é "permission_denied" (regras do Firebase) ou outra coisa.
+            var agora = Date.now();
+            if (agora - ultimoAvisoErroEnvioTs > 60000) {
+                ultimoAvisoErroEnvioTs = agora;
+                mostrarAvisoGps("⚠️ Firebase recusou salvar os dados: " + (e && e.message ? e.message : e) + " [empresaId: " + EMPRESA_ID + ", logado: " + (auth.currentUser ? auth.currentUser.email : "NÃO") + "]");
+            }
         }).finally(() => { enviando = false; atualizarInterfaceEstado(); if (filaPendentes.length > 0) enviarDadosFila(); });
     } catch (e) { filaPendentes.shift(); enviando = false; atualizarInterfaceEstado(); }
 }
