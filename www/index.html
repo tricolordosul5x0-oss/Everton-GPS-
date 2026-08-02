@@ -708,7 +708,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         var idFixoPonto = gerarIdPonto(agoraTs);
         var jaExisteFila = filaGeocodificarDepois.some(p => calcularDistanciaMetros(p.lat, p.lon, lat, lon) < 20);
         if (!jaExisteFila) {
-            filaGeocodificarDepois.push({ id: idFixoPonto, lat: lat, lon: lon, ts: agoraTs });
+            filaGeocodificarDepois.push({ id: idFixoPonto, lat: lat, lon: lon, ts: agoraTs, velocidadeNoMomento: vel, statusNoMomento: situacao });
             salvarTudo();
             processarFilaGeocodificacao();
         }
@@ -864,7 +864,7 @@ function talvezBuscarTemperatura(lat, lon) {
 
 // Aplica o endereço/tipo de via encontrado e decide se isso representa uma TROCA
 // (mudou de rua, ou entrou/saiu de rodovia) — só nesse caso grava no histórico.
-function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResposta) {
+function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResposta, velocidadeNoMomento, statusNoMomento) {
     var tipoVia = classificarVia(rua, dadosResposta);
 
     if (tipoVia === "rodovia") {
@@ -899,8 +899,14 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
             atualizandoKmRodovia = false;
 
             var agora = new Date();
-            var velAtual = ultimaLeituraCompleta ? ultimaLeituraCompleta.velocidade : 0;
-            var statusAtual = ultimaLeituraCompleta ? ultimaLeituraCompleta.status : "PARADO";
+            // CORREÇÃO: usa a velocidade/status capturados no momento em que ESTE ponto foi
+            // detectado (quando o veículo cruzou o limite de 60m que dispara a busca de
+            // endereço) — não o "mais atual" do app, que por essa altura (a busca de
+            // endereço é assíncrona, pode levar alguns segundos) já pode ser bem diferente,
+            // por exemplo se o carro já tiver parado no destino. Isso é o que fazia alguns
+            // pontos aparecerem como "Parado" mesmo tendo sido capturados em movimento.
+            var velAtual = velocidadeNoMomento != null ? velocidadeNoMomento : (ultimaLeituraCompleta ? ultimaLeituraCompleta.velocidade : 0);
+            var statusAtual = statusNoMomento || (ultimaLeituraCompleta ? ultimaLeituraCompleta.status : "PARADO");
             registrarESincronizarPonto(lat, lon, statusAtual, velAtual, null, agora, { rua: rua, bairro: bairro, cidade: cidade, estado: estado, tipoVia: "rodovia", km: kmFinal, fonteKm: fonte }, "entrada_rodovia");
         }).catch(function() { atualizandoKmRodovia = false; });
     } else if (mudouDeVia) {
@@ -908,8 +914,8 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
         salvarViaState();
 
         var agora2 = new Date();
-        var velAtual2 = ultimaLeituraCompleta ? ultimaLeituraCompleta.velocidade : 0;
-        var statusAtual2 = ultimaLeituraCompleta ? ultimaLeituraCompleta.status : "PARADO";
+        var velAtual2 = velocidadeNoMomento != null ? velocidadeNoMomento : (ultimaLeituraCompleta ? ultimaLeituraCompleta.velocidade : 0);
+        var statusAtual2 = statusNoMomento || (ultimaLeituraCompleta ? ultimaLeituraCompleta.status : "PARADO");
         registrarESincronizarPonto(lat, lon, statusAtual2, velAtual2, null, agora2, { rua: rua, bairro: bairro, cidade: cidade, estado: estado, tipoVia: "rua" }, "troca_rua");
     } else {
         salvarTudo();
@@ -951,7 +957,7 @@ function processarFilaGeocodificacao() {
             var bairro = addr.suburb || addr.neighbourhood || "Bairro não localizado";
             var cidade = addr.city || addr.town || "Cidade não localizada";
             var estado = addr.state || "Estado não localizado";
-            aplicarEnderecoNoPonto(ponto.lat, ponto.lon, rua, bairro, cidade, estado, data);
+            aplicarEnderecoNoPonto(ponto.lat, ponto.lon, rua, bairro, cidade, estado, data, ponto.velocidadeNoMomento, ponto.statusNoMomento);
             filaGeocodificarDepois.pop();
         }).catch(err => {
             ponto.tentativas = (ponto.tentativas || 0) + 1;
