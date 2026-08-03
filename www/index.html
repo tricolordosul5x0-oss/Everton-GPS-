@@ -497,7 +497,6 @@ function registrarESincronizarPonto(lat, lon, situacao, velKmh, precisao, agora,
     if (enderecoInfo.cidade) document.getElementById('txtCidade').textContent = enderecoInfo.cidade;
     if (enderecoInfo.estado) document.getElementById('txtEstado').textContent = enderecoInfo.estado;
 
-    // Garante que o registro guarde a velocidade correspondente exata do momento
     var velocidadeRegistrada = (situacao === "PARADO") ? 0 : velKmh;
 
     var registro = {
@@ -558,7 +557,6 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     var situacao = "PARADO";
     var badgeStatus = document.getElementById('badStatus');
     
-    // Regra estrita de parada: o tempo precisa passar de 1 minuto (60 segundos) para ser considerado e registrado como parada
     var SEGUNDOS_MINIMOS_PARADA = 60;
 
     var estaEmMovimento = vel >= VELOCIDADE_MOVIMENTO_CONFIAVEL_KMH
@@ -585,7 +583,6 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
             localStorage.setItem('coordenada_parada_fixa', JSON.stringify(coordenadaParadaFixa)); 
         }
 
-        // Calcula os segundos exatos parados até o momento atual
         var segundosParadoAtual = Math.floor((agoraTs - inicioParadaTs) / 1000);
 
         if (segundosParadoAtual >= SEGUNDOS_MINIMOS_PARADA) {
@@ -597,7 +594,6 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
                 jaGravouPontoInicialParada = true; 
                 localStorage.setItem('ja_gravou_parada', 'true'); 
                 
-                // Dispara o registro exato de parada ultrapassando 1 minuto com a velocidade correspondente (0 ou a residual de aproximação)
                 registrarESincronizarPonto(lat, lon, situacao, vel, precisao, agora, {
                     rua: document.getElementById('txtRua').textContent === "—" ? null : document.getElementById('txtRua').textContent,
                     bairro: document.getElementById('txtBairro').textContent,
@@ -608,7 +604,6 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
                 }, 'inicio_parada');
             }
         } else {
-            // Abaixo de 1 minuto, exibe temporariamente como em trânsito/reduzindo para não pular o status na tela imediatamente
             situacao = "EM MOVIMENTO";
             badgeStatus.textContent = "AGUARDANDO PARADA (>1MIN)";
             badgeStatus.className = "badge badge-movimento";
@@ -938,13 +933,58 @@ document.getElementById('btnForcar').addEventListener('click', function() {
     sincronizarTempoRealImediato();
 });
 
+// ===================== BOTÃO EXPORTAR ROTA (CORRIGIDO) =====================
 document.getElementById('btnExportar').addEventListener('click', function() {
-    if (registroCompleto.length === 0) return alert("Sem pontos.");
+    if (registroCompleto.length === 0) return alert("Sem pontos gravados para exportar.");
+    
     var lines = ["Data;Hora;Latitude;Longitude;Velocidade(km/h);Situacao;Rua;Bairro;Cidade;Estado;Motivo;FonteKm"];
-    registroCompleto.forEach(p => { lines.push([p.data, p.hora, p.lat, p.lon, p.velocidade, p.status, p.rua, p.bairro, p.cidade, p.estado, p.motivo || "", p.fonteKm || ""].join(";")); });
-    var blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
-    var url = URL.createObjectURL(blob); var a = document.createElement("a"); a.href = url; a.download = "rota_real_" + new Date().toISOString().slice(0,10) + ".csv"; a.click(); URL.revokeObjectURL(url);
+    registroCompleto.forEach(p => { 
+        lines.push([p.data, p.hora, p.lat, p.lon, p.velocidade, p.status, p.rua, p.bairro, p.cidade, p.estado, p.motivo || "", p.fonteKm || ""].join(";")); 
+    });
+    
+    var conteudoCsv = lines.join("\n");
+    var nomeArquivo = "rota_real_" + new Date().toISOString().slice(0,10) + ".csv";
+
+    if (navigator.share && isNative) {
+        try {
+            var file = new File([conteudoCsv], nomeArquivo, { type: "text/csv" });
+            navigator.share({
+                title: 'Rota GPS Everton',
+                text: 'Relatório de rota gerado pelo rastreador.',
+                files: [file]
+            }).catch(function() {
+                forçarDownloadWeb(conteudoCsv, nomeArquivo);
+            });
+            return;
+        } catch (err) {
+            forçarDownloadWeb(conteudoCsv, nomeArquivo);
+            return;
+        }
+    }
+    
+    forçarDownloadWeb(conteudoCsv, nomeArquivo);
 });
+
+function forçarDownloadWeb(conteudoCsv, nomeArquivo) {
+    try {
+        var blob = new Blob([conteudoCsv], { type: "text/csv;charset=utf-8;" });
+        var url = URL.createObjectURL(blob); 
+        var a = document.createElement("a"); 
+        a.href = url; 
+        a.download = nomeArquivo; 
+        document.body.appendChild(a);
+        a.click(); 
+        document.body.removeChild(a);
+        setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+    } catch(e) {
+        var janela = window.open("", "_blank");
+        if (janela) {
+            janela.document.write("<pre style='word-break: break-all; white-space: pre-wrap; font-family: monospace; padding: 15px;'>" + conteudoCsv + "</pre>");
+        } else {
+            alert("O navegador bloqueou o download. Copie os dados do histórico.");
+        }
+    }
+}
 
 document.getElementById('btnDiagnostico').addEventListener('click', function() {
     var out = document.getElementById('diagnosticoResultado'); out.textContent = "Testando...";
