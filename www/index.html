@@ -320,8 +320,14 @@ var map = L.map('map', { zoomControl: false }).setView([-29.6133, -52.1919], 13)
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 var marcador = L.marker([-29.6133, -52.1919]).addTo(map);
 var circuloPrecisao = L.circle([-29.6133, -52.1919], { radius: 0, color: '#2dd4ff', fillOpacity: 0.1, weight: 1 }).addTo(map);
-var polilinhaRota = L.polyline([], {color: 'rgba(45,212,255,0.35)', weight: 3, dashArray: '4,6'}).addTo(map);
-var polilinhaRuas = L.polyline([], {color: '#2dd4ff', weight: 6}).addTo(map);
+// CORREÇÃO/MELHORIA: a trilha do trajeto agora é só esta linha, desenhada localmente a
+// partir dos pontos de GPS — sem depender de nenhum serviço externo. Antes existia uma
+// segunda linha que tentava "encaixar" o trajeto nas ruas via um serviço público (OSRM
+// demo), mas esse serviço não é feito pra uso contínuo e estava falhando silenciosamente
+// (por isso a linha nunca aparecia) — além de deixar o app mais pesado, com uma chamada de
+// rede pesada (até 100 pontos) a cada poucos segundos. Removendo isso, o app fica mais
+// leve e a trilha passa a aparecer sempre, de forma confiável.
+var polilinhaRota = L.polyline([], {color: '#00ffa6', weight: 5}).addTo(map);
 
 // ===================== MEMÓRIA LOCAL =====================
 // (declaradas mais acima agora, antes do listener do Firebase — ver comentário lá em cima)
@@ -622,7 +628,6 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     historicoCoordenadasLocais.push([lat, lon]);
     if (historicoCoordenadasLocais.length > 2000) historicoCoordenadasLocais.shift();
     polilinhaRota.setLatLngs(historicoCoordenadasLocais);
-    agendarEncaixeNasRuas();
 
     // ---- Situação (parado / em movimento) ----
     var distanciaDoCentroDaParada = coordenadaParadaFixa ? calcularDistanciaMetros(coordenadaParadaFixa[0], coordenadaParadaFixa[1], lat, lon) : 0;
@@ -851,26 +856,6 @@ function iniciarRastreioGps() {
 iniciarRastreioGps();
 
 // ===================== OUTROS SERVIÇOS =====================
-var encaixeAgendado = false; var ultimoEncaixeTs = 0;
-function agendarEncaixeNasRuas() {
-    var agora = Date.now(); var esperar = Math.max(0, 4000 - (agora - ultimoEncaixeTs));
-    if (encaixeAgendado) return; encaixeAgendado = true;
-    setTimeout(executarEncaixeNasRuas, esperar);
-}
-function executarEncaixeNasRuas() {
-    encaixeAgendado = false; ultimoEncaixeTs = Date.now();
-    if (historicoCoordenadasLocais.length < 2) return;
-    var pontos = historicoCoordenadasLocais.slice(-100);
-    var coordsStr = pontos.map(p => p[1].toFixed(6) + "," + p[0].toFixed(6)).join(";");
-    fetchComTimeout(`https://router.project-osrm.org/match/v1/driving/${coordsStr}?overview=full&geometries=geojson`, {}, TIMEOUT_FETCH_MS)
-        .then(res => res.json()).then(data => {
-            if (data.code === "Ok" && data.matchings && data.matchings.length > 0) {
-                var pontosRua = [];
-                data.matchings.forEach(m => { m.geometry.coordinates.forEach(c => pontosRua.push([c[1], c[0]])); });
-                polilinhaRuas.setLatLngs(pontosRua);
-            }
-        }).catch(e => console.warn(e));
-}
 
 var ultimaBuscaTempTs = 0; var buscandoTemp = false;
 function talvezBuscarTemperatura(lat, lon) {
@@ -887,7 +872,7 @@ function talvezBuscarTemperatura(lat, lon) {
 
 // Aplica o endereço/tipo de via encontrado e decide se isso representa uma TROCA
 // (mudou de rua, ou entrou/saiu de rodovia) — só nesse caso grava no histórico.
-function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResposta, velocidadeNoMomento, statusNoMomento) {
+function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResposta, velocidadeNoMomento, statusNoMomento, tsNoMomento) {
     var tipoVia = classificarVia(rua, dadosResposta);
 
     if (tipoVia === "rodovia") {
@@ -921,13 +906,13 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
             salvarViaState();
             atualizandoKmRodovia = false;
 
-            var agora = new Date();
-            // CORREÇÃO: usa a velocidade/status capturados no momento em que ESTE ponto foi
-            // detectado (quando o veículo cruzou o limite de 60m que dispara a busca de
-            // endereço) — não o "mais atual" do app, que por essa altura (a busca de
-            // endereço é assíncrona, pode levar alguns segundos) já pode ser bem diferente,
-            // por exemplo se o carro já tiver parado no destino. Isso é o que fazia alguns
-            // pontos aparecerem como "Parado" mesmo tendo sido capturados em movimento.
+            // CORREÇÃO: usa o horário REAL em que este ponto foi capturado (quando o
+            // veículo cruzou o limite que dispara a busca de endereço) — não o horário em
+            // que a busca de endereço termina de responder. Como essa busca é assíncrona e
+            // pode demorar segundos (às vezes mais, se a fila estiver ocupada), usar o
+            // horário "agora" fazia o ponto aparecer com um horário bem depois de quando o
+            // veículo realmente passou por ali.
+            var agora = tsNoMomento ? new Date(tsNoMomento) : new Date();
             var velAtual = velocidadeNoMomento != null ? velocidadeNoMomento : (ultimaLeituraCompleta ? ultimaLeituraCompleta.velocidade : 0);
             var statusAtual = statusNoMomento || (ultimaLeituraCompleta ? ultimaLeituraCompleta.status : "PARADO");
             registrarESincronizarPonto(lat, lon, statusAtual, velAtual, null, agora, { rua: rua, bairro: bairro, cidade: cidade, estado: estado, tipoVia: "rodovia", km: kmFinal, fonteKm: fonte }, "entrada_rodovia");
@@ -936,7 +921,7 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
         viaState = { tipo: 'rua', nome: rua, kmBase: 0, odometroM: 0, kmSincronizado: null };
         salvarViaState();
 
-        var agora2 = new Date();
+        var agora2 = tsNoMomento ? new Date(tsNoMomento) : new Date();
         var velAtual2 = velocidadeNoMomento != null ? velocidadeNoMomento : (ultimaLeituraCompleta ? ultimaLeituraCompleta.velocidade : 0);
         var statusAtual2 = statusNoMomento || (ultimaLeituraCompleta ? ultimaLeituraCompleta.status : "PARADO");
         registrarESincronizarPonto(lat, lon, statusAtual2, velAtual2, null, agora2, { rua: rua, bairro: bairro, cidade: cidade, estado: estado, tipoVia: "rua" }, "troca_rua");
@@ -980,7 +965,7 @@ function processarFilaGeocodificacao() {
             var bairro = addr.suburb || addr.neighbourhood || "Bairro não localizado";
             var cidade = addr.city || addr.town || "Cidade não localizada";
             var estado = addr.state || "Estado não localizado";
-            aplicarEnderecoNoPonto(ponto.lat, ponto.lon, rua, bairro, cidade, estado, data, ponto.velocidadeNoMomento, ponto.statusNoMomento);
+            aplicarEnderecoNoPonto(ponto.lat, ponto.lon, rua, bairro, cidade, estado, data, ponto.velocidadeNoMomento, ponto.statusNoMomento, ponto.ts);
             filaGeocodificarDepois.pop();
         }).catch(err => {
             ponto.tentativas = (ponto.tentativas || 0) + 1;
@@ -1044,7 +1029,7 @@ function atualizarInterfaceEstado() {
     document.getElementById('filaInfo').textContent = registroCompleto.length + " pontos gravados localmente (" + filaPendentes.length + " no Firebase)";
 }
 
-window.addEventListener('online', function() { firebaseOnlineConfirmado = true; atualizarInterfaceEstado(); processarFilaGeocodificacao(); enviarDadosFila(); agendarEncaixeNasRuas(); });
+window.addEventListener('online', function() { firebaseOnlineConfirmado = true; atualizarInterfaceEstado(); processarFilaGeocodificacao(); enviarDadosFila(); });
 window.addEventListener('offline', function() { firebaseOnlineConfirmado = false; atualizarInterfaceEstado(); });
 
 document.getElementById('btnForcar').addEventListener('click', function() {
