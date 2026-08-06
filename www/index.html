@@ -177,6 +177,12 @@ window.addEventListener('unhandledrejection', function(evento) {
     } catch (e) {}
 });
 
+// ===================== CHAVE DO SERVIÇO DE ENDEREÇO (LocationIQ) =====================
+// Cole aqui sua chave gratuita do LocationIQ (locationiq.com -> Sign Up -> Dashboard ->
+// Access Token). O plano grátis dá 5.000 buscas/dia, permite uso comercial e é bem mais
+// estável que o Nominatim público que o app usava antes.
+var LOCATIONIQ_API_KEY = "pk.191e94f621fe663163bc05ef61c98b2b";
+
 // ===================== MEMÓRIA LOCAL =====================
 // CORREÇÃO: essas variáveis foram movidas pra cá (bem no início) porque o listener
 // ".info/connected" do Firebase, logo abaixo, pode disparar muito rapidamente — às vezes
@@ -354,6 +360,7 @@ var viaState = (function() {
 })();
 function salvarViaState() { localStorage.setItem('via_state', JSON.stringify(viaState)); }
 var atualizandoKmRodovia = false; // evita duas buscas de marco de km simultâneas
+var ultimoRegistroViaTs = null; // usado pra filtrar ruído de GPS perto de cruzamentos (ver aplicarEnderecoNoPonto)
 
 // Reconhece nomes de rodovia comuns no Brasil (BR-xxx, RS-xxx, ERS-xxx, RSC-xxx, SC-xxx, etc.)
 var REGEX_RODOVIA = /\b(br|rs|ers|rsc|sc|prc|pr|sp|mg|contorno)[\s-]?\d{2,4}\b/i;
@@ -878,8 +885,9 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
     if (tipoVia === "rodovia") {
         var kmExibicao = viaState.kmSincronizado !== null && viaState.tipo === 'rodovia' && viaState.nome === rua ? viaState.kmSincronizado : "—";
         document.getElementById('txtRua').textContent = rua + " (rodovia) - Km " + kmExibicao;
-        // O bairro é exibido normalmente se o Nominatim retornar um (comum em trechos de
-        // rodovia dentro de perímetro urbano/industrial); só vira "—" se não houver dado.
+        // O bairro é exibido normalmente se o serviço de endereço retornar um (comum em
+        // trechos de rodovia dentro de perímetro urbano/industrial); só vira "—" se não
+        // houver dado.
         document.getElementById('txtBairro').textContent = valorOuTraco(bairro, "Bairro não localizado");
     } else {
         document.getElementById('txtRua').textContent = rua;
@@ -890,7 +898,21 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
 
     var mudouDeVia = (viaState.tipo !== tipoVia) || (viaState.nome !== rua);
 
-    if (mudouDeVia && tipoVia === "rodovia" && !atualizandoKmRodovia) {
+    // CORREÇÃO: perto de cruzamentos (ou com prédios/árvores por perto), o GPS pode
+    // "tremer" alguns metros e fazer o endereço oscilar entre duas ruas em questão de
+    // segundos — sem o veículo realmente ter se movido de rua pra rua. Isso gerava vários
+    // registros falsos no histórico (rua A → rua B → rua A, tudo no mesmo segundo). Agora,
+    // com velocidade baixa (<15 km/h) e pouco tempo desde o último registro de troca de
+    // via (<15s), a mudança é tratada como ruído — atualiza a tela, mas não vira um novo
+    // ponto no histórico.
+    var velNoMomentoNum = velocidadeNoMomento != null ? velocidadeNoMomento : 0;
+    var tsEfetivo = tsNoMomento || Date.now();
+    var pareceRuidoDeGps = mudouDeVia && velNoMomentoNum < 15 && ultimoRegistroViaTs && (tsEfetivo - ultimoRegistroViaTs) < 15000;
+
+    if (pareceRuidoDeGps) {
+        salvarTudo();
+        sincronizarTempoRealImediato();
+    } else if (mudouDeVia && tipoVia === "rodovia" && !atualizandoKmRodovia) {
         // Entrando numa rodovia (ou trocando de rodovia): busca o marco de km oficial mais
         // próximo para já começar a contagem no valor real, em vez de "Km 0".
         atualizandoKmRodovia = true;
@@ -905,6 +927,7 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
             viaState = { tipo: 'rodovia', nome: rua, kmBase: kmFinal != null ? kmFinal : 0, odometroM: 0, kmSincronizado: kmFinal };
             salvarViaState();
             atualizandoKmRodovia = false;
+            ultimoRegistroViaTs = tsNoMomento || Date.now();
 
             // CORREÇÃO: usa o horário REAL em que este ponto foi capturado (quando o
             // veículo cruzou o limite que dispara a busca de endereço) — não o horário em
@@ -920,6 +943,7 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
     } else if (mudouDeVia) {
         viaState = { tipo: 'rua', nome: rua, kmBase: 0, odometroM: 0, kmSincronizado: null };
         salvarViaState();
+        ultimoRegistroViaTs = tsNoMomento || Date.now();
 
         var agora2 = tsNoMomento ? new Date(tsNoMomento) : new Date();
         var velAtual2 = velocidadeNoMomento != null ? velocidadeNoMomento : (ultimaLeituraCompleta ? ultimaLeituraCompleta.velocidade : 0);
@@ -951,15 +975,39 @@ function podarFilaGeocodificacao() {
     if (filaGeocodificarDepois.length !== tamanhoAntes) salvarTudo();
 }
 
+// ===================== SERVIÇO DE ENDEREÇO (LocationIQ) =====================
+// CORREÇÃO PRINCIPAL: trocado o Nominatim público (uso demo, sem SLA, banido em uso
+// comercial contínuo — era a causa raiz de endereço sumindo/atrasando) pelo LocationIQ,
+// que tem plano grátis pra sempre com cota diária alta e permite uso comercial. Preencha
+// LOCATIONIQ_API_KEY lá no topo do arquivo com sua chave gratuita.
+function chaveConfigurada() {
+    return LOCATIONIQ_API_KEY && LOCATIONIQ_API_KEY !== "COLE_SUA_CHAVE_AQUI";
+}
+
+function buscarEnderecoReverso(lat, lon) {
+    if (!chaveConfigurada()) {
+        return Promise.reject(new Error("Chave do LocationIQ não configurada — veja LOCATIONIQ_API_KEY no topo do arquivo."));
+    }
+    var url = `https://us1.locationiq.com/v1/reverse?key=${LOCATIONIQ_API_KEY}&lat=${lat}&lon=${lon}&format=json&zoom=18&addressdetails=1&normalizeaddress=1&accept-language=pt-BR`;
+    return fetchComTimeout(url, {}, TIMEOUT_FETCH_MS).then(function(res) {
+        if (!res.ok) { throw new Error("HTTP " + res.status); }
+        return res.json();
+    });
+}
+
 var geocodificando = false;
 function processarFilaGeocodificacao() {
     podarFilaGeocodificacao();
     if (geocodificando || filaGeocodificarDepois.length === 0) return;
+    if (!chaveConfigurada()) {
+        mostrarAvisoGps("⚠️ Configure LOCATIONIQ_API_KEY no topo do arquivo pra endereços funcionarem (locationiq.com, plano grátis).");
+        return;
+    }
     geocodificando = true; atualizarInterfaceEstado();
     var ponto = filaGeocodificarDepois[filaGeocodificarDepois.length - 1];
 
-    fetchComTimeout(`https://nominatim.openstreetmap.org/reverse?lat=${ponto.lat}&lon=${ponto.lon}&format=json&zoom=18&addressdetails=1`, { headers: { 'Accept-Language': 'pt-BR' } }, TIMEOUT_FETCH_MS)
-        .then(res => res.json()).then(data => {
+    buscarEnderecoReverso(ponto.lat, ponto.lon)
+        .then(data => {
             var addr = data.address || {};
             var rua = addr.road || addr.pedestrian || "Rua não localizada";
             var bairro = addr.suburb || addr.neighbourhood || "Bairro não localizado";
@@ -1052,8 +1100,13 @@ document.getElementById('btnExportar').addEventListener('click', function() {
 
 document.getElementById('btnDiagnostico').addEventListener('click', function() {
     var out = document.getElementById('diagnosticoResultado'); out.textContent = "Testando...";
-    fetchComTimeout("https://nominatim.openstreetmap.org/reverse?lat=-29.6133&lon=-52.1919&format=json&zoom=18", {}, 10000)
-        .then(res => res.text()).then(txt => { out.textContent = "✅ SUCESSO\n\n" + txt.slice(0, 300); }).catch(e => { out.textContent = "❌ ERRO: " + e.message; });
+    if (!chaveConfigurada()) {
+        out.textContent = "❌ Configure LOCATIONIQ_API_KEY no topo do arquivo antes de testar (locationiq.com, plano grátis, sem cartão).";
+        return;
+    }
+    buscarEnderecoReverso(-29.6133, -52.1919)
+        .then(data => { out.textContent = "✅ SUCESSO\n\n" + JSON.stringify(data).slice(0, 300); })
+        .catch(e => { out.textContent = "❌ ERRO: " + e.message; });
 });
 
 renderizarFrotaLocal(); atualizarInterfaceEstado(); checarContextoSeguro();
