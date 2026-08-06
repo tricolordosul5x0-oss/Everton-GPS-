@@ -178,10 +178,7 @@ window.addEventListener('unhandledrejection', function(evento) {
 });
 
 // ===================== CHAVE DO SERVIÇO DE ENDEREÇO (LocationIQ) =====================
-// Cole aqui sua chave gratuita do LocationIQ (locationiq.com -> Sign Up -> Dashboard ->
-// Access Token). O plano grátis dá 5.000 buscas/dia, permite uso comercial e é bem mais
-// estável que o Nominatim público que o app usava antes.
-var LOCATIONIQ_API_KEY = "pk.191e94f621fe663163bc05ef61c98b2b";
+var LOCATIONIQ_API_KEY = "pk.191e94f621fe663163bc05ef61c98b2";
 
 // ===================== MEMÓRIA LOCAL =====================
 // CORREÇÃO: essas variáveis foram movidas pra cá (bem no início) porque o listener
@@ -326,13 +323,6 @@ var map = L.map('map', { zoomControl: false }).setView([-29.6133, -52.1919], 13)
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 var marcador = L.marker([-29.6133, -52.1919]).addTo(map);
 var circuloPrecisao = L.circle([-29.6133, -52.1919], { radius: 0, color: '#2dd4ff', fillOpacity: 0.1, weight: 1 }).addTo(map);
-// CORREÇÃO/MELHORIA: a trilha do trajeto agora é só esta linha, desenhada localmente a
-// partir dos pontos de GPS — sem depender de nenhum serviço externo. Antes existia uma
-// segunda linha que tentava "encaixar" o trajeto nas ruas via um serviço público (OSRM
-// demo), mas esse serviço não é feito pra uso contínuo e estava falhando silenciosamente
-// (por isso a linha nunca aparecia) — além de deixar o app mais pesado, com uma chamada de
-// rede pesada (até 100 pontos) a cada poucos segundos. Removendo isso, o app fica mais
-// leve e a trilha passa a aparecer sempre, de forma confiável.
 var polilinhaRota = L.polyline([], {color: '#00ffa6', weight: 5}).addTo(map);
 
 // ===================== MEMÓRIA LOCAL =====================
@@ -343,12 +333,6 @@ var coordenadaParadaFixa = (function() {
     try { return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
 })();
 
-// Estado da via atual (rua ou rodovia). É isto que decide QUANDO sincronizar.
-// tipo: 'rua' | 'rodovia' | null
-// nome: nome da via atualmente reconhecida
-// kmBase: último km REAL (oficial ou estimado) confirmado nesta rodovia
-// odometroM: metros acumulados por GPS desde que kmBase foi confirmado
-// kmSincronizado: último km cheio já enviado ao banco, nesta rodovia (null = ainda nenhum)
 var viaState = (function() {
     var raw = localStorage.getItem('via_state');
     var padrao = { tipo: null, nome: null, kmBase: 0, odometroM: 0, kmSincronizado: null };
@@ -362,7 +346,6 @@ function salvarViaState() { localStorage.setItem('via_state', JSON.stringify(via
 var atualizandoKmRodovia = false; // evita duas buscas de marco de km simultâneas
 var ultimoRegistroViaTs = null; // usado pra filtrar ruído de GPS perto de cruzamentos (ver aplicarEnderecoNoPonto)
 
-// Reconhece nomes de rodovia comuns no Brasil (BR-xxx, RS-xxx, ERS-xxx, RSC-xxx, SC-xxx, etc.)
 var REGEX_RODOVIA = /\b(br|rs|ers|rsc|sc|prc|pr|sp|mg|contorno)[\s-]?\d{2,4}\b/i;
 var TIPOS_OSM_RODOVIA = ["motorway", "trunk", "primary", "motorway_link", "trunk_link", "primary_link"];
 
@@ -375,9 +358,6 @@ function classificarVia(rua, dadosResposta) {
 }
 
 // ===================== MARCO DE KM OFICIAL (Overpass / OpenStreetMap) =====================
-// Busca o marco quilométrico (highway=milestone) mais próximo do ponto informado.
-// Cobertura depende do que está mapeado no OpenStreetMap para aquela rodovia — não é
-// garantido para 100% das estradas. Quando não encontra, quem chamou usa a estimativa por GPS.
 var SERVIDORES_OVERPASS = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter"
@@ -407,7 +387,6 @@ function consultarOverpass(servidorIndex, query) {
 function buscarKmOficial(lat, lon) {
     return new Promise(function(resolve) {
         var agora = Date.now();
-        // limita a frequência de chamadas ao Overpass (servidor público, uso justo)
         if (agora - ultimaBuscaKmOficialTs < 4000) { resolve(null); return; }
         ultimaBuscaKmOficialTs = agora;
         var query = `[out:json][timeout:8];node(around:${RAIO_BUSCA_MARCO_M},${lat},${lon})["highway"="milestone"];out body;`;
@@ -465,11 +444,6 @@ document.getElementById('btnConfirmarLogin').addEventListener('click', function(
 });
 auth.onAuthStateChanged(user => {
     document.getElementById('userLogadoInfo').style.display = user ? "block" : "none";
-    // CORREÇÃO: com as novas regras de segurança do Firebase, o aparelho só consegue
-    // enviar dados estando logado com o e-mail/senha da empresa. Antes, o login só era
-    // pedido na hora de cadastrar/remover um veículo, e saía logo em seguida — agora ele
-    // fica logado o tempo todo (pede login uma vez só, ao abrir o app, se ainda não
-    // estiver logado).
     if (!user) {
         abrirModalLogin(function() {});
     } else {
@@ -495,8 +469,6 @@ document.getElementById('btnAdicionar').addEventListener('click', function() {
         listaVeiculos.push(nome); salvarTudo();
         document.getElementById('veiculoInput').value = ""; renderizarFrotaLocal();
         atualizarInterfaceEstado();
-        // CORREÇÃO: não desloga mais aqui — o login agora precisa ficar ativo o tempo
-        // todo pra sincronização funcionar (ver comentário no onAuthStateChanged acima).
     });
 });
 window.removerVeiculoExigindoSenha = function(index) {
@@ -532,7 +504,7 @@ setInterval(function() {
 
 // ===================== CAPTURA E PROCESSAMENTO GPS =====================
 var ultimoPontoBruto = historicoCoordenadasLocais.length > 0 ? historicoCoordenadasLocais[historicoCoordenadasLocais.length - 1] : null;
-var ultimoTsPosicaoBruta = null; // usado para calcular velocidade por distância quando o GPS não informa "speed"
+var ultimoTsPosicaoBruta = null;
 var ultimoPontoChecadoEndereco = null;
 var errosGpsConsecutivos = 0;
 var ultimaLeituraCompleta = null;
@@ -545,15 +517,12 @@ function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Evita mostrar o texto de fallback do Nominatim (ex: "Bairro não localizado") como se fosse dado real
 function valorOuTraco(valor, textoAusente) {
     if (!valor) return "—";
     if (textoAusente && valor === textoAusente) return "—";
     return valor;
 }
 
-// Monta e envia (histórico + nó "atual") um novo ponto sincronizado.
-// motivo: 'inicio_parada' | 'km_rodovia' | 'entrada_rodovia' | 'troca_rua'
 function registrarESincronizarPonto(lat, lon, situacao, velKmh, precisao, agora, enderecoInfo, motivo) {
     var idPonto = gerarIdPonto(agora.getTime());
     if (situacao === "PARADO") { ultimoIdPontoParadaGravado = idPonto; }
@@ -564,8 +533,6 @@ function registrarESincronizarPonto(lat, lon, situacao, velKmh, precisao, agora,
     var ruaExibida = ehRodovia
         ? (enderecoInfo.rua || "Rodovia") + (kmTxt != null ? (" - Km " + kmTxt + sufixoFonteKm) : " - Km não identificado")
         : (enderecoInfo.rua || "Rua não localizada");
-    // O bairro é exibido sempre que disponível — inclusive em rodovias que passam por
-    // perímetro urbano/industrial (ex: "RSC-287 - Km 78" + bairro "Industrial").
     var bairroExibido = valorOuTraco(enderecoInfo.bairro, "Bairro não localizado");
     var cidadeExibida = enderecoInfo.cidade || document.getElementById('txtCidade').textContent || "—";
     var estadoExibido = enderecoInfo.estado || document.getElementById('txtEstado').textContent || "—";
@@ -595,19 +562,10 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     var precisao = precisaoRaw ? Math.round(precisaoRaw) : null;
     var agora = new Date(); var agoraTs = agora.getTime();
 
-    // CORREÇÃO: em muitos aparelhos/navegadores o campo "speed" do GPS não vem preenchido
-    // de forma confiável (fica null ou 0 mesmo com o veículo em movimento) — é por isso
-    // que o status/cor nunca mudava de PARADO. Quando o valor do GPS não for útil,
-    // calculamos a velocidade pela distância percorrida entre os dois últimos pontos e o
-    // tempo decorrido entre eles.
     var velCalculadaPorDistancia = 0;
     if (ultimoPontoBruto && ultimoTsPosicaoBruta) {
         var distDesdeUltimoBruto = calcularDistanciaMetros(ultimoPontoBruto[0], ultimoPontoBruto[1], lat, lon);
         var deltaSegundosBruto = (agoraTs - ultimoTsPosicaoBruta) / 1000;
-        // O piso de ruído agora usa a própria precisão informada pelo GPS (em vez de um
-        // valor fixo de 3m) — assim, com um GPS bom (± poucos metros) o app reconhece
-        // movimento real mesmo devagar, e só ignora deslocamento menor que a margem de
-        // erro atual do aparelho.
         var limiarRuidoM = Math.max(3, precisao || 5);
         if (deltaSegundosBruto > 0.5 && distDesdeUltimoBruto > limiarRuidoM) {
             velCalculadaPorDistancia = (distDesdeUltimoBruto / deltaSegundosBruto) * 3.6;
@@ -616,7 +574,6 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     var vel = (velRaw && velRaw > 0) ? Math.round(velRaw * 3.6) : Math.round(velCalculadaPorDistancia);
     ultimoTsPosicaoBruta = agoraTs;
 
-    // ---- Atualização local imediata (mapa, velocidade, coordenadas) — sempre, a cada posição ----
     map.setView([lat, lon], map.getZoom() < 14 ? 16 : map.getZoom());
     marcador.setLatLng([lat, lon]);
     if (precisao) { circuloPrecisao.setLatLng([lat, lon]).setRadius(precisao); }
@@ -631,19 +588,13 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         talvezBuscarTemperatura(lat, lon);
     }
 
-    // Trilha visual no mapa: sempre atualizada localmente, não gera tráfego no banco
     historicoCoordenadasLocais.push([lat, lon]);
     if (historicoCoordenadasLocais.length > 2000) historicoCoordenadasLocais.shift();
     polilinhaRota.setLatLngs(historicoCoordenadasLocais);
 
-    // ---- Situação (parado / em movimento) ----
     var distanciaDoCentroDaParada = coordenadaParadaFixa ? calcularDistanciaMetros(coordenadaParadaFixa[0], coordenadaParadaFixa[1], lat, lon) : 0;
     var LIMITE_MOVIMENTO_KMH = 5;
     var RAIO_FALSO_MOVIMENTO_METROS = 50;
-    // CORREÇÃO: em velocidade claramente real (acima deste valor), o veículo está em
-    // movimento de verdade — não faz sentido esperar ele se afastar 50m do ponto de
-    // parada antes de considerar "em movimento". O raio de 50m continua valendo só para
-    // velocidades baixas/limítrofes, onde pode ser só ruído do GPS parado.
     var VELOCIDADE_MOVIMENTO_CONFIAVEL_KMH = 15;
     var situacao = "PARADO";
     var badgeStatus = document.getElementById('badStatus');
@@ -677,11 +628,10 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         tempoParado: document.getElementById('txtTempoParado').textContent
     };
 
-    // ---- Odômetro de rodovia: soma a cada posição (não depende de geocodificação) ----
     var kmMudou = false;
     if (ultimoPontoBruto && viaState.tipo === 'rodovia' && !atualizandoKmRodovia) {
         var delta = calcularDistanciaMetros(ultimoPontoBruto[0], ultimoPontoBruto[1], lat, lon);
-        if (delta > 2 && delta < 500) { viaState.odometroM += delta; } // ignora ruído de GPS e saltos absurdos
+        if (delta > 2 && delta < 500) { viaState.odometroM += delta; }
         var kmEstimadoAtual = viaState.kmBase + Math.floor(viaState.odometroM / 1000);
         if (viaState.kmSincronizado === null || kmEstimadoAtual !== viaState.kmSincronizado) {
             kmMudou = true;
@@ -690,7 +640,6 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     }
     ultimoPontoBruto = [lat, lon];
 
-    // ---- Regras de sincronização: só grava novo ponto de histórico quando há informação NOVA ----
     if (iniciouParadaAgora) {
         registrarESincronizarPonto(lat, lon, situacao, vel, precisao, agora, {
             rua: document.getElementById('txtRua').textContent === "—" ? null : document.getElementById('txtRua').textContent,
@@ -701,8 +650,6 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
             km: viaState.kmSincronizado
         }, 'inicio_parada');
     } else if (kmMudou) {
-        // Antes de gravar o novo km, tenta confirmar com o marco oficial mais próximo (Overpass/OSM).
-        // Isso também recalibra a base, corrigindo desvios acumulados do GPS.
         atualizandoKmRodovia = true;
         buscarKmOficial(lat, lon).then(function(kmOficial) {
             var kmFinal, fonte;
@@ -723,19 +670,11 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
             }, 'km_rodovia');
         }).catch(function() { atualizandoKmRodovia = false; });
     } else {
-        // Nenhum fato novo: apenas mantém a posição "ao vivo" atualizada (não cria ponto no histórico)
         sincronizarTempoRealImediato();
     }
 
-    // ---- Verifica de tempos em tempos se a via mudou (rua nova ou saiu/entrou em rodovia) ----
-    // Na rodovia a checagem é mais espaçada (o nome da via muda pouco); na cidade é mais frequente
-    // (para pegar a troca de rua o quanto antes).
     var limiarChecagemM = (viaState.tipo === 'rodovia') ? 300 : 60;
     var distanciaChecagem = ultimoPontoChecadoEndereco ? calcularDistanciaMetros(ultimoPontoChecadoEndereco[0], ultimoPontoChecadoEndereco[1], lat, lon) : Infinity;
-    // CORREÇÃO: perto de rodovias/estruturas grandes o GPS do celular pode ter erro de
-    // dezenas de metros (reflexo do sinal), e isso fazia às vezes registrar o endereço do
-    // outro lado da via. Com um erro muito grande (>60m) é melhor esperar uma leitura
-    // melhor do que travar um endereço errado.
     var PRECISAO_MAXIMA_ACEITAVEL_M = 60;
     var precisaoAceitavel = !precisao || precisao <= PRECISAO_MAXIMA_ACEITAVEL_M;
     if (distanciaChecagem >= limiarChecagemM && precisaoAceitavel) {
@@ -751,10 +690,6 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
 }
 
 function sincronizarTempoRealImediato() {
-    // CORREÇÃO: antes isso não rodava se "firebaseOnlineConfirmado" ainda estivesse falso,
-    // mas esse indicador pode demorar a atualizar mesmo com a conexão já disponível — e o
-    // próprio Firebase enfileira a escrita sozinho quando está offline. Tirar essa trava
-    // faz o app tentar sincronizar imediatamente sempre que houver leitura nova.
     if (!ultimaLeituraCompleta || listaVeiculos.length === 0) return;
     var updates = {};
     listaVeiculos.forEach(vNome => {
@@ -767,7 +702,6 @@ function sincronizarTempoRealImediato() {
         updates[basePath + 'data'] = ultimaLeituraCompleta.data;
         updates[basePath + 'tempoParado'] = document.getElementById('txtTempoParado').textContent;
 
-        // Sincroniza o endereço/rodovia em tempo real para alimentar o painel instantaneamente
         updates[basePath + 'rua'] = document.getElementById('txtRua').textContent;
         updates[basePath + 'bairro'] = document.getElementById('txtBairro').textContent;
         updates[basePath + 'cidade'] = document.getElementById('txtCidade').textContent;
@@ -821,11 +755,6 @@ function iniciarRastreioNativoBackground() {
         if (error) return;
         if (location) processarNovaPosicao(location.latitude, location.longitude, location.accuracy, location.speed);
     });
-    // CORREÇÃO: dependendo da versão do plugin instalado, "addWatcher" pode devolver uma
-    // Promise OU o próprio ID do watcher direto (sem Promise). Sem essa checagem, quando
-    // não vinha uma Promise, o app achava que tinha FALHADO (erro "...then is not a
-    // function") e ativava o GPS do navegador por engano — mesmo o rastreio nativo já
-    // tendo iniciado normalmente.
     if (resultadoWatcher && typeof resultadoWatcher.then === 'function') {
         resultadoWatcher.then(function(id) { bgWatcherId = id; }).catch(function(erro) {
             console.error(erro);
@@ -846,11 +775,6 @@ function iniciarRastreioWeb() {
 }
 
 function iniciarRastreioGps() {
-    // CORREÇÃO: antes, se "iniciarRastreioNativoBackground()" travasse (o plugin nativo de
-    // GPS em segundo plano lançando um erro), isso interrompia a execução do script bem
-    // aqui — e tudo que vem depois no arquivo (botões, os setInterval de sincronização)
-    // nunca chegava a ser configurado. Com o try/catch, mesmo que o plugin trave, o app
-    // continua funcionando (cai pro GPS padrão do navegador) em vez de travar tudo.
     try {
         if (isNative) { iniciarRastreioNativoBackground(); } else { iniciarRastreioWeb(); }
     } catch (erro) {
@@ -877,17 +801,12 @@ function talvezBuscarTemperatura(lat, lon) {
         }).catch(e => console.warn(e)).finally(() => { buscandoTemp = false; });
 }
 
-// Aplica o endereço/tipo de via encontrado e decide se isso representa uma TROCA
-// (mudou de rua, ou entrou/saiu de rodovia) — só nesse caso grava no histórico.
 function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResposta, velocidadeNoMomento, statusNoMomento, tsNoMomento) {
     var tipoVia = classificarVia(rua, dadosResposta);
 
     if (tipoVia === "rodovia") {
         var kmExibicao = viaState.kmSincronizado !== null && viaState.tipo === 'rodovia' && viaState.nome === rua ? viaState.kmSincronizado : "—";
         document.getElementById('txtRua').textContent = rua + " (rodovia) - Km " + kmExibicao;
-        // O bairro é exibido normalmente se o serviço de endereço retornar um (comum em
-        // trechos de rodovia dentro de perímetro urbano/industrial); só vira "—" se não
-        // houver dado.
         document.getElementById('txtBairro').textContent = valorOuTraco(bairro, "Bairro não localizado");
     } else {
         document.getElementById('txtRua').textContent = rua;
@@ -898,13 +817,6 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
 
     var mudouDeVia = (viaState.tipo !== tipoVia) || (viaState.nome !== rua);
 
-    // CORREÇÃO: perto de cruzamentos (ou com prédios/árvores por perto), o GPS pode
-    // "tremer" alguns metros e fazer o endereço oscilar entre duas ruas em questão de
-    // segundos — sem o veículo realmente ter se movido de rua pra rua. Isso gerava vários
-    // registros falsos no histórico (rua A → rua B → rua A, tudo no mesmo segundo). Agora,
-    // com velocidade baixa (<15 km/h) e pouco tempo desde o último registro de troca de
-    // via (<15s), a mudança é tratada como ruído — atualiza a tela, mas não vira um novo
-    // ponto no histórico.
     var velNoMomentoNum = velocidadeNoMomento != null ? velocidadeNoMomento : 0;
     var tsEfetivo = tsNoMomento || Date.now();
     var pareceRuidoDeGps = mudouDeVia && velNoMomentoNum < 15 && ultimoRegistroViaTs && (tsEfetivo - ultimoRegistroViaTs) < 15000;
@@ -913,15 +825,8 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
         salvarTudo();
         sincronizarTempoRealImediato();
     } else if (mudouDeVia && tipoVia === "rodovia" && !atualizandoKmRodovia) {
-        // Entrando numa rodovia (ou trocando de rodovia): busca o marco de km oficial mais
-        // próximo para já começar a contagem no valor real, em vez de "Km 0".
         atualizandoKmRodovia = true;
         buscarKmOficial(lat, lon).then(function(kmOficial) {
-            // CORREÇÃO: se o OpenStreetMap não tiver um marco de km cadastrado perto daqui
-            // (comum — a cobertura não é 100% das rodovias), o km fica como "não
-            // identificado" em vez de mostrar "Km 0" (que sugere, errado, que é bem no
-            // início da rodovia). O odômetro por GPS continua contando por baixo, e assim
-            // que acumular 1km ele tenta essa busca de novo sozinho.
             var kmFinal = (kmOficial !== null) ? Math.round(kmOficial) : null;
             var fonte = (kmOficial !== null) ? 'oficial' : 'desconhecido';
             viaState = { tipo: 'rodovia', nome: rua, kmBase: kmFinal != null ? kmFinal : 0, odometroM: 0, kmSincronizado: kmFinal };
@@ -929,12 +834,6 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
             atualizandoKmRodovia = false;
             ultimoRegistroViaTs = tsNoMomento || Date.now();
 
-            // CORREÇÃO: usa o horário REAL em que este ponto foi capturado (quando o
-            // veículo cruzou o limite que dispara a busca de endereço) — não o horário em
-            // que a busca de endereço termina de responder. Como essa busca é assíncrona e
-            // pode demorar segundos (às vezes mais, se a fila estiver ocupada), usar o
-            // horário "agora" fazia o ponto aparecer com um horário bem depois de quando o
-            // veículo realmente passou por ali.
             var agora = tsNoMomento ? new Date(tsNoMomento) : new Date();
             var velAtual = velocidadeNoMomento != null ? velocidadeNoMomento : (ultimaLeituraCompleta ? ultimaLeituraCompleta.velocidade : 0);
             var statusAtual = statusNoMomento || (ultimaLeituraCompleta ? ultimaLeituraCompleta.status : "PARADO");
@@ -955,12 +854,7 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
     }
 }
 
-// CORREÇÃO: a fila de endereços a resolver crescia sem limite. Como sempre pegávamos o
-// ponto MAIS RECENTE primeiro (de propósito, para a tela mostrar o endereço mais atual),
-// pontos antigos que ficassem para trás na fila podiam nunca ser processados numa rota
-// longa/com muitas trocas de rua — é o "acumula muito endereço que não vence sincronizar".
-// As duas constantes abaixo dão um limite de idade e de tamanho para a fila.
-var IDADE_MAXIMA_FILA_ENDERECO_MS = 45000; // pontos com mais de 45s são descartados: já não representam a posição atual
+var IDADE_MAXIMA_FILA_ENDERECO_MS = 45000;
 var TAMANHO_MAXIMO_FILA_ENDERECO = 8;
 
 function podarFilaGeocodificacao() {
@@ -976,10 +870,6 @@ function podarFilaGeocodificacao() {
 }
 
 // ===================== SERVIÇO DE ENDEREÇO (LocationIQ) =====================
-// CORREÇÃO PRINCIPAL: trocado o Nominatim público (uso demo, sem SLA, banido em uso
-// comercial contínuo — era a causa raiz de endereço sumindo/atrasando) pelo LocationIQ,
-// que tem plano grátis pra sempre com cota diária alta e permite uso comercial. Preencha
-// LOCATIONIQ_API_KEY lá no topo do arquivo com sua chave gratuita.
 function chaveConfigurada() {
     return LOCATIONIQ_API_KEY && LOCATIONIQ_API_KEY !== "COLE_SUA_CHAVE_AQUI";
 }
@@ -1026,7 +916,7 @@ function processarFilaGeocodificacao() {
 
 var enviando = false; var falhasConsecutivasLote = 0;
 var ultimoAvisoErroEnvioTs = 0;
-var MAX_FILA_PENDENTES = 300; // CORREÇÃO: limite pra não crescer sem parar quando as escritas ficam falhando por muito tempo (ex: empresa suspensa/excluída)
+var MAX_FILA_PENDENTES = 300;
 function enviarDadosFila() {
     if (enviando || filaPendentes.length === 0) { atualizarInterfaceEstado(); return; }
     if (filaPendentes.length > MAX_FILA_PENDENTES) {
@@ -1043,9 +933,6 @@ function enviarDadosFila() {
             filaPendentes.splice(0, lote.length); falhasConsecutivasLote = 0; firebaseOnlineConfirmado = true; salvarTudo();
         }).catch(e => {
             falhasConsecutivasLote++; if (falhasConsecutivasLote >= 20) { filaPendentes.shift(); falhasConsecutivasLote = 0; salvarTudo(); }
-            // CORREÇÃO: antes esse erro só ia pro console (escondido). Agora mostra na
-            // faixa vermelha (no máximo 1x por minuto, pra não lotar a tela) — assim dá
-            // pra ver se é "permission_denied" (regras do Firebase) ou outra coisa.
             var agora = Date.now();
             if (agora - ultimoAvisoErroEnvioTs > 60000) {
                 ultimoAvisoErroEnvioTs = agora;
@@ -1054,8 +941,6 @@ function enviarDadosFila() {
         }).finally(() => {
             enviando = false; atualizarInterfaceEstado();
             if (filaPendentes.length > 0) {
-                // CORREÇÃO: espera antes de tentar de novo — cresce até 30s conforme o
-                // número de falhas seguidas, em vez de tentar instantaneamente sem parar.
                 var esperaMs = Math.min(30000, 1000 * Math.pow(2, Math.min(falhasConsecutivasLote, 5)));
                 setTimeout(enviarDadosFila, falhasConsecutivasLote > 0 ? esperaMs : 0);
             }
@@ -1081,8 +966,6 @@ window.addEventListener('online', function() { firebaseOnlineConfirmado = true; 
 window.addEventListener('offline', function() { firebaseOnlineConfirmado = false; atualizarInterfaceEstado(); });
 
 document.getElementById('btnForcar').addEventListener('click', function() {
-    // CORREÇÃO: força a liberação das flags de controle antes de tentar de novo,
-    // caso alguma tenha ficado travada por uma tentativa anterior sem resposta.
     geocodificando = false;
     enviando = false;
     processarFilaGeocodificacao();
@@ -1111,9 +994,6 @@ document.getElementById('btnDiagnostico').addEventListener('click', function() {
 
 renderizarFrotaLocal(); atualizarInterfaceEstado(); checarContextoSeguro();
 
-// CORREÇÃO: a sincronização em tempo real ("atual") agora tem seu próprio intervalo,
-// independente da fila de histórico/endereços. Antes, tudo rodava junto a cada 6s, então
-// se a fila de geocodificação estivesse ocupada/travada a posição ao vivo também atrasava.
 setInterval(function() { sincronizarTempoRealImediato(); }, 3000);
 setInterval(function() { if (filaGeocodificarDepois.length > 0) processarFilaGeocodificacao(); if (filaPendentes.length > 0) enviarDadosFila(); }, 6000);
 </script>
