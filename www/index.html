@@ -1076,17 +1076,24 @@ document.getElementById('btnExportar').addEventListener('click', async function(
     // Android (salvar no Drive, mandar por WhatsApp/e-mail, etc.), que funciona de verdade
     // dentro do app. Só usa o download direto como alternativa (ex: se abrir pelo Chrome
     // normal em vez do app instalado).
+    var out = document.getElementById('diagnosticoResultado');
     try {
         var arquivo = new File([conteudoCsv], nomeArquivo, { type: "text/csv" });
         if (navigator.canShare && navigator.canShare({ files: [arquivo] })) {
+            out.textContent = "Abrindo menu de compartilhar...";
             await navigator.share({ files: [arquivo], title: "Rota exportada - " + nomeArquivo });
+            out.textContent = "✅ Compartilhado com sucesso.";
             return;
+        } else {
+            out.textContent = "⚠️ Este aparelho não suporta compartilhar arquivo direto (navigator.canShare indisponível) — tentando baixar direto...";
         }
     } catch (e) {
         console.warn(e);
+        out.textContent = "⚠️ Falha ao compartilhar: " + (e && e.message ? e.message : e) + " — tentando baixar direto...";
     }
     var blob = new Blob([conteudoCsv], { type: "text/csv;charset=utf-8;" });
     var url = URL.createObjectURL(blob); var a = document.createElement("a"); a.href = url; a.download = nomeArquivo; a.click(); URL.revokeObjectURL(url);
+    out.textContent = (out.textContent || "") + "\n(tentativa de download direto disparada — se nada abrir, o compartilhar acima é a causa real)";
 });
 
 document.getElementById('btnDiagnostico').addEventListener('click', function() {
