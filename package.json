@@ -17,4 +17,6 @@
   "devDependencies": {
     "@capacitor/cli": "^6.1.2"
   }
+  "@capacitor/filesystem": "^6.0.1",
+"@capacitor/share": "^6.0.2",
 }
