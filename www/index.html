@@ -85,13 +85,22 @@
     </div>
 </div>
 
+<!-- NOVO: bloqueio de tela cheia quando a empresa está suspensa por falta de pagamento.
+     Cobre mapa e botões por completo — o app fica travado até reativar. -->
+<div id="avisoSuspenso" style="display:none; position:fixed; inset:0; z-index:10001; background:#0a0d12; flex-direction:column; align-items:center; justify-content:center; padding:32px 24px; text-align:center;">
+    <div style="width:96px; height:96px; border-radius:22px; background:linear-gradient(145deg,#ff5470,#c81f45); display:flex; align-items:center; justify-content:center; font-size:2.6em; box-shadow:0 8px 24px rgba(255,84,112,0.35); margin-bottom:20px;">📡</div>
+    <div style="font-size:1.1em; font-weight:bold; color:var(--text); letter-spacing:0.5px; margin-bottom:24px;">RASTREADOR EVERTON GPS</div>
+    <div style="border:2px solid var(--danger); background:rgba(255,84,112,0.12); border-radius:12px; padding:20px 18px; max-width:360px;">
+        <div style="font-size:2em; margin-bottom:8px;">🚫</div>
+        <div style="color:var(--danger); font-weight:bold; font-size:1.05em; line-height:1.5;">ACESSO SUSPENSO</div>
+        <div style="color:var(--danger); font-size:0.92em; margin-top:8px; line-height:1.5;">Entre em contato com o suporte para regularizar o pagamento.</div>
+    </div>
+</div>
+
 <div id="map"></div>
 
 <div class="container">
     <div id="avisoGps" class="gps-warning"></div>
-    <div id="avisoSuspenso" style="display:none; background: rgba(255,84,112,0.18); border: 2px solid var(--danger); color: var(--danger); padding: 14px 12px; border-radius: 8px; font-size: 0.95em; font-weight: bold; text-align: center;">
-        🚫 ACESSO SUSPENSO — Entre em contato com o suporte para regularizar o pagamento.
-    </div>
 
     <div class="input-box">
         <label>🏢 Empresa deste aparelho</label>
@@ -244,7 +253,7 @@ function observarStatusEmpresa() {
     refStatusEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID) + '/status');
     refStatusEmpresa.on('value', function(snap) {
         var suspenso = snap.val() === 'suspenso';
-        document.getElementById('avisoSuspenso').style.display = suspenso ? 'block' : 'none';
+        document.getElementById('avisoSuspenso').style.display = suspenso ? 'flex' : 'none';
     }, function(erro) {
         console.warn(erro); // sem permissão de ler ainda (ex: login não confirmado) — ignora
     });
@@ -691,7 +700,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     // ---- Regras de sincronização: só grava novo ponto de histórico quando há informação NOVA ----
     if (iniciouParadaAgora) {
         registrarESincronizarPonto(lat, lon, situacao, vel, precisao, agora, {
-            rua: document.getElementById('txtRua').textContent === "—" ? null : document.getElementById('txtRua').textContent,
+            rua: viaState.nome || null,
             bairro: document.getElementById('txtBairro').textContent,
             cidade: document.getElementById('txtCidade').textContent,
             estado: document.getElementById('txtEstado').textContent,
