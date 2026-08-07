@@ -1069,31 +1069,43 @@ document.getElementById('btnExportar').addEventListener('click', async function(
     registroCompleto.forEach(p => { lines.push([p.data, p.hora, p.lat, p.lon, p.velocidade, p.status, p.rua, p.bairro, p.cidade, p.estado, p.motivo || "", p.fonteKm || ""].join(";")); });
     var conteudoCsv = lines.join("\n");
     var nomeArquivo = "rota_real_" + new Date().toISOString().slice(0,10) + ".csv";
-
-    // CORREÇÃO: dentro do app instalado (WebView do Capacitor), o download direto por link
-    // não funciona de verdade — o app não tem uma "pasta de downloads" conectada, então o
-    // clique não fazia nada visível. Agora tenta primeiro abrir o menu de Compartilhar do
-    // Android (salvar no Drive, mandar por WhatsApp/e-mail, etc.), que funciona de verdade
-    // dentro do app. Só usa o download direto como alternativa (ex: se abrir pelo Chrome
-    // normal em vez do app instalado).
     var out = document.getElementById('diagnosticoResultado');
+
+    // CORREÇÃO: nem o "compartilhar do navegador" (Web Share API) nem o download direto
+    // funcionam de verdade dentro do WebView do app instalado — o teste confirmou que esse
+    // aparelho nem tem o navigator.canShare disponível. A forma que funciona de verdade é
+    // usar os plugins NATIVOS do Capacitor (Filesystem + Share, o mesmo tipo de coisa que
+    // já usamos pro GPS em segundo plano) pra salvar o arquivo de verdade no aparelho e
+    // abrir o menu de compartilhar do Android por fora do WebView.
     try {
-        var arquivo = new File([conteudoCsv], nomeArquivo, { type: "text/csv" });
-        if (navigator.canShare && navigator.canShare({ files: [arquivo] })) {
-            out.textContent = "Abrindo menu de compartilhar...";
-            await navigator.share({ files: [arquivo], title: "Rota exportada - " + nomeArquivo });
-            out.textContent = "✅ Compartilhado com sucesso.";
+        if (isNative && window.Capacitor.Plugins.Filesystem && window.Capacitor.Plugins.Share) {
+            var Filesystem = window.Capacitor.Plugins.Filesystem;
+            var Share = window.Capacitor.Plugins.Share;
+            var resultado = await Filesystem.writeFile({
+                path: nomeArquivo,
+                data: conteudoCsv,
+                directory: 'CACHE',
+                encoding: 'utf8'
+            });
+            await Share.share({ title: "Rota exportada", url: resultado.uri });
+            out.textContent = "✅ Exportado e compartilhado com sucesso.";
             return;
-        } else {
-            out.textContent = "⚠️ Este aparelho não suporta compartilhar arquivo direto (navigator.canShare indisponível) — tentando baixar direto...";
         }
     } catch (e) {
         console.warn(e);
-        out.textContent = "⚠️ Falha ao compartilhar: " + (e && e.message ? e.message : e) + " — tentando baixar direto...";
+        out.textContent = "⚠️ Falha ao exportar via plugin nativo: " + (e && e.message ? e.message : e) + " — tentando alternativa...";
     }
+    // Alternativas pra quando não é o app nativo (ex: testando pelo navegador comum)
+    try {
+        var arquivo = new File([conteudoCsv], nomeArquivo, { type: "text/csv" });
+        if (navigator.canShare && navigator.canShare({ files: [arquivo] })) {
+            await navigator.share({ files: [arquivo], title: "Rota exportada - " + nomeArquivo });
+            out.textContent = "✅ Compartilhado com sucesso.";
+            return;
+        }
+    } catch (e2) { console.warn(e2); }
     var blob = new Blob([conteudoCsv], { type: "text/csv;charset=utf-8;" });
     var url = URL.createObjectURL(blob); var a = document.createElement("a"); a.href = url; a.download = nomeArquivo; a.click(); URL.revokeObjectURL(url);
-    out.textContent = (out.textContent || "") + "\n(tentativa de download direto disparada — se nada abrir, o compartilhar acima é a causa real)";
 });
 
 document.getElementById('btnDiagnostico').addEventListener('click', function() {
