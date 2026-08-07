@@ -2,55 +2,121 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Admin - Everton GPS Control</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel Admin - Everton GPS</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
     <style>
-        body { margin: 0; font-family: sans-serif; background: #0a0d12; color: #fff; display: flex; flex-direction: column; height: 100vh; }
-        #map { flex: 1; width: 100%; min-height: 60vh; }
-        .auth-overlay { position: fixed; inset:0; background: #000; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-        .card { background: #131820; padding: 20px; border-radius: 8px; border: 1px solid #333; }
-        .alerta-vel { background: #ff5470; color: white; padding: 10px; text-align: center; font-weight: bold; }
-        .filter-bar { background: #131820; border-bottom: 1px solid rgba(255,255,255,0.08); padding: 12px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; font-size: 0.9em; }
-        .filter-group { display: flex; flex-direction: column; gap: 4px; }
-        .filter-group label { font-size: 0.75em; text-transform: uppercase; color: #74808f; font-weight: bold; }
-        .filter-bar input, .filter-bar select { background: #1a212b; border: 1px solid rgba(255,255,255,0.08); padding: 8px; border-radius: 6px; color: white; }
-        .filter-bar button { background: #2dd4ff; color: #000; border: none; padding: 9px 16px; font-weight: bold; border-radius: 6px; cursor: pointer; align-self: flex-end; }
+        :root {
+            --bg-main: #0a0d12;
+            --bg-card: #131820;
+            --border: rgba(255,255,255,.1);
+            --signal-on: #00ffa6;
+            --danger: #ff5470;
+            --telemetry: #2dd4ff;
+            --text: #eef2f6;
+            --text-dim: #74808f;
+        }
+        body {
+            margin: 0; padding: 0; font-family: system-ui, sans-serif;
+            background: var(--bg-main); color: var(--text);
+            display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+        }
+        /* Tela de Login Otimizada */
+        .auth-overlay {
+            position: fixed; inset: 0; background: rgba(10, 13, 18, 0.95);
+            display: flex; align-items: center; justify-content: center; z-index: 9999;
+            padding: 16px;
+        }
+        .auth-card {
+            background: var(--bg-card); border: 1px solid var(--border);
+            padding: 24px; border-radius: 12px; width: 100%; max-width: 380px;
+            display: flex; flex-direction: column; gap: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+        .auth-card h2 { margin: 0 0 4px 0; font-size: 1.4em; text-align: center; color: var(--text); }
+        .auth-card label { font-size: 0.8em; text-transform: uppercase; color: var(--text-dim); font-weight: bold; display: block; margin-bottom: 6px; }
+        .auth-card input {
+            width: 100%; background: #1a212b; border: 1px solid var(--border);
+            padding: 12px; border-radius: 8px; color: white; font-size: 1em; box-sizing: border-box;
+        }
+        .auth-card button {
+            background: var(--telemetry); color: #000; border: none; padding: 14px;
+            font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 1em; text-transform: uppercase; width: 100%;
+        }
+
+        /* Barra de Filtros e Pesquisa */
+        .filter-container {
+            background: var(--bg-card); border-bottom: 1px solid var(--border);
+            padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; z-index: 1000;
+        }
+        .filter-row { display: flex; gap: 8px; flex-wrap: wrap; }
+        .filter-group { flex: 1; min-width: 140px; display: flex; flex-direction: column; gap: 4px; }
+        .filter-group label { font-size: 0.7em; text-transform: uppercase; color: var(--text-dim); font-weight: bold; }
+        .filter-container input, .filter-container select {
+            background: #1a212b; border: 1px solid var(--border); padding: 10px;
+            border-radius: 6px; color: white; font-size: 0.9em; width: 100%; box-sizing: border-box;
+        }
+        .btn-pesquisar {
+            background: var(--signal-on); color: #000; border: none; padding: 10px 20px;
+            font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 0.9em; text-transform: uppercase; align-self: flex-end;
+        }
+
+        /* Alerta de Velocidade */
+        .alerta-vel {
+            background: rgba(255, 84, 112, 0.2); border-bottom: 1px solid var(--danger);
+            color: var(--danger); padding: 10px; text-align: center; font-weight: bold; font-size: 0.9em; z-index: 1000;
+        }
+
+        #map { flex: 1; width: 100%; background: #000; }
     </style>
 </head>
 <body>
+
+    <!-- Tela de Login Obrigatória -->
     <div id="authScreen" class="auth-overlay">
-        <div class="card">
-            <h2>Painel Admin - Login</h2>
-            <input type="email" id="email" placeholder="Email"><br><br>
-            <input type="password" id="pass" placeholder="Senha"><br><br>
-            <button onclick="fazerLogin()">Acessar Painel</button>
+        <div class="auth-card">
+            <h2>🔐 Painel Admin</h2>
+            <p style="font-size:0.85em; color:var(--text-dim); text-align:center; margin:0;">Faça login para gerenciar e pesquisar rotas da frota.</p>
+            <div>
+                <label>E-mail</label>
+                <input type="email" id="email" placeholder="seu-email@gmail.com">
+            </div>
+            <div>
+                <label>Senha</label>
+                <input type="password" id="pass" placeholder="******">
+            </div>
+            <button onclick="fazerLogin()">Entrar no Painel</button>
         </div>
     </div>
 
     <div id="alertaContainer"></div>
 
-    <div class="filter-bar">
-        <div class="filter-group">
-            <label>Veículo</label>
-            <select id="selectVeiculo"><option value="">Selecione...</option></select>
+    <!-- Barra de Pesquisa por Período e Veículo -->
+    <div class="filter-container">
+        <div class="filter-row">
+            <div class="filter-group">
+                <label>Veículo</label>
+                <select id="selectVeiculo">
+                    <option value="">Carregando veículos...</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Início (Data e Hora)</label>
+                <input type="datetime-local" id="txtDataInicio">
+            </div>
+            <div class="filter-group">
+                <label>Fim (Data e Hora)</label>
+                <input type="datetime-local" id="txtDataFim">
+            </div>
+            <button class="btn-pesquisar" onclick="pesquisarHistorico()">🔍 Pesquisar Rota</button>
         </div>
-        <div class="filter-group">
-            <label>Início (Data e Hora)</label>
-            <input type="datetime-local" id="txtDataInicio">
-        </div>
-        <div class="filter-group">
-            <label>Fim (Data e Hora)</label>
-            <input type="datetime-local" id="txtDataFim">
-        </div>
-        <button onclick="filtrarHistorico()">Pesquisar Período</button>
     </div>
 
     <div id="map"></div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" crossorigin="anonymous"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js" crossorigin="anonymous"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js" crossorigin="anonymous"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
     
     <script>
         const firebaseConfig = {
@@ -59,33 +125,70 @@
         };
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
+        const auth = firebase.auth();
 
         const map = L.map('map').setView([-29.6133, -52.1919], 13);
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
         
-        let polyline = L.polyline([], {color: '#00ffa6', dashArray: '10, 10'}).addTo(map);
-        let markerInicio = L.marker([-29.6133, -52.1919]).addTo(map).bindPopup("Início da Pesquisa");
-        let markerFim = L.marker([-29.6133, -52.1919]).bindPopup("Fim da Pesquisa");
+        let polyline = L.polyline([], { color: '#00ffa6', weight: 5, dashArray: '10, 10' }).addTo(map);
+        let markerInicio = L.marker([-29.6133, -52.1919]).bindPopup("Início do Período");
+        let markerFim = L.marker([-29.6133, -52.1919]).bindPopup("Fim do Período");
 
         const EMPRESA_ID = "tricolordosul5x0_gmail_com";
 
+        // Verifica se já está logado na sessão do navegador
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                document.getElementById('authScreen').style.display = 'none';
+                carregarListaVeiculos();
+                definirDatasPadrao();
+            } else {
+                document.getElementById('authScreen').style.display = 'flex';
+            }
+        });
+
         function fazerLogin() {
-            const email = document.getElementById('email').value;
+            const email = document.getElementById('email').value.trim();
             const pass = document.getElementById('pass').value;
-            firebase.auth().signInWithEmailAndPassword(email, pass)
+            if(!email || !pass) return alert("Preencha o e-mail e a senha!");
+            
+            auth.signInWithEmailAndPassword(email, pass)
                 .then(() => {
                     document.getElementById('authScreen').style.display = 'none';
                     carregarListaVeiculos();
+                    definirDatasPadrao();
                 })
-                .catch(e => alert(e.message));
+                .catch(e => alert("Erro ao fazer login: " + e.message));
+        }
+
+        function definirDatasPadrao() {
+            const agora = new Date();
+            const umaHoraAtras = new Date(agora.getTime() - (60 * 60 * 1000)); // 1 hora atrás como padrão
+            
+            document.getElementById('txtDataFim').value = formatarDataInput(agora);
+            document.getElementById('txtDataInicio').value = formatarDataInput(umaHoraAtras);
+        }
+
+        function formatarDataInput(data) {
+            const ano = data.getFullYear();
+            const mes = String(data.getMonth() + 1).padStart(2, '0');
+            const dia = String(data.getDate()).padStart(2, '0');
+            const hora = String(data.getHours()).padStart(2, '0');
+            const min = String(data.getMinutes()).padStart(2, '0');
+            return `${ano}-${mes}-${dia}T${hora}:${min}`;
         }
 
         function carregarListaVeiculos() {
             db.ref('empresas/' + EMPRESA_ID + '/veiculos').once('value', (snap) => {
                 const veiculos = snap.val();
-                if(!veiculos) return;
                 const select = document.getElementById('selectVeiculo');
                 select.innerHTML = "";
+                
+                if (!veiculos) {
+                    select.innerHTML = '<option value="">Nenhum veículo cadastrado</option>';
+                    return;
+                }
+
                 Object.keys(veiculos).forEach(vNome => {
                     let opt = document.createElement('option');
                     opt.value = vNome;
@@ -95,7 +198,6 @@
             });
         }
 
-        // Converte string "DD/MM/YYYY" e "HH:MM:SS" para objeto Timestamp em milissegundos
         function converterParaTimestamp(dataStr, horaStr) {
             if (!dataStr || !horaStr) return 0;
             const [dia, mes, ano] = dataStr.split('/');
@@ -103,13 +205,13 @@
             return new Date(ano, mes - 1, dia, hora, min, seg || 0).getTime();
         }
 
-        function filtrarHistorico() {
+        function pesquisarHistorico() {
             const veiculo = document.getElementById('selectVeiculo').value;
             const inicioInput = document.getElementById('txtDataInicio').value;
             const fimInput = document.getElementById('txtDataFim').value;
 
-            if (!veiculo) return alert("Selecione um veículo!");
-            if (!inicioInput || !fimInput) return alert("Preencha a data e horário de início e fim!");
+            if (!veiculo) return alert("Selecione um veículo válido!");
+            if (!inicioInput || !fimInput) return alert("Preencha a data e horário de início e término!");
 
             const tsInicioFiltro = new Date(inicioInput).getTime();
             const tsFimFiltro = new Date(fimInput).getTime();
@@ -133,11 +235,10 @@
                     }
                 });
 
-                // Ordenar por ordem cronológica
                 pontosFiltrados.sort((a, b) => a.timestamp - b.timestamp);
 
                 if (pontosFiltrados.length === 0) {
-                    alert("Nenhum registro encontrado neste intervalo de tempo.");
+                    alert("Nenhum registro encontrado neste intervalo de tempo selecionado.");
                     return;
                 }
 
@@ -148,12 +249,10 @@
                     latLngs.push([p.lat, p.lon]);
                     if (p.velocidade > 80) temExcessoVelocidade = true;
 
-                    // Marca o primeiro ponto
                     if (index === 0) {
                         markerInicio.setLatLng([p.lat, p.lon]);
                         markerInicio.addTo(map);
                     }
-                    // Marca o último ponto
                     if (index === pontosFiltrados.length - 1) {
                         markerFim.setLatLng([p.lat, p.lon]);
                         markerFim.addTo(map);
@@ -162,14 +261,15 @@
 
                 polyline.setLatLngs(latLngs);
                 if (latLngs.length > 0) {
-                    map.fitBounds(polyline.getBounds());
+                    map.fitBounds(polyline.getBounds(), { padding: [50, 50] });
                 }
 
+                const alertaBox = document.getElementById('alertaContainer');
                 if (temExcessoVelocidade) {
-                    document.getElementById('alertaContainer').innerHTML = `<div class="alerta-vel">⚠️ ALERTA: Detectado excesso de velocidade (> 80 km/h) neste intervalo!</div>`;
-                    markerInicio.setIcon(new L.Icon.Default({iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png'}));
+                    alertaBox.innerHTML = `<div class="alerta-vel">⚠️ ALERTA: Excesso de velocidade (> 80 km/h) detectado neste trajeto!</div>`;
+                    markerInicio.setIcon(new L.Icon.Default({ iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png' }));
                 } else {
-                    document.getElementById('alertaContainer').innerHTML = "";
+                    alertaBox.innerHTML = "";
                     markerInicio.setIcon(new L.Icon.Default());
                 }
             });
