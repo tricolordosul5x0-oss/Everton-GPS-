@@ -21,7 +21,6 @@
             background: var(--bg-main); color: var(--text);
             display: flex; flex-direction: column; height: 100vh; overflow: hidden;
         }
-        /* Tela de Login Otimizada */
         .auth-overlay {
             position: fixed; inset: 0; background: rgba(10, 13, 18, 0.95);
             display: flex; align-items: center; justify-content: center; z-index: 9999;
@@ -43,24 +42,26 @@
             font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 1em; text-transform: uppercase; width: 100%;
         }
 
-        /* Barra de Filtros e Pesquisa */
         .filter-container {
             background: var(--bg-card); border-bottom: 1px solid var(--border);
             padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; z-index: 1000;
         }
-        .filter-row { display: flex; gap: 8px; flex-wrap: wrap; }
-        .filter-group { flex: 1; min-width: 140px; display: flex; flex-direction: column; gap: 4px; }
+        .filter-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+        .filter-group { flex: 1; min-width: 130px; display: flex; flex-direction: column; gap: 4px; }
         .filter-group label { font-size: 0.7em; text-transform: uppercase; color: var(--text-dim); font-weight: bold; }
         .filter-container input, .filter-container select {
             background: #1a212b; border: 1px solid var(--border); padding: 10px;
             border-radius: 6px; color: white; font-size: 0.9em; width: 100%; box-sizing: border-box;
         }
         .btn-pesquisar {
-            background: var(--signal-on); color: #000; border: none; padding: 10px 20px;
-            font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 0.9em; text-transform: uppercase; align-self: flex-end;
+            background: var(--signal-on); color: #000; border: none; padding: 10px 16px;
+            font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 0.9em; text-transform: uppercase; height: 39px;
+        }
+        .btn-tempo-real {
+            background: var(--danger); color: #fff; border: none; padding: 10px 16px;
+            font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 0.9em; text-transform: uppercase; height: 39px; display: none;
         }
 
-        /* Alerta de Velocidade */
         .alerta-vel {
             background: rgba(255, 84, 112, 0.2); border-bottom: 1px solid var(--danger);
             color: var(--danger); padding: 10px; text-align: center; font-weight: bold; font-size: 0.9em; z-index: 1000;
@@ -71,7 +72,6 @@
 </head>
 <body>
 
-    <!-- Tela de Login Obrigatória -->
     <div id="authScreen" class="auth-overlay">
         <div class="auth-card">
             <h2>🔐 Painel Admin</h2>
@@ -90,24 +90,24 @@
 
     <div id="alertaContainer"></div>
 
-    <!-- Barra de Pesquisa por Período e Veículo -->
     <div class="filter-container">
         <div class="filter-row">
             <div class="filter-group">
                 <label>Veículo</label>
                 <select id="selectVeiculo">
-                    <option value="">Carregando veículos...</option>
+                    <option value="">Carregando...</option>
                 </select>
             </div>
             <div class="filter-group">
-                <label>Início (Data e Hora)</label>
+                <label>Início (Data/Hora)</label>
                 <input type="datetime-local" id="txtDataInicio">
             </div>
             <div class="filter-group">
-                <label>Fim (Data e Hora)</label>
+                <label>Fim (Data/Hora)</label>
                 <input type="datetime-local" id="txtDataFim">
             </div>
-            <button class="btn-pesquisar" onclick="pesquisarHistorico()">🔍 Pesquisar Rota</button>
+            <button class="btn-pesquisar" onclick="pesquisarHistorico()">🔍 Pesquisar</button>
+            <button id="btnVoltarTempoReal" class="btn-tempo-real" onclick="voltarAoTempoReal()">🔴 Tempo Real</button>
         </div>
     </div>
 
@@ -131,12 +131,11 @@
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
         
         let polyline = L.polyline([], { color: '#00ffa6', weight: 5, dashArray: '10, 10' }).addTo(map);
-        let markerInicio = L.marker([-29.6133, -52.1919]).bindPopup("Início do Período");
-        let markerFim = L.marker([-29.6133, -52.1919]).bindPopup("Fim do Período");
+        let markerVeiculo = L.marker([-29.6133, -52.1919]).addTo(map);
 
         const EMPRESA_ID = "tricolordosul5x0_gmail_com";
+        let listenerTempoReal = null;
 
-        // Verifica se já está logado na sessão do navegador
         auth.onAuthStateChanged(user => {
             if (user) {
                 document.getElementById('authScreen').style.display = 'none';
@@ -163,8 +162,7 @@
 
         function definirDatasPadrao() {
             const agora = new Date();
-            const umaHoraAtras = new Date(agora.getTime() - (60 * 60 * 1000)); // 1 hora atrás como padrão
-            
+            const umaHoraAtras = new Date(agora.getTime() - (60 * 60 * 1000));
             document.getElementById('txtDataFim').value = formatarDataInput(agora);
             document.getElementById('txtDataInicio').value = formatarDataInput(umaHoraAtras);
         }
@@ -178,23 +176,75 @@
             return `${ano}-${mes}-${dia}T${hora}:${min}`;
         }
 
+        function sanitizarChavePath(valor) {
+            return String(valor).replace(/[.#$\[\]\/]/g, "_");
+        }
+
         function carregarListaVeiculos() {
-            db.ref('empresas/' + EMPRESA_ID + '/veiculos').once('value', (snap) => {
-                const veiculos = snap.val();
+            db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID) + '/veiculos').once('value', (snap) => {
+                const veiculosObj = snap.val();
                 const select = document.getElementById('selectVeiculo');
                 select.innerHTML = "";
                 
-                if (!veiculos) {
+                if (!veiculosObj) {
                     select.innerHTML = '<option value="">Nenhum veículo cadastrado</option>';
                     return;
                 }
 
-                Object.keys(veiculos).forEach(vNome => {
+                Object.keys(veiculosObj).forEach(vNome => {
                     let opt = document.createElement('option');
                     opt.value = vNome;
                     opt.textContent = vNome;
                     select.appendChild(opt);
                 });
+
+                // Iniciar o tempo real automaticamente com o primeiro veículo da lista
+                const primeiroVeiculo = Object.keys(veiculosObj)[0];
+                if (primeiroVeiculo) {
+                    iniciarEscutaTempoReal(primeiroVeiculo);
+                }
+            });
+
+            // Quando trocar o veículo no select, se estiver em tempo real, atualiza a escuta
+            document.getElementById('selectVeiculo').addEventListener('change', function() {
+                if (document.getElementById('btnVoltarTempoReal').style.display === 'none') {
+                    iniciarEscutaTempoReal(this.value);
+                }
+            });
+        }
+
+        function iniciarEscutaTempoReal(veiculoNome) {
+            if (listenerTempoReal) {
+                db.ref(listenerTempoReal).off();
+            }
+
+            const pathAtual = 'empresas/' + sanitizarChavePath(EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(veiculoNome) + '/atual';
+            listenerTempoReal = pathAtual;
+
+            let historicoTempoRealCoords = [];
+
+            db.ref(pathAtual).on('value', (snap) => {
+                const dados = snap.val();
+                if (!dados) return;
+
+                const { lat, lon, velocidade } = dados;
+                if (lat && lon) {
+                    markerVeiculo.setLatLng([lat, lon]);
+                    map.setView([lat, lon], 16);
+
+                    historicoTempoRealCoords.push([lat, lon]);
+                    if (historicoTempoRealCoords.length > 500) historicoTempoRealCoords.shift();
+                    polyline.setLatLngs(historicoTempoRealCoords);
+
+                    const alertaBox = document.getElementById('alertaContainer');
+                    if (velocidade > 80) {
+                        alertaBox.innerHTML = `<div class="alerta-vel">⚠️ ALERTA: Excesso de velocidade ao vivo! (${velocidade} km/h)</div>`;
+                        markerVeiculo.setIcon(new L.Icon.Default({ iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png' }));
+                    } else {
+                        alertaBox.innerHTML = "";
+                        markerVeiculo.setIcon(new L.Icon.Default());
+                    }
+                }
             });
         }
 
@@ -218,7 +268,13 @@
 
             if (tsInicioFiltro >= tsFimFiltro) return alert("A data/horário inicial deve ser anterior à final!");
 
-            db.ref('empresas/' + EMPRESA_ID + '/veiculos/' + veiculo + '/historico').once('value', (snap) => {
+            // Pausa o tempo real ao pesquisar histórico
+            if (listenerTempoReal) {
+                db.ref(listenerTempoReal).off();
+                listenerTempoReal = null;
+            }
+
+            db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(veiculo) + '/historico').once('value', (snap) => {
                 const historicoObj = snap.val();
                 if (!historicoObj) {
                     alert("Nenhum histórico encontrado para este veículo.");
@@ -250,12 +306,8 @@
                     if (p.velocidade > 80) temExcessoVelocidade = true;
 
                     if (index === 0) {
-                        markerInicio.setLatLng([p.lat, p.lon]);
-                        markerInicio.addTo(map);
-                    }
-                    if (index === pontosFiltrados.length - 1) {
-                        markerFim.setLatLng([p.lat, p.lon]);
-                        markerFim.addTo(map);
+                        markerVeiculo.setLatLng([p.lat, p.lon]);
+                        markerVeiculo.bindPopup("Início do Período").openPopup();
                     }
                 });
 
@@ -266,13 +318,27 @@
 
                 const alertaBox = document.getElementById('alertaContainer');
                 if (temExcessoVelocidade) {
-                    alertaBox.innerHTML = `<div class="alerta-vel">⚠️ ALERTA: Excesso de velocidade (> 80 km/h) detectado neste trajeto!</div>`;
-                    markerInicio.setIcon(new L.Icon.Default({ iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png' }));
+                    alertaBox.innerHTML = `<div class="alerta-vel">⚠️ ALERTA: Excesso de velocidade (> 80 km/h) detectado neste intervalo!</div>`;
+                    markerVeiculo.setIcon(new L.Icon.Default({ iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png' }));
                 } else {
                     alertaBox.innerHTML = "";
-                    markerInicio.setIcon(new L.Icon.Default());
+                    markerVeiculo.setIcon(new L.Icon.Default());
                 }
+
+                // Mostra o botão para voltar ao tempo real
+                document.getElementById('btnVoltarTempoReal').style.display = "block";
             });
+        }
+
+        function voltarAoTempoReal() {
+            document.getElementById('btnVoltarTempoReal').style.display = "none";
+            document.getElementById('alertaContainer').innerHTML = "";
+            markerVeiculo.bindPopup("");
+            const veiculoSelecionado = document.getElementById('selectVeiculo').value;
+            if (veiculoSelecionado) {
+                iniciarEscutaTempoReal(veiculoSelecionado);
+                alert("Retornado ao modo ao vivo (tempo real).");
+            }
         }
     </script>
 </body>
