@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel Admin - Rastreador Everton GPS</title>
+    <title>Rastreador Everton GPS - Multi-Frota</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
     <style>
         :root {
@@ -17,182 +17,176 @@
             --text: #eef2f6;
             --text-dim: #74808f;
         }
-        * { box-sizing: border-box; }
         body {
             margin: 0; padding: 0; font-family: system-ui, sans-serif;
             background: var(--bg-main); color: var(--text);
-            display: flex; height: 100vh; overflow: hidden;
+            display: flex; flex-direction: column; height: 100vh;
         }
-        .sidebar {
-            width: 400px; background: var(--bg-card);
-            border-right: 1px solid var(--border);
-            display: flex; flex-direction: column; height: 100%;
-            flex-shrink: 0;
-        }
-        #map { flex: 1; height: 100%; background: #000; }
-        .header { padding: 14px 16px; border-bottom: 1px solid var(--border); text-align: center; }
-        .header h2 { margin: 0; font-size: 1.1em; color: var(--telemetry); }
-        .content { padding: 12px; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-        .box { background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 10px 12px; border-radius: 8px; }
-        .box-title { font-size: 0.72em; text-transform: uppercase; color: var(--text-dim); font-weight: bold; margin-bottom: 8px; }
-        select, input { width: 100%; background: #1a212b; border: 1px solid var(--border); padding: 9px; border-radius: 6px; color: white; font-size: 0.92em; }
-        .btn { display: block; width: 100%; background: var(--telemetry); color: #000; font-weight: bold; cursor: pointer; margin-top: 6px; border: none; padding: 10px; border-radius: 6px; font-size: 0.92em; }
-        .btn:hover { opacity: 0.9; }
-        .btn-green { background: var(--signal-on); }
-        .btn-dark { background: #1a212b; color: var(--danger); border: 1px solid var(--border); }
+        #map { width: 100%; height: 32vh; background: #000; }
+        .container { padding: 16px; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
 
-        .telemetry-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.85em; gap: 8px; }
+        .input-box { background: var(--bg-card); border: 1px solid var(--border); padding: 12px; border-radius: 8px; }
+        .input-box label { font-size: 0.75em; text-transform: uppercase; color: var(--text-dim); display: block; margin-bottom: 6px; font-weight: bold; }
+        .row { display: flex; gap: 8px; }
+        input { flex: 1; background: #1a212b; border: 1px solid var(--border); padding: 12px; border-radius: 6px; color: white; font-size: 1em; }
+        button { background: var(--signal-on); color: #000; border: none; padding: 12px 20px; font-weight: bold; border-radius: 6px; cursor: pointer; }
+
+        .frota-container { background: var(--bg-card); border: 1px solid var(--border); padding: 12px; border-radius: 8px; }
+        .frota-lista { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+        .tag-veiculo { background: #1a212b; border: 1px solid var(--border); padding: 6px 12px; border-radius: 20px; font-size: 0.85em; display: flex; align-items: center; gap: 8px; }
+        .btn-remover { color: var(--danger); cursor: pointer; font-weight: bold; border: none; background: none; padding: 0; font-size: 1.1em; }
+
+        .status-bar { padding: 12px; border-radius: 6px; text-align: center; font-weight: bold; font-size: 0.9em; }
+        .status-online { background: rgba(0, 255, 166, 0.15); color: var(--signal-on); border: 1px solid var(--signal-on); }
+        .status-offline { background: rgba(255, 176, 32, 0.15); color: var(--signal-off); border: 1px solid var(--signal-off); }
+        .status-erro { background: rgba(255, 84, 112, 0.15); color: var(--danger); border: 1px solid var(--danger); }
+        .status-bg { background: rgba(45, 212, 255, 0.15); color: var(--telemetry); border: 1px solid var(--telemetry); }
+
+        .btn-row { display: flex; gap: 8px; }
+        .btn-force { background: #2dd4ff; color: #000; flex: 2; padding: 14px; font-size: 0.95em; text-transform: uppercase; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; }
+        .btn-export { background: #1a212b; color: var(--text); border: 1px solid var(--border); flex: 1; padding: 14px; font-size: 0.85em; font-weight: bold; border-radius: 6px; cursor: pointer; }
+
+        .telemetry-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+        .telemetry-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.9em; gap: 8px; }
+        .telemetry-row b, .telemetry-row span { text-align: right; }
         .telemetry-row:last-child { border-bottom: none; }
-        .telemetry-row b { text-align: right; max-width: 65%; color: var(--text); }
+
         .badge { font-size: 0.75em; padding: 3px 8px; border-radius: 4px; font-weight: bold; }
         .badge-movimento { background: rgba(0,255,166,0.15); color: var(--signal-on); }
-        .badge-parado { background: rgba(255,176,32,0.15); color: var(--signal-off); }
-        .badge-perigo { background: rgba(255,84,112,0.15); color: var(--danger); }
+        .badge-parado { background: rgba(255, 176, 32, 0.15); color: var(--signal-off); }
+        .badge-perigo { background: rgba(255, 84, 112, 0.15); color: var(--danger); }
 
-        .status-bar { text-align: center; font-weight: bold; font-size: 0.85em; padding: 8px; border-radius: 6px; border: 1px solid var(--signal-off); color: var(--signal-off); background: rgba(255,176,32,0.08); }
-        .status-bar.online { border-color: var(--signal-on); color: var(--signal-on); background: rgba(0,255,166,0.08); }
-        .live-indicator { display: inline-block; width: 7px; height: 7px; background: var(--signal-on); border-radius: 50%; margin-right: 5px; animation: blink 1s infinite; }
-        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+        .gps-warning { background: rgba(255,84,112,0.12); border: 1px solid var(--danger); color: var(--danger); padding: 10px 12px; border-radius: 6px; font-size: 0.85em; display: none; }
+        .fila-info { font-size: 0.75em; color: var(--text-dim); text-align: center; }
 
-        /* CORREÇÃO/MELHORIA: marcador do veículo no mapa muda de cor conforme o status
-           chega em tempo real do rastreador (verde = em movimento, laranja = parado,
-           vermelho = acima do limite). O pulso ajuda a perceber que está "ao vivo". */
-        .icone-veiculo { width: 22px; height: 22px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 0 2px rgba(0,0,0,0.4); }
-        .icone-veiculo.mov { background: var(--signal-on); animation: pulso-veiculo 1.4s infinite; }
-        .icone-veiculo.par { background: var(--signal-off); }
-        .icone-veiculo.per { background: var(--danger); animation: pulso-veiculo 0.8s infinite; }
-        @keyframes pulso-veiculo {
-            0% { box-shadow: 0 0 0 2px rgba(0,0,0,0.4), 0 0 0 0 rgba(0,255,166,0.55); }
-            70% { box-shadow: 0 0 0 2px rgba(0,0,0,0.4), 0 0 0 14px rgba(0,255,166,0); }
-            100% { box-shadow: 0 0 0 2px rgba(0,0,0,0.4), 0 0 0 0 rgba(0,255,166,0); }
-        }
-
-        .lista-ruas { display: flex; flex-direction: column; gap: 4px; max-height: 280px; overflow-y: auto; }
-        .item-rua {
-            background: #1a212b; border: 1px solid var(--border); border-radius: 6px;
-            padding: 8px 10px; cursor: pointer; transition: border-color 0.15s, background 0.15s;
-            display: flex; flex-direction: column; gap: 2px;
-        }
-        .item-rua:hover { border-color: var(--telemetry); background: rgba(45,212,255,0.06); }
-        .item-rua.ativo { border-color: var(--signal-on); background: rgba(0,255,166,0.08); }
-        .item-rua .rua-nome { font-size: 0.85em; font-weight: bold; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .item-rua .rua-meta { font-size: 0.72em; color: var(--text-dim); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-        .item-rua .rua-vel { font-size: 0.72em; font-weight: bold; }
-        .item-rua .rua-vel.mov { color: var(--signal-on); }
-        .item-rua .rua-vel.par { color: var(--signal-off); }
-        .item-rua .rua-vel.per { color: var(--danger); }
-
-        .vazio { font-size: 0.82em; color: var(--text-dim); text-align: center; padding: 16px 0; }
-
-        .auth-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.92); display: flex; align-items: center; justify-content: center; z-index: 10000; }
-        .auth-card { background: var(--bg-card); border: 1px solid var(--border); padding: 24px; border-radius: 12px; width: 90%; max-width: 360px; display: flex; flex-direction: column; gap: 14px; }
-        .auth-card h3 { margin: 0; color: var(--text); font-size: 1.1em; text-align: center; }
-
-        .leaflet-popup-content-wrapper { background: #131820; border: 1px solid rgba(45,212,255,0.3); color: #eef2f6; border-radius: 8px; }
-        .leaflet-popup-tip { background: #131820; }
-        .popup-linha { font-size: 0.82em; padding: 2px 0; }
-        .popup-linha b { color: var(--telemetry); }
-
-        .data-range { display: flex; gap: 6px; align-items: center; }
-        .data-range span { font-size: 0.72em; color: var(--text-dim); flex-shrink: 0; }
-
-        @media (max-width: 768px) {
-            body { flex-direction: column-reverse; }
-            .sidebar { width: 100%; height: 55vh; }
-            #map { height: 45vh; }
-            .lista-ruas { max-height: 180px; }
-        }
+        .auth-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 10000; display: none; }
+        .auth-card { background: var(--bg-card); border: 1px solid var(--border); padding: 24px; border-radius: 12px; width: 90%; max-width: 360px; display: flex; flex-direction: column; gap: 16px; position: relative; }
+        .auth-card h3 { margin: 0; color: var(--text); font-size: 1.2em; text-align: center; }
+        .btn-fechar-modal { position: absolute; top: 12px; right: 12px; background: none; border: none; color: var(--text-dim); font-size: 1.2em; cursor: pointer; padding: 0; }
+        .user-logado-info { font-size: 0.75em; color: var(--signal-on); text-align: center; margin-top: -4px; display: none; }
     </style>
 </head>
 <body>
 
-<!-- Auth -->
-<div id="authOverlay" class="auth-overlay">
+<div id="authModal" class="auth-overlay">
     <div class="auth-card">
-        <h3>🔐 Painel Admin Protegido</h3>
-        <p style="font-size:0.82em;color:var(--text-dim);text-align:center;margin:0;">Credenciais de administrador.</p>
+        <button class="btn-fechar-modal" id="btnFecharLogin">×</button>
+        <h3>🔐 Login da Empresa</h3>
+        <p style="font-size:0.8em;color:var(--text-dim);text-align:center;margin:0 0 4px;">Use o e-mail/senha da sua empresa. É só uma vez — o aparelho fica logado.</p>
         <div>
-            <label style="font-size:0.72em;color:var(--text-dim);text-transform:uppercase;font-weight:bold;display:block;margin-bottom:4px;">E-mail</label>
-            <input type="email" id="authEmail" placeholder="seu-email@gmail.com">
+            <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">E-mail</label>
+            <input type="email" id="authEmail" placeholder="seu-email@gmail.com" style="width: 100%; box-sizing: border-box;">
         </div>
         <div>
-            <label style="font-size:0.72em;color:var(--text-dim);text-transform:uppercase;font-weight:bold;display:block;margin-bottom:4px;">Senha</label>
-            <input type="password" id="authSenha" placeholder="******">
+            <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">Senha</label>
+            <input type="password" id="authSenha" placeholder="******" style="width: 100%; box-sizing: border-box;">
         </div>
-        <button class="btn" id="btnEntrarPainel">Entrar no Painel</button>
-        <div id="erroLogin" style="color:var(--danger);font-size:0.82em;text-align:center;display:none;"></div>
+        <button id="btnConfirmarLogin" style="background: var(--telemetry); width: 100%;">Entrar e Executar</button>
     </div>
 </div>
 
-<!-- Sidebar -->
-<div class="sidebar">
-    <div class="header">
-        <h2 id="tituloEmpresa">🛠️ Admin Everton GPS</h2>
-        <span id="userLogado" style="font-size:0.78em;color:var(--signal-on);">Sessão Protegida</span>
-    </div>
-
-    <div class="content">
-
-        <div class="box">
-            <div class="box-title">🚗 Selecionar Veículo</div>
-            <select id="selectVeiculo">
-                <option value="">Aguardando login...</option>
-            </select>
-        </div>
-
-        <div class="box">
-            <div class="box-title">📅 Filtrar Histórico</div>
-            <div style="display:flex;flex-direction:column;gap:6px;">
-                <div class="data-range">
-                    <span>De</span>
-                    <input type="date" id="filtroDataInicio">
-                </div>
-                <div class="data-range">
-                    <span>Até</span>
-                    <input type="date" id="filtroDataFim">
-                </div>
-                <div style="display:flex;gap:6px;">
-                    <input type="time" id="filtroHoraInicio" value="00:00">
-                    <input type="time" id="filtroHoraFim" value="23:59">
-                </div>
-                <button class="btn" id="btnBuscarHistorico">🔍 Buscar Histórico</button>
-                <button class="btn btn-green" id="btnVoltarTempoReal" style="display:none;">🟢 Voltar ao Tempo Real</button>
-            </div>
-        </div>
-
-        <div id="statusModo" class="status-bar">Aguardando seleção...</div>
-
-        <div class="box">
-            <div class="box-title">🗺️ Histórico de Ruas <span id="contadorPontos" style="color:var(--telemetry);"></span></div>
-            <div class="lista-ruas" id="listaRuas">
-                <div class="vazio">Selecione um veículo para ver o histórico.</div>
-            </div>
-        </div>
-
-        <div class="box">
-            <div class="box-title">📊 Ponto Selecionado</div>
-            <div class="telemetry-row"><span>Situação</span><span id="txtStatus" class="badge badge-parado">—</span></div>
-            <div class="telemetry-row"><span>Velocidade</span><b id="txtVelocidade">—</b></div>
-            <div class="telemetry-row"><span>Tempo Parado</span><b id="txtTempoParado">—</b></div>
-            <div class="telemetry-row"><span>Rua</span><b id="txtRua">—</b></div>
-            <div class="telemetry-row"><span>Bairro</span><b id="txtBairro">—</b></div>
-            <div class="telemetry-row"><span>Cidade / UF</span><b id="txtCidadeEstado">—</b></div>
-            <div class="telemetry-row"><span>Data / Hora</span><b id="txtDataHora">—</b></div>
-            <div class="telemetry-row"><span>Coordenadas</span><b id="txtCoords">—</b></div>
-        </div>
-
-        <button class="btn btn-dark" id="btnSair">❌ Desconectar</button>
+<div id="avisoSuspenso" style="display:none; position:fixed; inset:0; z-index:10001; background:#0a0d12; flex-direction:column; align-items:center; justify-content:center; padding:32px 24px; text-align:center;">
+    <div style="width:96px; height:96px; border-radius:22px; background:linear-gradient(145deg,#ff5470,#c81f45); display:flex; align-items:center; justify-content:center; font-size:2.6em; box-shadow:0 8px 24px rgba(255,84,112,0.35); margin-bottom:20px;">📡</div>
+    <div style="font-size:1.1em; font-weight:bold; color:var(--text); letter-spacing:0.5px; margin-bottom:24px;">RASTREADOR EVERTON GPS</div>
+    <div style="border:2px solid var(--danger); background:rgba(255,84,112,0.12); border-radius:12px; padding:20px 18px; max-width:360px;">
+        <div style="font-size:2em; margin-bottom:8px;">🚫</div>
+        <div style="color:var(--danger); font-weight:bold; font-size:1.05em; line-height:1.5;">ACESSO SUSPENSO</div>
+        <div style="color:var(--danger); font-size:0.92em; margin-top:8px; line-height:1.5;">Entre em contato com o suporte para regularizar o pagamento.</div>
     </div>
 </div>
 
 <div id="map"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<div class="container">
+    <div id="avisoGps" class="gps-warning"></div>
+
+    <div class="input-box">
+        <label>🏢 Empresa deste aparelho</label>
+        <div class="row">
+            <input type="text" id="empresaIdInput" placeholder="ID da empresa">
+            <button id="btnSalvarEmpresa">Salvar</button>
+        </div>
+        <div id="empresaSalvaInfo" style="font-size:0.75em;color:var(--text-dim);margin-top:6px;"></div>
+    </div>
+
+    <div class="input-box">
+        <label>Cadastrar Novo Veículo na Lista</label>
+        <div id="userLogadoInfo" class="user-logado-info">Sessão Administrador Ativa</div>
+        <div class="row" style="margin-top: 4px;">
+            <input type="text" id="veiculoInput" placeholder="Ex: NISSAN ISA, FIAT UNO">
+            <button id="btnAdicionar">Adicionar</button>
+        </div>
+    </div>
+
+    <div class="frota-container">
+        <div style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold;">Veículos Monitorados Neste Aparelho</div>
+        <div class="frota-lista" id="listaFrotaLocal"></div>
+    </div>
+
+    <div id="statusConexao" class="status-bar status-offline">MODO OFFLINE</div>
+    <div id="statusBackground" class="status-bar status-bg" style="display:none;"></div>
+    <div class="fila-info" id="filaInfo"></div>
+
+    <div class="btn-row">
+        <button id="btnForcar" class="btn-force">📡 Forçar Sincronização</button>
+        <button id="btnExportar" class="btn-export">⬇️ Exportar Rota (CSV)</button>
+    </div>
+    <button id="btnDiagnostico" class="btn-export" style="width:100%;">🔍 Testar Conexão com Serviço de Endereço</button>
+    <div id="diagnosticoResultado" class="fila-info" style="text-align:left; white-space:pre-wrap; word-break:break-word;"></div>
+
+    <div class="telemetry-card">
+        <div style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 8px; font-weight: bold;">Última Telemetria Gerada</div>
+        <div class="telemetry-row"><span>Situação</span><span id="badStatus" class="badge badge-parado">PARADO</span></div>
+        <div class="telemetry-row"><span>Velocidade</span><b id="txtVelocidade">0 km/h</b></div>
+        <div class="telemetry-row"><span>Precisão GPS</span><b id="txtPrecisao">—</b></div>
+        <div class="telemetry-row"><span>Tempo de Parada</span><b id="txtTempoParado">00:00:00</b></div>
+        <div class="telemetry-row"><span>Coordenadas</span><b id="txtCoords">—</b></div>
+        <div class="telemetry-row"><span>Rua / Rodovia</span><b id="txtRua">—</b></div>
+        <div class="telemetry-row"><span>Bairro</span><b id="txtBairro">—</b></div>
+        <div class="telemetry-row"><span>Cidade</span><b id="txtCidade">—</b></div>
+        <div class="telemetry-row"><span>Estado (UF)</span><b id="txtEstado">—</b></div>
+        <div class="telemetry-row"><span>Data</span><b id="txtData">—</b></div>
+        <div class="telemetry-row"><span>Horário do último ponto</span><span id="txtHora" style="color:var(--telemetry)">—</span></div>
+        <div class="telemetry-row"><span>🌡️ Temperatura no local</span><b id="txtTemperatura">—</b></div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
+<script src="capacitor.js"></script>
+
 <script>
-// ===================== FIREBASE =====================
+window.onerror = function(mensagem, origem, linha, coluna, erro) {
+    try {
+        var caixa = document.getElementById('avisoGps');
+        if (caixa) {
+            caixa.style.display = "block";
+            var arquivo = origem ? origem.split('/').pop() : "?";
+            var pilha = (erro && erro.stack) ? (" | " + erro.stack.split("\n").slice(0, 3).join(" › ")) : "";
+            caixa.textContent = "⚠️ ERRO NO APP: " + mensagem + " [arquivo: " + arquivo + ", linha " + linha + ":" + coluna + "]" + pilha;
+        }
+    } catch (e) {}
+    return false;
+};
+window.addEventListener('unhandledrejection', function(evento) {
+    try {
+        var caixa = document.getElementById('avisoGps');
+        if (caixa) {
+            caixa.style.display = "block";
+            caixa.textContent = "⚠️ ERRO (promise): " + (evento.reason && evento.reason.message ? evento.reason.message : evento.reason);
+        }
+    } catch (e) {}
+});
+
+var listaVeiculos = JSON.parse(localStorage.getItem('frota_veiculos') || "[]");
+var filaPendentes = JSON.parse(localStorage.getItem('fila_rastreio') || "[]");
+var filaGeocodificarDepois = JSON.parse(localStorage.getItem('fila_geocodificar') || "[]");
+var historicoCoordenadasLocais = JSON.parse(localStorage.getItem('historico_coords') || "[]");
+var registroCompleto = JSON.parse(localStorage.getItem('registro_completo') || "[]");
+var ultimoIdPontoParadaGravado = localStorage.getItem('ultimo_id_ponto_parada_gravado') || null;
+
 var firebaseConfig = {
     apiKey: "AIzaSyDwKIS8wL3D7OuaysVFV_xyAsFsKo2eXzY",
     authDomain: "everton-gps.firebaseapp.com",
@@ -206,409 +200,779 @@ firebase.initializeApp(firebaseConfig);
 var db = firebase.database();
 var auth = firebase.auth();
 
-// Limite de velocidade acima do qual o veículo é considerado "em movimento".
-// Mantido em uma única constante para ficar consistente nas três funções que
-// usam esse corte: renderizarListaRuas(), criarPopup() e atualizarPainel().
-var LIMITE_MOVIMENTO_KMH = 5;
+var firebaseOnlineConfirmado = false;
 
-// ===================== MULTIEMPRESA =====================
-// Ao logar, descobrimos a qual empresa este login pertence consultando
-// 'mapaUsuarioEmpresa/{uid}'. Esse mapeamento é cadastrado manualmente por
-// você (Everton) no Firebase Console, uma vez, ao vender para um cliente novo:
-//   Realtime Database > mapaUsuarioEmpresa > {uid_do_cliente} > "id-da-empresa"
-// Todos os dados de veículos passam a viver em: empresas/{empresaId}/veiculos/...
-var EMPRESA_ID_ATUAL = null;
+db.ref(".info/connected").on("value", function(snap) {
+    var estavaOffline = !firebaseOnlineConfirmado;
+    if (snap.val() === true) {
+        firebaseOnlineConfirmado = true;
+        if (estavaOffline) {
+            geocodificando = false; enviando = false;
+            processarFilaGeocodificacao();
+            enviarDadosFila();
+            sincronizarTempoRealImediato();
+        }
+    } else {
+        firebaseOnlineConfirmado = false;
+    }
+    atualizarInterfaceEstado();
+});
 
-// ===================== MAPA =====================
-var map = L.map('map', { zoomControl: true }).setView([-29.6133, -52.1919], 13);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19, attribution: '&copy; OpenStreetMap'
-}).addTo(map);
+var LIMITE_VELOCIDADE = 80;
+var EMPRESA_ID = localStorage.getItem('empresa_id') || "tricolordosul5x0_gmail_com";
+document.getElementById('empresaIdInput').value = EMPRESA_ID;
+atualizarInfoEmpresaSalva();
 
-var marcadorVeiculo = null;
-var polilinhaRota = L.polyline([], { color: 'rgba(45,212,255,0.3)', weight: 3, dashArray: '5,7' }).addTo(map);
-var polilinhaRuas = L.polyline([], { color: '#00ffa6', weight: 5, opacity: 0.9 }).addTo(map);
-var marcadorSelecionado = null;
-var marcadores = [];
+function atualizarInfoEmpresaSalva() {
+    document.getElementById('empresaSalvaInfo').textContent = "Enviando dados para: " + EMPRESA_ID;
+}
 
-// MELHORIA: ícone colorido do veículo — verde (em movimento), laranja (parado) ou
-// vermelho (acima do limite) — para o status aparecer direto no mapa em tempo real.
-function criarIconeVeiculo(status, velocidade) {
-    var classe = "par";
-    if (velocidade > 80 || (status && status.indexOf("ACIMA") !== -1)) classe = "per";
-    else if (velocidade > LIMITE_MOVIMENTO_KMH || (status && status.indexOf("MOVIMENTO") !== -1)) classe = "mov";
-    return L.divIcon({
-        className: "",
-        html: '<div class="icone-veiculo ' + classe + '"></div>',
-        iconSize: [22, 22],
-        iconAnchor: [11, 11]
+var refStatusEmpresa = null;
+function observarStatusEmpresa() {
+    if (refStatusEmpresa) { refStatusEmpresa.off(); }
+    if (!auth.currentUser) { return; }
+    refStatusEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID) + '/status');
+    refStatusEmpresa.on('value', function(snap) {
+        var suspenso = snap.val() === 'suspenso';
+        document.getElementById('avisoSuspenso').style.display = suspenso ? 'flex' : 'none';
+    }, function(erro) {
+        console.warn(erro);
     });
 }
 
-// ===================== ESTADO =====================
-var veiculoSelecionado = "";
-var listenerTempoReal = null;
-var dadosHistorico = [];
-var indiceAtivo = -1;
+document.getElementById('btnSalvarEmpresa').addEventListener('click', function() {
+    var novo = document.getElementById('empresaIdInput').value.trim();
+    if (!novo) return alert("Digite um ID válido.");
+    localStorage.setItem('empresa_id', novo);
+    EMPRESA_ID = novo;
+    atualizarInfoEmpresaSalva();
+    observarStatusEmpresa();
+    alert("Empresa salva com sucesso!");
+});
 
-(function() {
-    var hoje = new Date().toISOString().slice(0, 10);
-    document.getElementById('filtroDataInicio').value = hoje;
-    document.getElementById('filtroDataFim').value = hoje;
+var LOCATIONIQ_API_KEY = "pk.191e94f621fe663163bc05ef61c98b2b";
+var INTERVALO_GEOCODIFICACAO_MS = 550;
+var MAX_TENTATIVAS_GEOCODIFICACAO = 3;
+var TIMEOUT_FETCH_MS = 8000;
+
+function fetchComTimeout(url, opcoes, timeoutMs) {
+    var controller = new AbortController();
+    var id = setTimeout(() => controller.abort(), timeoutMs);
+    return fetch(url, Object.assign({}, opcoes, { signal: controller.signal })).finally(() => clearTimeout(id));
+}
+
+function comLimiteDeTempo(promessa, timeoutMs) {
+    return Promise.race([
+        promessa,
+        new Promise(function(_, reject) {
+            setTimeout(function() { reject(new Error("tempo esgotado")); }, timeoutMs);
+        })
+    ]);
+}
+
+function gerarIdPonto(ts) {
+    return ts + "_" + Math.random().toString(36).slice(2, 8);
+}
+
+function sanitizarChavePath(valor) {
+    return String(valor).replace(/[.#$\[\]\/]/g, "_");
+}
+
+var isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+var bgWatcherId = null;
+
+function atualizarBarraBackground(msg, mostrar) {
+    var el = document.getElementById('statusBackground');
+    if (!mostrar) { el.style.display = "none"; return; }
+    el.style.display = "block"; el.textContent = msg;
+}
+
+function checarContextoSeguro() {
+    if (isNative) return true;
+    var seguro = window.isSecureContext || location.hostname === "localhost" || location.hostname === "127.0.0.1";
+    if (!seguro) {
+        mostrarAvisoGps("⚠️ Esta página precisa estar em HTTPS para acessar o GPS.");
+        return false;
+    }
+    return true;
+}
+function mostrarAvisoGps(msg) {
+    var box = document.getElementById('avisoGps');
+    box.textContent = msg; box.style.display = "block";
+}
+function esconderAvisoGps() { document.getElementById('avisoGps').style.display = "none"; }
+
+var map = L.map('map', { zoomControl: false }).setView([-29.6133, -52.1919], 13);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+var marcador = L.marker([-29.6133, -52.1919]).addTo(map);
+var circuloPrecisao = L.circle([-29.6133, -52.1919], { radius: 0, color: '#2dd4ff', fillOpacity: 0.1, weight: 1 }).addTo(map);
+var polilinhaRota = L.polyline([], {color: '#00ffa6', weight: 5}).addTo(map);
+
+var coordenadaParadaFixa = (function() {
+    var raw = localStorage.getItem('coordenada_parada_fixa');
+    try { return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
 })();
 
-// ===================== AUTH =====================
-document.getElementById('btnEntrarPainel').addEventListener('click', function() {
+var viaState = (function() {
+    var raw = localStorage.getItem('via_state');
+    var padrao = { tipo: null, nome: null, kmBase: 0, odometroM: 0, kmSincronizado: null };
+    try {
+        return raw ? Object.assign(padrao, JSON.parse(raw)) : padrao;
+    } catch (e) {
+        return padrao;
+    }
+})();
+function salvarViaState() { localStorage.setItem('via_state', JSON.stringify(viaState)); }
+var atualizandoKmRodovia = false;
+var ultimoRegistroViaTs = null;
+
+var REGEX_RODOVIA = /\b(br|rs|ers|rsc|sc|prc|pr|sp|mg|contorno)[\s-]?\d{2,4}\b/i;
+var TIPOS_OSM_RODOVIA = ["motorway", "trunk", "primary", "motorway_link", "trunk_link", "primary_link"];
+
+function classificarVia(rua, dadosResposta) {
+    var classe = (dadosResposta && (dadosResposta.class || dadosResposta.category)) || null;
+    var tipo = (dadosResposta && dadosResposta.type) || null;
+    if (classe === "highway" && TIPOS_OSM_RODOVIA.indexOf(tipo) !== -1) return "rodovia";
+    if (rua && REGEX_RODOVIA.test(rua)) return "rodovia";
+    return "rua";
+}
+
+var SERVIDORES_OVERPASS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter"
+];
+var ultimaBuscaKmOficialTs = 0;
+var RAIO_BUSCA_MARCO_M = 1500;
+
+function extrairNumeroKm(tags) {
+    var candidatos = [tags.distance, tags.ref, tags.name, tags.note, tags["addr:housenumber"]];
+    for (var i = 0; i < candidatos.length; i++) {
+        var v = candidatos[i];
+        if (!v) continue;
+        var m = String(v).match(/(\d+(?:[.,]\d+)?)/);
+        if (m) return parseFloat(m[1].replace(',', '.'));
+    }
+    return null;
+}
+
+function consultarOverpass(servidorIndex, query) {
+    if (servidorIndex >= SERVIDORES_OVERPASS.length) return Promise.resolve(null);
+    var url = SERVIDORES_OVERPASS[servidorIndex] + "?data=" + encodeURIComponent(query);
+    return fetchComTimeout(url, {}, 9000)
+        .then(res => res.json())
+        .catch(() => consultarOverpass(servidorIndex + 1, query));
+}
+
+function buscarKmOficial(lat, lon) {
+    return new Promise(function(resolve) {
+        var agora = Date.now();
+        if (agora - ultimaBuscaKmOficialTs < 4000) { resolve(null); return; }
+        ultimaBuscaKmOficialTs = agora;
+        var query = `[out:json][timeout:8];node(around:${RAIO_BUSCA_MARCO_M},${lat},${lon})["highway"="milestone"];out body;`;
+        consultarOverpass(0, query).then(function(data) {
+            if (!data || !data.elements || data.elements.length === 0) { resolve(null); return; }
+            var melhorKm = null; var menorDist = Infinity;
+            data.elements.forEach(el => {
+                var km = extrairNumeroKm(el.tags || {});
+                if (km === null) return;
+                var d = calcularDistanciaMetros(lat, lon, el.lat, el.lon);
+                if (d < menorDist) { menorDist = d; melhorKm = km; }
+            });
+            resolve(melhorKm);
+        }).catch(function() { resolve(null); });
+    });
+}
+
+if (historicoCoordenadasLocais.length > 0) {
+    polilinhaRota.setLatLngs(historicoCoordenadasLocais);
+    var ultimo = historicoCoordenadasLocais[historicoCoordenadasLocais.length - 1];
+    map.setView(ultimo, 16); marcador.setLatLng(ultimo);
+}
+
+function salvarTudo() {
+    localStorage.setItem('frota_veiculos', JSON.stringify(listaVeiculos));
+    localStorage.setItem('fila_rastreio', JSON.stringify(filaPendentes));
+    localStorage.setItem('fila_geocodificar', JSON.stringify(filaGeocodificarDepois));
+    localStorage.setItem('historico_coords', JSON.stringify(historicoCoordenadasLocais));
+    if (registroCompleto.length > 5000) registroCompleto = registroCompleto.slice(-5000);
+    localStorage.setItem('registro_completo', JSON.stringify(registroCompleto));
+    if(ultimoIdPontoParadaGravado) localStorage.setItem('ultimo_id_ponto_parada_gravado', ultimoIdPontoParadaGravado);
+    if(coordenadaParadaFixa) localStorage.setItem('coordenada_parada_fixa', JSON.stringify(coordenadaParadaFixa));
+    salvarViaState();
+}
+
+var acaoPendente = null;
+function abrirModalLogin(callbackAcao) {
+    if (auth.currentUser) { callbackAcao(); return; }
+    acaoPendente = callbackAcao;
+    document.getElementById('authModal').style.display = "flex";
+}
+document.getElementById('btnFecharLogin').addEventListener('click', function() {
+    document.getElementById('authModal').style.display = "none"; acaoPendente = null;
+});
+document.getElementById('btnConfirmarLogin').addEventListener('click', function() {
     var email = document.getElementById('authEmail').value.trim();
     var senha = document.getElementById('authSenha').value;
-    var erroDiv = document.getElementById('erroLogin');
-    if (!email || !senha) return alert("Preencha todos os campos!");
-    erroDiv.style.display = "none";
-    auth.signInWithEmailAndPassword(email, senha).catch(function(e) {
-        erroDiv.textContent = "Acesso negado: dados incorretos.";
-        erroDiv.style.display = "block";
-    });
+    if (!email || !senha) return alert("Preencha tudo!");
+    document.getElementById('btnConfirmarLogin').disabled = true;
+    auth.signInWithEmailAndPassword(email, senha).then(() => {
+        document.getElementById('authModal').style.display = "none";
+        if (acaoPendente) { acaoPendente(); acaoPendente = null; }
+    }).catch(err => alert("Erro: " + err.message)).finally(() => { document.getElementById('btnConfirmarLogin').disabled = false; });
+});
+auth.onAuthStateChanged(user => {
+    document.getElementById('userLogadoInfo').style.display = user ? "block" : "none";
+    if (!user) {
+        abrirModalLogin(function() {});
+    } else {
+        observarStatusEmpresa();
+    }
 });
 
-auth.onAuthStateChanged(function(user) {
-    if (user) {
-        // Descobre a empresa do usuário logado antes de mostrar qualquer dado
-        db.ref('mapaUsuarioEmpresa/' + user.uid).once('value').then(function(snap) {
-            var empresaId = snap.val();
-            if (!empresaId) {
-                var erroDiv = document.getElementById('erroLogin');
-                erroDiv.textContent = "Este login não está vinculado a nenhuma empresa. Fale com o suporte.";
-                erroDiv.style.display = "block";
-                auth.signOut();
-                return;
+function renderizarFrotaLocal() {
+    var container = document.getElementById('listaFrotaLocal'); container.innerHTML = "";
+    if (listaVeiculos.length === 0) { container.innerHTML = "<span>Nenhum veículo adicionado.</span>"; return; }
+    listaVeiculos.forEach((nome, index) => {
+        var tag = document.createElement('div'); tag.className = "tag-veiculo";
+        tag.innerHTML = `🚗 <b>${nome}</b> <button class="btn-remover" onclick="removerVeiculoExigindoSenha(${index})">×</button>`;
+        container.appendChild(tag);
+    });
+}
+document.getElementById('btnAdicionar').addEventListener('click', function() {
+    var nome = document.getElementById('veiculoInput').value.trim().toUpperCase();
+    if (!nome) return alert('Digite um nome!');
+    if (listaVeiculos.includes(nome)) return alert('Já cadastrado!');
+    abrirModalLogin(function() {
+        listaVeiculos.push(nome); salvarTudo();
+        document.getElementById('veiculoInput').value = ""; renderizarFrotaLocal();
+        atualizarInterfaceEstado();
+    });
+});
+window.removerVeiculoExigindoSenha = function(index) {
+    abrirModalLogin(function() {
+        if (confirm(`Remover veículo?`)) { listaVeiculos.splice(index, 1); salvarTudo(); renderizarFrotaLocal(); atualizarInterfaceEstado(); }
+    });
+};
+
+var inicioParadaTs = localStorage.getItem('inicio_parada_ts') ? parseInt(localStorage.getItem('inicio_parada_ts'), 10) : null;
+var tempoParadoSegundos = 0;
+var jaGravouPontoInicialParada = localStorage.getItem('ja_gravou_parada') === 'true';
+
+function formatarTempoParado(segundos) {
+    var hrs = Math.floor(segundos / 3600).toString().padStart(2, '0');
+    var mins = Math.floor((segundos % 3600) / 60).toString().padStart(2, '0');
+    var segs = (segundos % 60).toString().padStart(2, '0');
+    return `${hrs}:${mins}:${segs}`;
+}
+
+function atualizarTextoTempoParado() {
+    if (document.getElementById('badStatus').textContent.indexOf("PARADO") !== -1 && inicioParadaTs) {
+        tempoParadoSegundos = Math.max(0, Math.floor((Date.now() - inicioParadaTs) / 1000));
+    } else {
+        tempoParadoSegundos = 0;
+    }
+    document.getElementById('txtTempoParado').textContent = formatarTempoParado(tempoParadoSegundos);
+}
+
+setInterval(function() {
+    atualizarTextoTempoParado();
+}, 1000);
+
+var ultimoPontoBruto = historicoCoordenadasLocais.length > 0 ? historicoCoordenadasLocais[historicoCoordenadasLocais.length - 1] : null;
+var ultimoTsPosicaoBruta = null;
+var ultimoPontoChecadoEndereco = null;
+var errosGpsConsecutivos = 0;
+var ultimaLeituraCompleta = null;
+
+function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
+    var R = 6371000;
+    var dLat = (lat2 - lat1) * Math.PI / 180;
+    var dLon = (lon2 - lon1) * Math.PI / 180;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function valorOuTraco(valor, textoAusente) {
+    if (!valor) return "—";
+    if (textoAusente && valor === textoAusente) return "—";
+    return valor;
+}
+
+function registrarESincronizarPonto(lat, lon, situacao, velKmh, precisao, agora, enderecoInfo, motivo) {
+    var idPonto = gerarIdPonto(agora.getTime());
+    if (situacao === "PARADO") { ultimoIdPontoParadaGravado = idPonto; }
+
+    var ehRodovia = enderecoInfo.tipoVia === "rodovia";
+    var kmTxt = (enderecoInfo.km != null ? enderecoInfo.km : viaState.kmSincronizado);
+    var sufixoFonteKm = (ehRodovia && enderecoInfo.fonteKm === 'estimado') ? " (aprox.)" : "";
+    var ruaExibida = ehRodovia
+        ? (enderecoInfo.rua || "Rodovia") + (kmTxt != null ? (" - Km " + kmTxt + sufixoFonteKm) : " - Km não identificado")
+        : (enderecoInfo.rua || "Rua não localizada");
+    var bairroExibido = valorOuTraco(enderecoInfo.bairro, "Bairro não localizado");
+    var cidadeExibida = enderecoInfo.cidade || document.getElementById('txtCidade').textContent || "—";
+    var estadoExibido = enderecoInfo.estado || document.getElementById('txtEstado').textContent || "—";
+
+    document.getElementById('txtRua').textContent = ruaExibida;
+    document.getElementById('txtBairro').textContent = bairroExibido;
+    if (enderecoInfo.cidade) document.getElementById('txtCidade').textContent = enderecoInfo.cidade;
+    if (enderecoInfo.estado) document.getElementById('txtEstado').textContent = enderecoInfo.estado;
+
+    var registro = {
+        id: idPonto, lat: lat, lon: lon, velocidade: (situacao === "PARADO" ? 0 : velKmh), status: situacao,
+        tempoParado: document.getElementById('txtTempoParado').textContent,
+        hora: agora.toLocaleTimeString('pt-BR'), data: agora.toLocaleDateString('pt-BR'),
+        rua: ruaExibida, bairro: bairroExibido, cidade: cidadeExibida, estado: estadoExibido,
+        endereco: ruaExibida + (bairroExibido !== "—" ? ", " + bairroExibido : "") + (cidadeExibida !== "—" ? " - " + cidadeExibida + "/" + estadoExibido : ""),
+        tipoVia: enderecoInfo.tipoVia, motivo: motivo, fonteKm: enderecoInfo.fonteKm || null
+    };
+    registroCompleto.push(registro);
+    if (listaVeiculos.length > 0) {
+        listaVeiculos.forEach(vNome => { filaPendentes.push(Object.assign({ vID: vNome, empresaId: EMPRESA_ID }, registro)); });
+    }
+    salvarTudo(); atualizarInterfaceEstado(); enviarDadosFila(); sincronizarTempoRealImediato();
+}
+
+function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
+    esconderAvisoGps(); errosGpsConsecutivos = 0;
+    var precisao = precisaoRaw ? Math.round(precisaoRaw) : null;
+    var agora = new Date(); var agoraTs = agora.getTime();
+
+    var velCalculadaPorDistancia = 0;
+    if (ultimoPontoBruto && ultimoTsPosicaoBruta) {
+        var distDesdeUltimoBruto = calcularDistanciaMetros(ultimoPontoBruto[0], ultimoPontoBruto[1], lat, lon);
+        var deltaSegundosBruto = (agoraTs - ultimoTsPosicaoBruta) / 1000;
+        var limiarRuidoM = Math.max(3, precisao || 5);
+        if (deltaSegundosBruto > 0.5 && distDesdeUltimoBruto > limiarRuidoM) {
+            velCalculadaPorDistancia = (distDesdeUltimoBruto / deltaSegundosBruto) * 3.6;
+        }
+    }
+    var vel = (velRaw && velRaw > 0) ? Math.round(velRaw * 3.6) : Math.round(velCalculadaPorDistancia);
+    ultimoTsPosicaoBruta = agoraTs;
+
+    map.setView([lat, lon], map.getZoom() < 14 ? 16 : map.getZoom());
+    marcador.setLatLng([lat, lon]);
+    if (precisao) { circuloPrecisao.setLatLng([lat, lon]).setRadius(precisao); }
+
+    document.getElementById('txtVelocidade').textContent = vel + " km/h";
+    document.getElementById('txtData').textContent = agora.toLocaleDateString('pt-BR');
+    document.getElementById('txtHora').textContent = agora.toLocaleTimeString('pt-BR');
+    document.getElementById('txtPrecisao').textContent = precisao ? `± ${precisao} m` : "—";
+    document.getElementById('txtCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+
+    if (document.getElementById('txtTemperatura').textContent === "—") {
+        talvezBuscarTemperatura(lat, lon);
+    }
+
+    historicoCoordenadasLocais.push([lat, lon]);
+    if (historicoCoordenadasLocais.length > 2000) historicoCoordenadasLocais.shift();
+    polilinhaRota.setLatLngs(historicoCoordenadasLocais);
+
+    var distanciaDoCentroDaParada = coordenadaParadaFixa ? calcularDistanciaMetros(coordenadaParadaFixa[0], coordenadaParadaFixa[1], lat, lon) : 0;
+    var LIMITE_MOVIMENTO_KMH = 5;
+    var RAIO_FALSO_MOVIMENTO_METROS = 50;
+    var VELOCIDADE_MOVIMENTO_CONFIAVEL_KMH = 15;
+    var situacao = "PARADO";
+    var badgeStatus = document.getElementById('badStatus');
+    var iniciouParadaAgora = false;
+
+    var estaEmMovimento = vel >= VELOCIDADE_MOVIMENTO_CONFIAVEL_KMH
+        ? true
+        : (vel >= LIMITE_MOVIMENTO_KMH && (!coordenadaParadaFixa || distanciaDoCentroDaParada > RAIO_FALSO_MOVIMENTO_METROS));
+
+    if (estaEmMovimento) {
+        situacao = (vel > LIMITE_VELOCIDADE) ? "VELOCIDADE ACIMA DO LIMITE" : "EM MOVIMENTO";
+        badgeStatus.textContent = situacao;
+        badgeStatus.className = (vel > LIMITE_VELOCIDADE) ? "badge badge-perigo" : "badge badge-movimento";
+
+        inicioParadaTs = null; jaGravouPontoInicialParada = false; ultimoIdPontoParadaGravado = null; coordenadaParadaFixa = null;
+        localStorage.removeItem('inicio_parada_ts');
+        localStorage.removeItem('ja_gravou_parada');
+        localStorage.removeItem('ultimo_id_ponto_parada_gravado');
+        localStorage.removeItem('coordenada_parada_fixa');
+    } else {
+        situacao = "PARADO"; badgeStatus.textContent = "PARADO"; badgeStatus.className = "badge badge-parado";
+        if (!inicioParadaTs) { inicioParadaTs = agoraTs; localStorage.setItem('inicio_parada_ts', String(inicioParadaTs)); }
+        if (!coordenadaParadaFixa) { coordenadaParadaFixa = [lat, lon]; localStorage.setItem('coordenada_parada_fixa', JSON.stringify(coordenadaParadaFixa)); }
+        if (!jaGravouPontoInicialParada) { iniciouParadaAgora = true; jaGravouPontoInicialParada = true; localStorage.setItem('ja_gravou_parada', 'true'); }
+    }
+    atualizarTextoTempoParado();
+
+    ultimaLeituraCompleta = {
+        lat: lat, lon: lon, velocidade: (situacao === "PARADO" ? 0 : vel), status: situacao, precisao: precisao,
+        hora: agora.toLocaleTimeString('pt-BR'), data: agora.toLocaleDateString('pt-BR'),
+        tempoParado: document.getElementById('txtTempoParado').textContent
+    };
+
+    var kmMudou = false;
+    if (ultimoPontoBruto && viaState.tipo === 'rodovia' && !atualizandoKmRodovia) {
+        var delta = calcularDistanciaMetros(ultimoPontoBruto[0], ultimoPontoBruto[1], lat, lon);
+        if (delta > 2 && delta < 500) { viaState.odometroM += delta; }
+        var kmEstimadoAtual = viaState.kmBase + Math.floor(viaState.odometroM / 1000);
+        if (viaState.kmSincronizado === null || kmEstimadoAtual !== viaState.kmSincronizado) {
+            kmMudou = true;
+        }
+        salvarViaState();
+    }
+    ultimoPontoBruto = [lat, lon];
+
+    if (iniciouParadaAgora) {
+        registrarESincronizarPonto(lat, lon, situacao, vel, precisao, agora, {
+            rua: viaState.nome || null,
+            bairro: document.getElementById('txtBairro').textContent,
+            cidade: document.getElementById('txtCidade').textContent,
+            estado: document.getElementById('txtEstado').textContent,
+            tipoVia: viaState.tipo || 'rua',
+            km: viaState.kmSincronizado
+        }, 'inicio_parada');
+    } else if (kmMudou) {
+        atualizandoKmRodovia = true;
+        buscarKmOficial(lat, lon).then(function(kmOficial) {
+            var kmFinal, fonte;
+            if (kmOficial !== null) {
+                kmFinal = Math.round(kmOficial); fonte = 'oficial';
+            } else {
+                kmFinal = viaState.kmBase + Math.round(viaState.odometroM / 1000); fonte = 'estimado';
             }
+            viaState.kmBase = kmFinal; viaState.odometroM = 0; viaState.kmSincronizado = kmFinal;
+            salvarViaState();
+            atualizandoKmRodovia = false;
+            registrarESincronizarPonto(lat, lon, situacao, vel, precisao, agora, {
+                rua: viaState.nome,
+                bairro: document.getElementById('txtBairro').textContent,
+                cidade: document.getElementById('txtCidade').textContent,
+                estado: document.getElementById('txtEstado').textContent,
+                tipoVia: 'rodovia', km: kmFinal, fonteKm: fonte
+            }, 'km_rodovia');
+        }).catch(function() { atualizandoKmRodovia = false; });
+    } else {
+        sincronizarTempoRealImediato();
+    }
 
-            EMPRESA_ID_ATUAL = empresaId;
-            document.getElementById('authOverlay').style.display = "none";
-            document.getElementById('userLogado').textContent = "🟢 " + user.email;
+    var limiarChecagemM = (viaState.tipo === 'rodovia') ? 300 : 60;
+    var distanciaChecagem = ultimoPontoChecadoEndereco ? calcularDistanciaMetros(ultimoPontoChecadoEndereco[0], ultimoPontoChecadoEndereco[1], lat, lon) : Infinity;
+    var PRECISAO_MAXIMA_ACEITAVEL_M = 60;
+    var precisaoAceitavel = !precisao || precisao <= PRECISAO_MAXIMA_ACEITAVEL_M;
+    if (distanciaChecagem >= limiarChecagemM && precisaoAceitavel) {
+        ultimoPontoChecadoEndereco = [lat, lon];
+        var idFixoPonto = gerarIdPonto(agoraTs);
+        var jaExisteFila = filaGeocodificarDepois.some(p => calcularDistanciaMetros(p.lat, p.lon, lat, lon) < 20);
+        if (!jaExisteFila) {
+            filaGeocodificarDepois.push({ id: idFixoPonto, lat: lat, lon: lon, ts: agoraTs, velocidadeNoMomento: vel, statusNoMomento: situacao });
+            salvarTudo();
+            processarFilaGeocodificacao();
+        }
+    }
+}
 
-            // Mostra o nome da empresa se estiver cadastrado, senão o próprio ID
-            db.ref('empresas/' + empresaId + '/nome').once('value').then(function(nomeSnap) {
-                document.getElementById('tituloEmpresa').textContent = "🛠️ " + (nomeSnap.val() || empresaId);
-            });
+function sincronizarTempoRealImediato() {
+    if (!ultimaLeituraCompleta || listaVeiculos.length === 0) return;
+    var updates = {};
+    listaVeiculos.forEach(vNome => {
+        var basePath = 'empresas/' + sanitizarChavePath(EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(vNome) + '/atual/';
+        updates[basePath + 'lat'] = ultimaLeituraCompleta.lat;
+        updates[basePath + 'lon'] = ultimaLeituraCompleta.lon;
+        updates[basePath + 'velocidade'] = ultimaLeituraCompleta.velocidade;
+        updates[basePath + 'status'] = ultimaLeituraCompleta.status;
+        updates[basePath + 'hora'] = ultimaLeituraCompleta.hora;
+        updates[basePath + 'data'] = ultimaLeituraCompleta.data;
+        updates[basePath + 'tempoParado'] = document.getElementById('txtTempoParado').textContent;
 
-            inicializarEscutaBanco();
+        updates[basePath + 'rua'] = document.getElementById('txtRua').textContent;
+        updates[basePath + 'bairro'] = document.getElementById('txtBairro').textContent;
+        updates[basePath + 'cidade'] = document.getElementById('txtCidade').textContent;
+        updates[basePath + 'estado'] = document.getElementById('txtEstado').textContent;
+    });
+    comLimiteDeTempo(db.ref().update(updates), 10000).then(() => {
+        if(!firebaseOnlineConfirmado) { firebaseOnlineConfirmado = true; atualizarInterfaceEstado(); }
+    }).catch(e => {
+        console.warn(e);
+        var agora = Date.now();
+        if (agora - ultimoAvisoErroEnvioTs > 60000) {
+            ultimoAvisoErroEnvioTs = agora;
+            mostrarAvisoGps("⚠️ Firebase recusou salvar posição ao vivo: " + (e && e.message ? e.message : e) + " [empresaId: " + EMPRESA_ID + ", logado: " + (auth.currentUser ? auth.currentUser.email : "NÃO") + "]");
+        }
+    });
+}
+
+setInterval(function() {
+    var statusAtual = document.getElementById('badStatus').textContent;
+    if (statusAtual.indexOf("PARADO") !== -1 && ultimoIdPontoParadaGravado && listaVeiculos.length > 0 && firebaseOnlineConfirmado) {
+        var tempoAtualizado = document.getElementById('txtTempoParado').textContent;
+        var agoraStr = new Date().toLocaleTimeString('pt-BR');
+        var patchHistorico = {};
+
+        listaVeiculos.forEach(vNome => {
+            var path = 'empresas/' + sanitizarChavePath(EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(vNome) + '/historico/' + ultimoIdPontoParadaGravado + '/';
+            patchHistorico[path + 'tempoParado'] = tempoAtualizado;
+            patchHistorico[path + 'horaFinalParada'] = agoraStr;
+        });
+
+        db.ref().update(patchHistorico).catch(e => console.warn(e));
+    }
+}, 30000);
+
+function tratarErroGps(erro) {
+    console.error(erro); errosGpsConsecutivos++;
+    if (erro.code === 1) mostrarAvisoGps("⚠️ Permissão de localização negada.");
+    else if (errosGpsConsecutivos >= 4) mostrarAvisoGps("⚠️ Instabilidade no sinal do GPS.");
+}
+
+function iniciarRastreioNativoBackground() {
+    var BG = window.Capacitor.Plugins.BackgroundGeolocation;
+    if (!BG) { iniciarRastreioWeb(); return; }
+    atualizarBarraBackground("🟢 Rastreio em segundo plano ATIVO", true);
+    var resultadoWatcher = BG.addWatcher({
+        backgroundMessage: "Gravando rotas e telemetria em tempo real...",
+        backgroundTitle: "Everton GPS Corporativo",
+        requestPermissions: true, stale: false, distanceFilter: 0
+    }, function(location, error) {
+        if (error) return;
+        if (location) processarNovaPosicao(location.latitude, location.longitude, location.accuracy, location.speed);
+    });
+    if (resultadoWatcher && typeof resultadoWatcher.then === 'function') {
+        resultadoWatcher.then(function(id) { bgWatcherId = id; }).catch(function(erro) {
+            console.error(erro);
+            mostrarAvisoGps("⚠️ Falha ao iniciar GPS em segundo plano (plugin nativo): " + (erro && erro.message ? erro.message : erro) + " — usando GPS padrão do navegador.");
+            atualizarBarraBackground("", false);
+            iniciarRastreioWeb();
         });
     } else {
-        EMPRESA_ID_ATUAL = null;
-        document.getElementById('authOverlay').style.display = "flex";
-        document.getElementById('selectVeiculo').innerHTML = '<option value="">Aguardando login...</option>';
-        pararListenerTempoReal();
-    }
-});
-
-document.getElementById('btnSair').addEventListener('click', function() { auth.signOut(); });
-
-// ===================== BANCO =====================
-function inicializarEscutaBanco() {
-    db.ref('empresas/' + EMPRESA_ID_ATUAL + '/veiculos').on('value', function(snapshot) {
-        var select = document.getElementById('selectVeiculo');
-        select.innerHTML = '<option value="">-- Escolha um Veículo --</option>';
-        if (snapshot.exists()) {
-            snapshot.forEach(function(child) {
-                var opt = document.createElement('option');
-                opt.value = child.key;
-                opt.textContent = "🚗 " + child.key;
-                select.appendChild(opt);
-            });
-            if (veiculoSelecionado) select.value = veiculoSelecionado;
-        } else {
-            select.innerHTML = '<option value="">Nenhum veículo ativo</option>';
-        }
-    });
-}
-
-document.getElementById('selectVeiculo').addEventListener('change', function(e) {
-    veiculoSelecionado = e.target.value;
-    if (veiculoSelecionado) ativarTempoReal();
-});
-
-// ===================== TEMPO REAL =====================
-function pararListenerTempoReal() {
-    if (listenerTempoReal && veiculoSelecionado && EMPRESA_ID_ATUAL) {
-        db.ref('empresas/' + EMPRESA_ID_ATUAL + '/veiculos/' + veiculoSelecionado + '/atual').off('value', listenerTempoReal);
-        listenerTempoReal = null;
+        bgWatcherId = resultadoWatcher;
     }
 }
 
-function ativarTempoReal() {
-    pararListenerTempoReal();
-    setStatusBar(true);
-    document.getElementById('btnVoltarTempoReal').style.display = "none";
-
-    var base = 'empresas/' + EMPRESA_ID_ATUAL + '/veiculos/' + veiculoSelecionado;
-
-    db.ref(base + '/historico').limitToLast(50).once('value', function(snap) {
-        var pontos = [];
-        snap.forEach(function(c) { pontos.push(c.val()); });
-        dadosHistorico = pontos;
-        renderizarListaRuas(pontos);
-        desenharRota(pontos);
-        if (pontos.length > 0) mostrarPonto(pontos[pontos.length - 1], pontos.length - 1);
-    });
-
-    listenerTempoReal = db.ref(base + '/atual').on('value', function(snap) {
-        if (!snap.exists()) return;
-        var d = snap.val();
-        var icone = criarIconeVeiculo(d.status, d.velocidade || 0);
-        if (!marcadorVeiculo) {
-            marcadorVeiculo = L.marker([d.lat, d.lon], { icon: icone }).addTo(map);
-        } else {
-            marcadorVeiculo.setLatLng([d.lat, d.lon]);
-            marcadorVeiculo.setIcon(icone);
-        }
-        map.setView([d.lat, d.lon], map.getZoom() < 14 ? 16 : map.getZoom());
-        atualizarPainel(d);
-    });
+function iniciarRastreioWeb() {
+    if (!checarContextoSeguro() || !navigator.geolocation) return;
+    navigator.geolocation.watchPosition(position => {
+        processarNovaPosicao(position.coords.latitude, position.coords.longitude, position.coords.accuracy, position.coords.speed);
+    }, tratarErroGps, { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 });
 }
 
-document.getElementById('btnVoltarTempoReal').addEventListener('click', ativarTempoReal);
-
-// ===================== HISTÓRICO =====================
-function parseDataHoraBr(dataBr, horaStr) {
-    if (!dataBr) return null;
-    var pd = dataBr.split('/');
-    if (pd.length !== 3) return null;
-    var ph = (horaStr || "00:00:00").split(':');
-    return new Date(
-        parseInt(pd[2], 10),
-        parseInt(pd[1], 10) - 1,
-        parseInt(pd[0], 10),
-        parseInt(ph[0] || 0, 10),
-        parseInt(ph[1] || 0, 10),
-        parseInt(ph[2] || 0, 10)
-    );
-}
-
-document.getElementById('btnBuscarHistorico').addEventListener('click', function() {
-    if (!veiculoSelecionado) return alert("Selecione um veículo primeiro!");
-
-    var dataInicioStr = document.getElementById('filtroDataInicio').value;
-    var dataFimStr = document.getElementById('filtroDataFim').value;
-    var hIni = document.getElementById('filtroHoraInicio').value || "00:00";
-    var hFim = document.getElementById('filtroHoraFim').value || "23:59";
-
-    if (!dataInicioStr || !dataFimStr) return alert("Selecione as datas de início e fim!");
-
-    var limiteInicio = new Date(dataInicioStr + "T" + hIni + ":00");
-    var limiteFim = new Date(dataFimStr + "T" + hFim + ":59");
-
-    if (limiteInicio > limiteFim) {
-        return alert("A data/hora de início não pode ser depois da data/hora de fim!");
+function iniciarRastreioGps() {
+    try {
+        if (isNative) { iniciarRastreioNativoBackground(); } else { iniciarRastreioWeb(); }
+    } catch (erro) {
+        console.error(erro);
+        mostrarAvisoGps("⚠️ Erro ao iniciar o GPS nativo: " + (erro && erro.message ? erro.message : erro) + " — usando GPS padrão do navegador.");
+        atualizarBarraBackground("", false);
+        iniciarRastreioWeb();
     }
+}
+iniciarRastreioGps();
 
-    pararListenerTempoReal();
-    setStatusBar(false);
-    document.getElementById('btnVoltarTempoReal').style.display = "block";
+var ultimaBuscaTempTs = 0; var buscandoTemp = false;
+function talvezBuscarTemperatura(lat, lon) {
+    var agora = Date.now(); if (buscandoTemp || (agora - ultimaBuscaTempTs) < 300000) return;
+    buscandoTemp = true; ultimaBuscaTempTs = agora;
+    fetchComTimeout(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature&temperature_unit=celsius&timezone=auto`, {}, TIMEOUT_FETCH_MS)
+        .then(res => res.json()).then(data => {
+            if (data && data.current && typeof data.current.temperature_2m === "number") {
+                var sensacao = typeof data.current.apparent_temperature === "number" ? ` (sensação ${data.current.apparent_temperature.toFixed(1)}°C)` : "";
+                document.getElementById('txtTemperatura').textContent = data.current.temperature_2m.toFixed(1) + " °C" + sensacao;
+            }
+        }).catch(e => console.warn(e)).finally(() => { buscandoTemp = false; });
+}
 
-    db.ref('empresas/' + EMPRESA_ID_ATUAL + '/veiculos/' + veiculoSelecionado + '/historico').once('value', function(snap) {
-        var pontos = [];
-        snap.forEach(function(child) {
-            var p = child.val();
-            var dtPonto = parseDataHoraBr(p.data, p.hora);
-            if (dtPonto && dtPonto >= limiteInicio && dtPonto <= limiteFim) {
-                pontos.push(p);
+function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResposta, velocidadeNoMomento, statusNoMomento, tsNoMomento) {
+    var tipoVia = classificarVia(rua, dadosResposta);
+
+    if (tipoVia === "rodovia") {
+        var kmExibicao = viaState.kmSincronizado !== null && viaState.tipo === 'rodovia' && viaState.nome === rua ? viaState.kmSincronizado : "—";
+        document.getElementById('txtRua').textContent = rua + " (rodovia) - Km " + kmExibicao;
+        document.getElementById('txtBairro').textContent = valorOuTraco(bairro, "Bairro não localizado");
+    } else {
+        document.getElementById('txtRua').textContent = rua;
+        document.getElementById('txtBairro').textContent = valorOuTraco(bairro, "Bairro não localizado");
+    }
+    document.getElementById('txtCidade').textContent = cidade;
+    document.getElementById('txtEstado').textContent = estado;
+
+    var mudouDeVia = (viaState.tipo !== tipoVia) || (viaState.nome !== rua);
+
+    var velNoMomentoNum = velocidadeNoMomento != null ? velocidadeNoMomento : 0;
+    var tsEfetivo = tsNoMomento || Date.now();
+    var pareceRuidoDeGps = mudouDeVia && velNoMomentoNum < 15 && ultimoRegistroViaTs && (tsEfetivo - ultimoRegistroViaTs) < 15000;
+
+    if (pareceRuidoDeGps) {
+        salvarTudo();
+        sincronizarTempoRealImediato();
+    } else if (mudouDeVia && tipoVia === "rodovia" && !atualizandoKmRodovia) {
+        atualizandoKmRodovia = true;
+        buscarKmOficial(lat, lon).then(function(kmOficial) {
+            var kmFinal = (kmOficial !== null) ? Math.round(kmOficial) : null;
+            var fonte = (kmOficial !== null) ? 'oficial' : 'desconhecido';
+            viaState = { tipo: 'rodovia', nome: rua, kmBase: kmFinal != null ? kmFinal : 0, odometroM: 0, kmSincronizado: kmFinal };
+            salvarViaState();
+            atualizandoKmRodovia = false;
+            ultimoRegistroViaTs = tsNoMomento || Date.now();
+
+            var agora = tsNoMomento ? new Date(tsNoMomento) : new Date();
+            var velAtual = velocidadeNoMomento != null ? velocidadeNoMomento : (ultimaLeituraCompleta ? ultimaLeituraCompleta.velocidade : 0);
+            var statusAtual = statusNoMomento || (ultimaLeituraCompleta ? ultimaLeituraCompleta.status : "PARADO");
+            registrarESincronizarPonto(lat, lon, statusAtual, velAtual, null, agora, { rua: rua, bairro: bairro, cidade: cidade, estado: estado, tipoVia: "rodovia", km: kmFinal, fonteKm: fonte }, "entrada_rodovia");
+        }).catch(function() { atualizandoKmRodovia = false; });
+    } else if (mudouDeVia) {
+        viaState = { tipo: 'rua', nome: rua, kmBase: 0, odometroM: 0, kmSincronizado: null };
+        salvarViaState();
+        ultimoRegistroViaTs = tsNoMomento || Date.now();
+
+        var agora2 = tsNoMomento ? new Date(tsNoMomento) : new Date();
+        var velAtual2 = velocidadeNoMomento != null ? velocidadeNoMomento : (ultimaLeituraCompleta ? ultimaLeituraCompleta.velocidade : 0);
+        var statusAtual2 = statusNoMomento || (ultimaLeituraCompleta ? ultimaLeituraCompleta.status : "PARADO");
+        registrarESincronizarPonto(lat, lon, statusAtual2, velAtual2, null, agora2, { rua: rua, bairro: bairro, cidade: cidade, estado: estado, tipoVia: "rua" }, "troca_rua");
+    } else {
+        salvarTudo();
+        sincronizarTempoRealImediato();
+    }
+}
+
+var IDADE_MAXIMA_FILA_ENDERECO_MS = 45000;
+var TAMANHO_MAXIMO_FILA_ENDERECO = 8;
+
+function podarFilaGeocodificacao() {
+    var agora = Date.now();
+    var tamanhoAntes = filaGeocodificarDepois.length;
+    filaGeocodificarDepois = filaGeocodificarDepois.filter(function(p) {
+        return (agora - p.ts) <= IDADE_MAXIMA_FILA_ENDERECO_MS;
+    });
+    if (filaGeocodificarDepois.length > TAMANHO_MAXIMO_FILA_ENDERECO) {
+        filaGeocodificarDepois.splice(0, filaGeocodificarDepois.length - TAMANHO_MAXIMO_FILA_ENDERECO);
+    }
+    if (filaGeocodificarDepois.length !== tamanhoAntes) salvarTudo();
+}
+
+var geocodificando = false;
+function processarFilaGeocodificacao() {
+    podarFilaGeocodificacao();
+    if (geocodificando || filaGeocodificarDepois.length === 0) return;
+    geocodificando = true; atualizarInterfaceEstado();
+    var ponto = filaGeocodificarDepois[filaGeocodificarDepois.length - 1];
+
+    fetchComTimeout(`https://us1.locationiq.com/v1/reverse?key=${LOCATIONIQ_API_KEY}&lat=${ponto.lat}&lon=${ponto.lon}&format=json&zoom=18&addressdetails=1&accept-language=pt-BR`, {}, TIMEOUT_FETCH_MS)
+        .then(res => res.json()).then(data => {
+            var addr = data.address || {};
+            var rua = addr.road || addr.pedestrian || "Rua não localizada";
+            var bairro = addr.suburb || addr.neighbourhood || "Bairro não localizado";
+            var cidade = addr.city || addr.town || "Cidade não localizada";
+            var estado = addr.state || "Estado não localizado";
+            aplicarEnderecoNoPonto(ponto.lat, ponto.lon, rua, bairro, cidade, estado, data, ponto.velocidadeNoMomento, ponto.statusNoMomento, ponto.ts);
+            filaGeocodificarDepois.pop();
+        }).catch(err => {
+            ponto.tentativas = (ponto.tentativas || 0) + 1;
+            if (ponto.tentativas >= MAX_TENTATIVAS_GEOCODIFICACAO) filaGeocodificarDepois.pop();
+        }).finally(() => {
+            geocodificando = false; salvarTudo(); atualizarInterfaceEstado();
+            if (filaGeocodificarDepois.length > 0) setTimeout(processarFilaGeocodificacao, INTERVALO_GEOCODIFICACAO_MS);
+        });
+}
+
+var enviando = false; var falhasConsecutivasLote = 0;
+var ultimoAvisoErroEnvioTs = 0;
+var MAX_FILA_PENDENTES = 300;
+function enviarDadosFila() {
+    if (enviando || filaPendentes.length === 0) { atualizarInterfaceEstado(); return; }
+    if (filaPendentes.length > MAX_FILA_PENDENTES) {
+        filaPendentes.splice(0, filaPendentes.length - MAX_FILA_PENDENTES);
+        salvarTudo();
+    }
+    enviando = true; var lote = filaPendentes.slice(0, 25); var updates = {};
+    try {
+        lote.forEach(item => {
+            var basePath = 'empresas/' + sanitizarChavePath(item.empresaId || EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(item.vID) + '/historico/' + item.id;
+            updates[basePath] = item;
+        });
+        comLimiteDeTempo(db.ref().update(updates), 10000).then(() => {
+            filaPendentes.splice(0, lote.length); falhasConsecutivasLote = 0; firebaseOnlineConfirmado = true; salvarTudo();
+        }).catch(e => {
+            falhasConsecutivasLote++; if (falhasConsecutivasLote >= 20) { filaPendentes.shift(); falhasConsecutivasLote = 0; salvarTudo(); }
+            var agora = Date.now();
+            if (agora - ultimoAvisoErroEnvioTs > 60000) {
+                ultimoAvisoErroEnvioTs = agora;
+                mostrarAvisoGps("⚠️ Firebase recusou salvar os dados: " + (e && e.message ? e.message : e) + " [empresaId: " + EMPRESA_ID + ", logado: " + (auth.currentUser ? auth.currentUser.email : "NÃO") + "]");
+            }
+        }).finally(() => {
+            enviando = false; atualizarInterfaceEstado();
+            if (filaPendentes.length > 0) {
+                var esperaMs = Math.min(30000, 1000 * Math.pow(2, Math.min(falhasConsecutivasLote, 5)));
+                setTimeout(enviarDadosFila, falhasConsecutivasLote > 0 ? esperaMs : 0);
             }
         });
+    } catch (e) { filaPendentes.shift(); enviando = false; atualizarInterfaceEstado(); }
+}
 
-        if (pontos.length === 0) {
-            alert("Nenhum registro encontrado para este período.");
+function atualizarInterfaceEstado() {
+    var barra = document.getElementById('statusConexao'); var totalPendente = filaPendentes.length + filaGeocodificarDepois.length;
+    if (listaVeiculos.length === 0) {
+        barra.className = "status-bar status-offline"; barra.innerHTML = "MODO OFFLINE — Adicione um Veículo";
+    } else if (firebaseOnlineConfirmado && totalPendente === 0) {
+        barra.className = "status-bar status-online"; barra.innerHTML = "📡 SISTEMA ONLINE — Sincronizado!";
+    } else if (firebaseOnlineConfirmado) {
+        barra.className = "status-bar status-online"; barra.innerHTML = `📡 ONLINE — Sincronizando... <span>(${totalPendente} pendentes)</span>`;
+    } else {
+        barra.className = "status-bar status-offline"; barra.innerHTML = `MODO OFFLINE <span>(${totalPendente} pendentes)</span>`;
+    }
+    document.getElementById('filaInfo').textContent = registroCompleto.length + " pontos gravados localmente (" + filaPendentes.length + " no Firebase)";
+}
+
+window.addEventListener('online', function() { firebaseOnlineConfirmado = true; atualizarInterfaceEstado(); processarFilaGeocodificacao(); enviarDadosFila(); });
+window.addEventListener('offline', function() { firebaseOnlineConfirmado = false; atualizarInterfaceEstado(); });
+
+document.getElementById('btnForcar').addEventListener('click', function() {
+    geocodificando = false;
+    enviando = false;
+    processarFilaGeocodificacao();
+    enviarDadosFila();
+    sincronizarTempoRealImediato();
+});
+
+document.getElementById('btnExportar').addEventListener('click', async function() {
+    if (registroCompleto.length === 0) return alert("Sem pontos.");
+    var lines = ["Data;Hora;Latitude;Longitude;Velocidade(km/h);Situacao;Rua;Bairro;Cidade;Estado;Motivo;FonteKm"];
+    registroCompleto.forEach(p => { lines.push([p.data, p.hora, p.lat, p.lon, p.velocidade, p.status, p.rua, p.bairro, p.cidade, p.estado, p.motivo || "", p.fonteKm || ""].join(";")); });
+    var conteudoCsv = lines.join("\n");
+    var nomeArquivo = "rota_real_" + new Date().toISOString().slice(0,10) + ".csv";
+    var out = document.getElementById('diagnosticoResultado');
+
+    try {
+        if (isNative && window.Capacitor.Plugins.Filesystem && window.Capacitor.Plugins.Share) {
+            var Filesystem = window.Capacitor.Plugins.Filesystem;
+            var Share = window.Capacitor.Plugins.Share;
+            var resultado = await Filesystem.writeFile({
+                path: nomeArquivo,
+                data: conteudoCsv,
+                directory: 'CACHE',
+                encoding: 'utf8'
+            });
+            await Share.share({ title: "Rota exportada", url: resultado.uri });
+            out.textContent = "✅ Exportado e compartilhado com sucesso.";
             return;
         }
-
-        dadosHistorico = pontos;
-        renderizarListaRuas(pontos);
-        desenharRota(pontos);
-        mostrarPonto(pontos[pontos.length - 1], pontos.length - 1);
-    });
+    } catch (e) {
+        console.warn(e);
+        out.textContent = "⚠️ Falha ao exportar via plugin nativo: " + (e && e.message ? e.message : e) + " — tentando alternativa...";
+    }
+    try {
+        var arquivo = new File([conteudoCsv], nomeArquivo, { type: "text/csv" });
+        if (navigator.canShare && navigator.canShare({ files: [arquivo] })) {
+            await navigator.share({ files: [arquivo], title: "Rota exportada - " + nomeArquivo });
+            out.textContent = "✅ Compartilhado com sucesso.";
+            return;
+        }
+    } catch (e2) { console.warn(e2); }
+    var blob = new Blob([conteudoCsv], { type: "text/csv;charset=utf-8;" });
+    var url = URL.createObjectURL(blob); var a = document.createElement("a"); a.href = url; a.download = nomeArquivo; a.click(); URL.revokeObjectURL(url);
 });
 
-// ===================== LISTA DE RUAS CLICÁVEIS =====================
-function renderizarListaRuas(pontos) {
-    var lista = document.getElementById('listaRuas');
-    var contador = document.getElementById('contadorPontos');
-    limparMarcadores();
+document.getElementById('btnDiagnostico').addEventListener('click', function() {
+    var out = document.getElementById('diagnosticoResultado'); out.textContent = "Testando...";
+    fetchComTimeout(`https://us1.locationiq.com/v1/reverse?key=${LOCATIONIQ_API_KEY}&lat=-29.6133&lon=-52.1919&format=json&zoom=18`, {}, 10000)
+        .then(res => res.text()).then(txt => { out.textContent = "✅ SUCESSO\n\n" + txt.slice(0, 300); }).catch(e => { out.textContent = "❌ ERRO: " + e.message; });
+});
 
-    if (!pontos || pontos.length === 0) {
-        lista.innerHTML = '<div class="vazio">Nenhum ponto encontrado.</div>';
-        contador.textContent = "";
-        return;
-    }
+renderizarFrotaLocal(); atualizarInterfaceEstado(); checarContextoSeguro();
 
-    contador.textContent = "(" + pontos.length + " pontos)";
-    lista.innerHTML = "";
-
-    pontos.forEach(function(p, i) {
-        var velClass = p.velocidade > 80 ? "per" : (p.velocidade > LIMITE_MOVIMENTO_KMH ? "mov" : "par");
-        var velTexto = p.velocidade > 80 ? "⚡ " + p.velocidade + " km/h" :
-                       p.velocidade > LIMITE_MOVIMENTO_KMH ? "▶ " + p.velocidade + " km/h" :
-                                           "⏸ Parado";
-
-        var item = document.createElement('div');
-        item.className = "item-rua";
-        item.dataset.index = i;
-        item.innerHTML =
-            '<div class="rua-nome">' + (p.rua || "Rua não identificada") + '</div>' +
-            '<div class="rua-meta">' +
-                '<span>' + (p.data ? p.data + " " : "") + (p.hora || "") + '</span>' +
-                '<span class="rua-vel ' + velClass + '">' + velTexto + '</span>' +
-                (p.velocidade <= LIMITE_MOVIMENTO_KMH && p.tempoParado && p.tempoParado !== "00:00:00"
-                    ? '<span style="color:var(--signal-off);">⏱ ' + p.tempoParado + '</span>' : '') +
-            '</div>';
-
-        item.addEventListener('click', function() {
-            var idx = parseInt(this.dataset.index);
-            selecionarItem(idx);
-        });
-
-        lista.appendChild(item);
-
-        if (p.lat && p.lon) {
-            var cor = p.velocidade > 80 ? '#ff5470' : (p.velocidade > LIMITE_MOVIMENTO_KMH ? '#00ffa6' : '#ffb020');
-            var circulo = L.circleMarker([p.lat, p.lon], {
-                radius: 5, color: cor, fillColor: cor, fillOpacity: 0.85, weight: 1.5
-            }).addTo(map);
-
-            (function(ponto, index) {
-                circulo.on('click', function() { selecionarItem(index); });
-                circulo.bindPopup(criarPopup(ponto), { maxWidth: 260 });
-            })(p, i);
-
-            marcadores.push(circulo);
-        }
-    });
-
-    lista.scrollTop = lista.scrollHeight;
-}
-
-function criarPopup(p) {
-    var velTexto = p.velocidade > 80 ? "⚡ " + p.velocidade + " km/h (Excesso!)" :
-                   p.velocidade > LIMITE_MOVIMENTO_KMH ? "▶ " + p.velocidade + " km/h" : "⏸ Parado";
-    var html =
-        '<div style="font-size:0.85em;line-height:1.6;">' +
-        '<div class="popup-linha"><b>📍 Rua:</b> ' + (p.rua || "—") + '</div>' +
-        '<div class="popup-linha"><b>🏘 Bairro:</b> ' + (p.bairro || "—") + '</div>' +
-        '<div class="popup-linha"><b>🏙 Cidade:</b> ' + (p.cidade || "—") + ' / ' + (p.estado || "—") + '</div>' +
-        '<div class="popup-linha"><b>🕐 Hora:</b> ' + (p.data || "") + ' ' + (p.hora || "") + '</div>' +
-        '<div class="popup-linha"><b>🚗 Vel:</b> ' + velTexto + '</div>' +
-        (p.velocidade <= LIMITE_MOVIMENTO_KMH ? '<div class="popup-linha"><b>⏱ Parado:</b> ' + (p.tempoParado || "—") + '</div>' : '') +
-        '</div>';
-    return html;
-}
-
-function selecionarItem(idx) {
-    if (indiceAtivo >= 0) {
-        var anterior = document.querySelector('.item-rua[data-index="' + indiceAtivo + '"]');
-        if (anterior) anterior.classList.remove('ativo');
-    }
-    indiceAtivo = idx;
-
-    var el = document.querySelector('.item-rua[data-index="' + idx + '"]');
-    if (el) {
-        el.classList.add('ativo');
-        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-
-    var p = dadosHistorico[idx];
-    if (!p) return;
-
-    mostrarPonto(p, idx);
-
-    if (marcadores[idx]) {
-        map.setView([p.lat, p.lon], 17);
-        marcadores[idx].openPopup();
-    }
-}
-
-function limparMarcadores() {
-    marcadores.forEach(function(m) { map.removeLayer(m); });
-    marcadores = [];
-    indiceAtivo = -1;
-}
-
-// ===================== ROTA NO MAPA =====================
-function desenharRota(pontos) {
-    var coords = pontos.filter(function(p) { return p.lat && p.lon; })
-                       .map(function(p) { return [p.lat, p.lon]; });
-
-    polilinhaRota.setLatLngs(coords);
-    polilinhaRuas.setLatLngs([]);
-
-    if (coords.length < 2) return;
-    map.fitBounds(L.latLngBounds(coords), { padding: [30, 30] });
-
-    encaixarNasRuas(coords);
-}
-
-function encaixarNasRuas(coords) {
-    var amostra = coords;
-    if (coords.length > 80) {
-        amostra = [];
-        var passo = Math.ceil(coords.length / 80);
-        for (var i = 0; i < coords.length; i += passo) amostra.push(coords[i]);
-        amostra.push(coords[coords.length - 1]);
-    }
-    var str = amostra.map(function(c) { return c[1].toFixed(6) + "," + c[0].toFixed(6); }).join(";");
-    var url = "https://router.project-osrm.org/match/v1/driving/" + str + "?overview=full&geometries=geojson";
-
-    fetch(url, { signal: AbortSignal.timeout(10000) })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            if (data.code === "Ok" && data.matchings && data.matchings.length > 0) {
-                var pts = [];
-                data.matchings.forEach(function(m) {
-                    m.geometry.coordinates.forEach(function(c) { pts.push([c[1], c[0]]); });
-                });
-                polilinhaRuas.setLatLngs(pts);
-            }
-        })
-        .catch(function() { /* sem encaixe, tudo bem */ });
-}
-
-// ===================== PAINEL DE DETALHES =====================
-function mostrarPonto(p, idx) {
-    if (!p) return;
-
-    var icone = criarIconeVeiculo(p.status, p.velocidade || 0);
-    if (!marcadorVeiculo) {
-        marcadorVeiculo = L.marker([p.lat, p.lon], { icon: icone }).addTo(map);
-    } else {
-        marcadorVeiculo.setLatLng([p.lat, p.lon]);
-        marcadorVeiculo.setIcon(icone);
-    }
-
-    atualizarPainel(p);
-}
-
-function atualizarPainel(p) {
-    document.getElementById('txtVelocidade').textContent = (p.velocidade || 0) + " km/h";
-    document.getElementById('txtTempoParado').textContent = p.tempoParado || "00:00:00";
-    document.getElementById('txtRua').textContent = p.rua || "—";
-    document.getElementById('txtBairro').textContent = p.bairro || "—";
-    document.getElementById('txtCidadeEstado').textContent = (p.cidade || "—") + " / " + (p.estado || "—");
-    document.getElementById('txtDataHora').textContent = (p.data || "—") + " às " + (p.hora || "—");
-    document.getElementById('txtCoords').textContent = p.lat ? p.lat.toFixed(6) + ", " + p.lon.toFixed(6) : "—";
-
-    var badge = document.getElementById('txtStatus');
-    badge.textContent = p.status || (p.velocidade > LIMITE_MOVIMENTO_KMH ? "EM MOVIMENTO" : "PARADO");
-    badge.className = p.velocidade > 80 ? "badge badge-perigo" : (p.velocidade > LIMITE_MOVIMENTO_KMH ? "badge badge-movimento" : "badge badge-parado");
-}
-
-function setStatusBar(tempoReal) {
-    var el = document.getElementById('statusModo');
-    if (tempoReal) {
-        el.innerHTML = '<span class="live-indicator"></span> MONITORANDO EM TEMPO REAL';
-        el.className = "status-bar online";
-    } else {
-        el.innerHTML = '📅 EXIBINDO HISTÓRICO PASSADO';
-        el.className = "status-bar";
-    }
-}
+setInterval(function() { sincronizarTempoRealImediato(); }, 3000);
+setInterval(function() { if (filaGeocodificarDepois.length > 0) processarFilaGeocodificacao(); if (filaPendentes.length > 0) enviarDadosFila(); }, 6000);
 </script>
 </body>
-    </html>
+</html>
