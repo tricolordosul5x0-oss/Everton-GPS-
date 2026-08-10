@@ -77,13 +77,11 @@
             box-shadow: 0 8px 24px rgba(255,84,112,0.35); margin-bottom: 20px;
         }
 
-        /* NOVO: Layout Principal dividindo Mapa e Painel de Histórico lateral */
         .main-content {
             display: flex; flex: 1; position: relative; overflow: hidden;
         }
         #map { flex: 1; height: 100%; background: #000; }
 
-        /* NOVO: Painel Lateral de Histórico e Paradas */
         #painelHistorico {
             width: 380px; background: var(--bg-card); border-left: 1px solid var(--border);
             display: none; flex-direction: column; z-index: 999; box-shadow: -4px 0 20px rgba(0,0,0,0.5);
@@ -163,14 +161,12 @@
 
     <div class="main-content">
         <div id="map"></div>
-        <!-- NOVO: Painel Lateral de Histórico preenchido dinamicamente na pesquisa -->
         <div id="painelHistorico">
             <div class="historico-header">
                 <h3>📋 Histórico de Percurso</h3>
                 <button class="historico-fechar" onclick="fecharPainelHistorico()">✕</button>
             </div>
             <div id="listaHistoricoEventos" class="historico-lista">
-                <!-- Os eventos de movimento e parada serão injetados aqui -->
             </div>
         </div>
     </div>
@@ -329,18 +325,27 @@
             });
         }
 
-        // CORREÇÃO: Função robusta para converter formatos variados de data/hora do Firebase (DD/MM/YYYY ou ISO) em timestamp confiável
         function converterParaTimestamp(p) {
-            if (p.timestamp) return Number(p.timestamp);
+            if (p.timestamp && !isNaN(Number(p.timestamp))) return Number(p.timestamp);
+            if (p.time && !isNaN(Number(p.time))) return Number(p.time);
+            if (p.dataHora) {
+                let d = new Date(p.dataHora);
+                if (!isNaN(d.getTime())) return d.getTime();
+            }
             if (p.data && p.hora) {
                 let partesData = p.data.split('/');
                 if (partesData.length === 3) {
                     let [dia, mes, ano] = partesData;
                     let [hora, min, seg] = (p.hora || '00:00:00').split(':');
-                    return new Date(ano, mes - 1, dia, hora || 0, min || 0, seg || 0).getTime();
+                    let dt = new Date(ano, mes - 1, dia, hora || 0, min || 0, seg || 0);
+                    if (!isNaN(dt.getTime())) return dt.getTime();
                 }
             }
-            return 0;
+            if (p.criadoEm) {
+                let dt = new Date(p.criadoEm);
+                if (!isNaN(dt.getTime())) return dt.getTime();
+            }
+            return Date.now();
         }
 
         function pesquisarHistorico() {
@@ -399,8 +404,6 @@
                         markerVeiculo.setLatLng([p.lat, p.lon]);
                     }
 
-                    // CORREÇÃO: Distinção lógica rigorosa entre MOVIMENTO e PARADA
-                    // Se velocidade for menor ou igual a 3 km/h (ou flags dedicadas), consideramos Parado
                     let vel = Number(p.velocidade) || 0;
                     let emMovimento = vel > 3;
                     let badgeClass = emMovimento ? 'badge-mov' : 'badge-parada';
@@ -412,29 +415,33 @@
                         radius: 5, color: iconeCor, fillColor: iconeCor, fillOpacity: 0.85, weight: 1.5
                     }).addTo(map);
 
-                    var horarioTxt = p.hora || new Date(p.timestampCalculado).toLocaleTimeString();
-                    var dataTxt = p.data || new Date(p.timestampCalculado).toLocaleDateString();
-                    var enderecoTxt = (p.rua || 'Rua não identificada') + (p.bairro ? ', ' + p.bairro : '') + (p.cidade ? ' - ' + p.cidade : '');
+                    let dataObj = new Date(p.timestampCalculado);
+                    let horarioTxt = p.hora || dataObj.toLocaleTimeString('pt-BR');
+                    let dataTxt = p.data || dataObj.toLocaleDateString('pt-BR');
+                    
+                    let ruaNome = p.rua || p.address || p.endereco || "Endereço em processamento";
+                    let bairroNome = p.bairro || "";
+                    let cidadeNome = p.cidade || "Venâncio Aires";
+                    let enderecoFormatado = ruaNome + (bairroNome ? ', ' + bairroNome : '') + ' - ' + cidadeNome;
 
                     pontoMarcador.bindPopup(
                         '<div style="font-size:0.85em;line-height:1.6;">' +
                         '<b>' + (emMovimento ? '🚗 Em Movimento' : '🅿️ Parado') + '</b><br>' +
-                        '<b>📍 ' + (p.rua || 'Localização GPS') + '</b><br>' +
-                        '🏙 ' + (p.cidade || '—') + '<br>' +
+                        '<b>📍 ' + ruaNome + '</b><br>' +
+                        '🏙 ' + cidadeNome + '<br>' +
                         '🕐 ' + dataTxt + ' ' + horarioTxt + '<br>' +
                         '⚡ ' + vel + ' km/h' +
                         '</div>'
                     );
                     marcadoresPontos.push(pontoMarcador);
 
-                    // Montagem do Histórico na Lateral com os horários sincronizados corretos
                     listaEventosHtml += `
                         <div class="item-historico ${emMovimento ? 'item-movimento' : 'item-parada'}" onclick="focarPonto(${p.lat}, ${p.lon}, '${encodeURIComponent(pontoMarcador.getPopup().getContent())}')">
                             <div class="item-topo">
                                 <span>${dataTxt} ${horarioTxt}</span>
                                 <span class="${badgeClass}">${badgeTexto}</span>
                             </div>
-                            <div class="item-detalhe">📍 ${enderecoTxt}</div>
+                            <div class="item-detalhe">📍 ${enderecoFormatado}</div>
                             <div class="item-detalhe">⚡ Velocidade: ${vel} km/h</div>
                         </div>
                     `;
@@ -462,7 +469,6 @@
             });
         }
 
-        // NOVO: Permite clicar em um item da lista lateral e centralizar instantaneamente no mapa com o popup aberto
         function focarPonto(lat, lon, htmlPopup) {
             map.setView([lat, lon], 17);
             markerVeiculo.setLatLng([lat, lon]);
