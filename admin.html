@@ -148,12 +148,13 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
         const auth = firebase.auth();
+        const LOCATIONIQ_API_KEY = "pk.191e94f621fe663163bc05ef61c98b2b";
 
         const map = L.map('map').setView([-29.6133, -52.1919], 13);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
         
-        let polyline = L.polyline([], { color: '#00ffa6', weight: 5, dashArray: '10, 10' }).addTo(map);
-        let polylineRuas = L.polyline([], { color: '#2dd4ff', weight: 5, opacity: 0.9 }).addTo(map);
+        let polyline = L.polyline([], { color: 'rgba(0,255,166,0.25)', weight: 3 }).addTo(map);
+        let polylineRuas = L.polyline([], { color: '#00ffa6', weight: 5, dashArray: '10, 10', opacity: 0.95 }).addTo(map);
         let marcadoresPontos = [];
         let markerVeiculo = L.marker([-29.6133, -52.1919]).addTo(map);
 
@@ -410,25 +411,28 @@
         function encaixarNasRuas(coords) {
             polylineRuas.setLatLngs([]);
             if (coords.length < 2) return;
+            // CORREÇÃO: trocado de OSRM (serviço de demonstração público, sem CORS
+            // confiável pra uso comercial) pra LocationIQ Map Matching — o mesmo serviço
+            // pago/confiável já usado pros endereços, com a mesma chave.
             let amostra = coords;
-            if (coords.length > 100) {
+            const MAX_PONTOS_LOCATIONIQ = 25; // limite da API de encaixe nas ruas
+            if (coords.length > MAX_PONTOS_LOCATIONIQ) {
                 amostra = [];
-                const passo = Math.ceil(coords.length / 100);
+                const passo = Math.ceil(coords.length / (MAX_PONTOS_LOCATIONIQ - 1));
                 for (let i = 0; i < coords.length; i += passo) amostra.push(coords[i]);
                 amostra.push(coords[coords.length - 1]);
             }
             const str = amostra.map(c => c[1].toFixed(6) + "," + c[0].toFixed(6)).join(";");
-            const url = "https://router.project-osrm.org/match/v1/driving/" + str + "?overview=full&geometries=geojson";
+            const url = "https://us1.locationiq.com/v1/matching/driving/" + str + "?key=" + LOCATIONIQ_API_KEY + "&overview=full&geometries=geojson";
             fetch(url, { signal: AbortSignal.timeout(12000) })
                 .then(r => r.json())
                 .then(data => {
-                    if (data.code === "Ok" && data.matchings && data.matchings.length > 0) {
-                        let pts = [];
-                        data.matchings.forEach(m => { m.geometry.coordinates.forEach(c => pts.push([c[1], c[0]])); });
-                        polylineRuas.setLatLngs(pts);
-                    }
+                    let pts = [];
+                    const trechos = data.matchings || data.routes || [];
+                    trechos.forEach(m => { if (m.geometry && m.geometry.coordinates) m.geometry.coordinates.forEach(c => pts.push([c[1], c[0]])); });
+                    if (pts.length > 0) polylineRuas.setLatLngs(pts);
                 })
-                .catch(() => { /* serviço público às vezes falha — a linha tracejada já mostra o trajeto normalmente */ });
+                .catch(() => { /* se falhar, a linha fina de base já mostra o trajeto normalmente */ });
         }
 
         function voltarAoTempoReal() {
