@@ -517,6 +517,7 @@ window.removerVeiculoExigindoSenha = function(index) {
 var inicioParadaTs = localStorage.getItem('inicio_parada_ts') ? parseInt(localStorage.getItem('inicio_parada_ts'), 10) : null;
 var tempoParadoSegundos = 0;
 var jaGravouPontoInicialParada = localStorage.getItem('ja_gravou_parada') === 'true';
+var jaRegistrouEsteExcesso = false; // evita gravar um novo registro a cada poucos segundos enquanto continuar acima do limite
 
 function formatarTempoParado(segundos) {
     var hrs = Math.floor(segundos / 3600).toString().padStart(2, '0');
@@ -656,6 +657,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     var situacao = "PARADO";
     var badgeStatus = document.getElementById('badStatus');
     var iniciouParadaAgora = false;
+    var iniciouExcessoAgora = false;
 
     var estaEmMovimento = vel >= VELOCIDADE_MOVIMENTO_CONFIAVEL_KMH
         ? true
@@ -666,6 +668,15 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         badgeStatus.textContent = situacao;
         badgeStatus.className = (vel > LIMITE_VELOCIDADE) ? "badge badge-perigo" : "badge badge-movimento";
 
+        // NOVO: registra um evento de excesso de velocidade só no momento em que COMEÇA a
+        // ultrapassar o limite (não fica gravando um ponto a cada poucos segundos enquanto
+        // continuar acima do limite — só quando muda de "normal" pra "acima do limite").
+        if (situacao === "VELOCIDADE ACIMA DO LIMITE") {
+            if (!jaRegistrouEsteExcesso) { iniciouExcessoAgora = true; jaRegistrouEsteExcesso = true; }
+        } else {
+            jaRegistrouEsteExcesso = false;
+        }
+
         inicioParadaTs = null; jaGravouPontoInicialParada = false; ultimoIdPontoParadaGravado = null; coordenadaParadaFixa = null;
         localStorage.removeItem('inicio_parada_ts');
         localStorage.removeItem('ja_gravou_parada');
@@ -673,6 +684,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         localStorage.removeItem('coordenada_parada_fixa');
     } else {
         situacao = "PARADO"; badgeStatus.textContent = "PARADO"; badgeStatus.className = "badge badge-parado";
+        jaRegistrouEsteExcesso = false;
         if (!inicioParadaTs) { inicioParadaTs = agoraTs; localStorage.setItem('inicio_parada_ts', String(inicioParadaTs)); }
         if (!coordenadaParadaFixa) { coordenadaParadaFixa = [lat, lon]; localStorage.setItem('coordenada_parada_fixa', JSON.stringify(coordenadaParadaFixa)); }
         if (!jaGravouPontoInicialParada) { iniciouParadaAgora = true; jaGravouPontoInicialParada = true; localStorage.setItem('ja_gravou_parada', 'true'); }
@@ -708,6 +720,17 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
             tipoVia: viaState.tipo || 'rua',
             km: viaState.kmSincronizado
         }, 'inicio_parada');
+    } else if (iniciouExcessoAgora) {
+        // NOVO: registro de excesso de velocidade — fica gravado no histórico normal do
+        // veículo, com motivo "excesso_velocidade", pra poder filtrar/consultar depois.
+        registrarESincronizarPonto(lat, lon, situacao, vel, precisao, agora, {
+            rua: viaState.nome || null,
+            bairro: document.getElementById('txtBairro').textContent,
+            cidade: document.getElementById('txtCidade').textContent,
+            estado: document.getElementById('txtEstado').textContent,
+            tipoVia: viaState.tipo || 'rua',
+            km: viaState.kmSincronizado
+        }, 'excesso_velocidade');
     } else if (kmMudou) {
         // Antes de gravar o novo km, tenta confirmar com o marco oficial mais próximo (Overpass/OSM).
         // Isso também recalibra a base, corrigindo desvios acumulados do GPS.
