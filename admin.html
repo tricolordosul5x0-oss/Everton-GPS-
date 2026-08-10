@@ -153,6 +153,8 @@
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
         
         let polyline = L.polyline([], { color: '#00ffa6', weight: 5, dashArray: '10, 10' }).addTo(map);
+        let polylineRuas = L.polyline([], { color: '#2dd4ff', weight: 5, opacity: 0.9 }).addTo(map);
+        let marcadoresPontos = [];
         let markerVeiculo = L.marker([-29.6133, -52.1919]).addTo(map);
 
         let listenerTempoReal = null;
@@ -347,6 +349,10 @@
                 let latLngs = [];
                 let temExcessoVelocidade = false;
 
+                // NOVO: limpa os marcadores de pontos da pesquisa anterior antes de desenhar os novos
+                marcadoresPontos.forEach(m => map.removeLayer(m));
+                marcadoresPontos = [];
+
                 pontosFiltrados.forEach((p, index) => {
                     latLngs.push([p.lat, p.lon]);
                     if (p.velocidade > 80) temExcessoVelocidade = true;
@@ -355,12 +361,34 @@
                         markerVeiculo.setLatLng([p.lat, p.lon]);
                         markerVeiculo.bindPopup("Início do Período").openPopup();
                     }
+
+                    // NOVO: um pontinho clicável pra cada registro, mostrando rua, bairro,
+                    // cidade, estado e velocidade daquele trecho exato — assim dá pra ver
+                    // exatamente por onde passou, não só uma linha genérica no mapa.
+                    var corPonto = p.motivo === 'excesso_velocidade' ? '#ff5470' : (p.velocidade > 5 ? '#00ffa6' : '#ffb020');
+                    var pontoMarcador = L.circleMarker([p.lat, p.lon], {
+                        radius: 5, color: corPonto, fillColor: corPonto, fillOpacity: 0.85, weight: 1.5
+                    }).addTo(map);
+                    var horarioTxt = p.hora || '';
+                    var enderecoTxt = (p.rua || 'Rua não identificada') + (p.bairro ? ', ' + p.bairro : '') + (p.cidade ? ' - ' + p.cidade : '') + (p.estado ? '/' + p.estado : '');
+                    pontoMarcador.bindPopup(
+                        '<div style="font-size:0.85em;line-height:1.6;">' +
+                        '<b>📍 ' + (p.rua || 'Rua não identificada') + '</b><br>' +
+                        '🏘 ' + (p.bairro || '—') + '<br>' +
+                        '🏙 ' + (p.cidade || '—') + ' / ' + (p.estado || '—') + '<br>' +
+                        '🕐 ' + (p.data || '') + ' ' + horarioTxt + '<br>' +
+                        '🚗 ' + (p.velocidade || 0) + ' km/h' + (p.motivo === 'excesso_velocidade' ? ' ⚠️ EXCESSO' : '') +
+                        '</div>'
+                    );
+                    marcadoresPontos.push(pontoMarcador);
                 });
 
                 polyline.setLatLngs(latLngs);
                 if (latLngs.length > 0) {
                     map.fitBounds(polyline.getBounds(), { padding: [50, 50] });
                 }
+                encaixarNasRuas(latLngs);
+
 
                 const alertaBox = document.getElementById('alertaContainer');
                 if (temExcessoVelocidade) {
@@ -376,10 +404,40 @@
             });
         }
 
+        // NOVO: tenta encaixar o trajeto nas ruas de verdade (em vez da linha reta ponto a
+        // ponto). Só é chamado 1 vez por pesquisa (não fica repetindo o tempo todo como
+        // aconteceria num app rodando ao vivo), então o serviço público aguenta bem.
+        function encaixarNasRuas(coords) {
+            polylineRuas.setLatLngs([]);
+            if (coords.length < 2) return;
+            let amostra = coords;
+            if (coords.length > 100) {
+                amostra = [];
+                const passo = Math.ceil(coords.length / 100);
+                for (let i = 0; i < coords.length; i += passo) amostra.push(coords[i]);
+                amostra.push(coords[coords.length - 1]);
+            }
+            const str = amostra.map(c => c[1].toFixed(6) + "," + c[0].toFixed(6)).join(";");
+            const url = "https://router.project-osrm.org/match/v1/driving/" + str + "?overview=full&geometries=geojson";
+            fetch(url, { signal: AbortSignal.timeout(12000) })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.code === "Ok" && data.matchings && data.matchings.length > 0) {
+                        let pts = [];
+                        data.matchings.forEach(m => { m.geometry.coordinates.forEach(c => pts.push([c[1], c[0]])); });
+                        polylineRuas.setLatLngs(pts);
+                    }
+                })
+                .catch(() => { /* serviço público às vezes falha — a linha tracejada já mostra o trajeto normalmente */ });
+        }
+
         function voltarAoTempoReal() {
             document.getElementById('btnVoltarTempoReal').style.display = "none";
             document.getElementById('alertaContainer').innerHTML = "";
             markerVeiculo.bindPopup("");
+            marcadoresPontos.forEach(m => map.removeLayer(m));
+            marcadoresPontos = [];
+            polylineRuas.setLatLngs([]);
             const veiculoSelecionado = document.getElementById('selectVeiculo').value;
             if (veiculoSelecionado) {
                 iniciarEscutaTempoReal(veiculoSelecionado);
