@@ -107,6 +107,13 @@
         .badge-parada { color: #ffb020; font-size: 0.75em; text-transform: uppercase; }
         .item-detalhe { color: var(--text-dim); font-size: 0.8em; margin-top: 2px; }
 
+        /* NOVO: ponto de excesso de velocidade pisca em vermelho no mapa */
+        @keyframes piscar-excesso {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.25; }
+        }
+        .ponto-excesso { animation: piscar-excesso 0.9s infinite; }
+
         /* NOVO: responsivo pra celular — abaixo de 768px de largura */
         @media (max-width: 768px) {
             .filter-container { padding: 10px 12px; gap: 8px; }
@@ -435,7 +442,8 @@
                     if (p.motivo === 'excesso_velocidade') iconeCor = '#ff5470';
 
                     var pontoMarcador = L.circleMarker([p.lat, p.lon], {
-                        radius: 5, color: iconeCor, fillColor: iconeCor, fillOpacity: 0.85, weight: 1.5
+                        radius: 5, color: iconeCor, fillColor: iconeCor, fillOpacity: 0.85, weight: 1.5,
+                        className: p.motivo === 'excesso_velocidade' ? 'ponto-excesso' : ''
                     }).addTo(map);
 
                     let dataObj = new Date(p.timestampCalculado);
