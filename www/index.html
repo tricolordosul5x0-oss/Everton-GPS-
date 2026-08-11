@@ -1158,6 +1158,26 @@ renderizarFrotaLocal(); atualizarInterfaceEstado(); checarContextoSeguro();
 // se a fila de geocodificação estivesse ocupada/travada a posição ao vivo também atrasava.
 setInterval(function() { sincronizarTempoRealImediato(); }, 3000);
 setInterval(function() { if (filaGeocodificarDepois.length > 0) processarFilaGeocodificacao(); if (filaPendentes.length > 0) enviarDadosFila(); }, 6000);
+
+// NOVO: antes, o histórico só ganhava um ponto novo quando trocava de rua, começava a
+// parar, ou começava a exceder a velocidade — então, se o veículo ficasse rodando um bom
+// tempo na mesma rua, não existia NENHUM registro pra esse intervalo, e uma pesquisa por
+// "1 minuto atrás" (ou até "1 hora atrás") não achava nada. Agora, a cada 15 segundos, é
+// gravado um "pulso" de posição — reaproveitando o endereço já conhecido (sem gastar mais
+// consultas de geocodificação) — garantindo que sempre tenha um ponto próximo de qualquer
+// horário pesquisado.
+setInterval(function() {
+    if (!ultimaLeituraCompleta || listaVeiculos.length === 0) return;
+    var agoraPulso = new Date();
+    registrarESincronizarPonto(ultimaLeituraCompleta.lat, ultimaLeituraCompleta.lon, ultimaLeituraCompleta.status, ultimaLeituraCompleta.velocidade, null, agoraPulso, {
+        rua: viaState.nome || null,
+        bairro: document.getElementById('txtBairro').textContent,
+        cidade: document.getElementById('txtCidade').textContent,
+        estado: document.getElementById('txtEstado').textContent,
+        tipoVia: viaState.tipo || 'rua',
+        km: viaState.kmSincronizado
+    }, 'pulso');
+}, 15000);
 </script>
 </body>
 </html>
