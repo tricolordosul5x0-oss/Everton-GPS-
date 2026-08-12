@@ -815,7 +815,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         var idFixoPonto = gerarIdPonto(agoraTs);
         var jaExisteFila = filaGeocodificarDepois.some(p => calcularDistanciaMetros(p.lat, p.lon, lat, lon) < 20);
         if (!jaExisteFila) {
-            filaGeocodificarDepois.push({ id: idFixoPonto, lat: lat, lon: lon, ts: agoraTs, velocidadeNoMomento: vel, statusNoMomento: situacao });
+            filaGeocodificarDepois.push({ id: idFixoPonto, lat: lat, lon: lon, ts: agoraTs, velocidadeNoMomento: vel, statusNoMomento: situacao, precisaoNoMomento: precisao });
             salvarTudo();
             processarFilaGeocodificacao();
         }
@@ -953,7 +953,7 @@ function talvezBuscarTemperatura(lat, lon) {
 
 // Aplica o endereço/tipo de via encontrado e decide se isso representa uma TROCA
 // (mudou de rua, ou entrou/saiu de rodovia) — só nesse caso grava no histórico.
-function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResposta, velocidadeNoMomento, statusNoMomento, tsNoMomento) {
+function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResposta, velocidadeNoMomento, statusNoMomento, tsNoMomento, precisaoNoMomento) {
     var tipoVia = classificarVia(rua, dadosResposta);
 
     if (tipoVia === "rodovia") {
@@ -1014,7 +1014,7 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
             var agora = tsNoMomento ? new Date(tsNoMomento) : new Date();
             var velAtual = velocidadeNoMomento != null ? velocidadeNoMomento : (ultimaLeituraCompleta ? ultimaLeituraCompleta.velocidade : 0);
             var statusAtual = statusNoMomento || (ultimaLeituraCompleta ? ultimaLeituraCompleta.status : "PARADO");
-            registrarESincronizarPonto(lat, lon, statusAtual, velAtual, null, agora, { rua: rua, bairro: bairro, cidade: cidade, estado: estado, tipoVia: "rodovia", km: kmFinal, fonteKm: fonte }, "entrada_rodovia");
+            registrarESincronizarPonto(lat, lon, statusAtual, velAtual, precisaoNoMomento != null ? precisaoNoMomento : null, agora, { rua: rua, bairro: bairro, cidade: cidade, estado: estado, tipoVia: "rodovia", km: kmFinal, fonteKm: fonte }, "entrada_rodovia");
         }).catch(function() { atualizandoKmRodovia = false; });
     } else if (mudouDeVia) {
         viaAnterior = viaState.nome;
@@ -1025,7 +1025,7 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
         var agora2 = tsNoMomento ? new Date(tsNoMomento) : new Date();
         var velAtual2 = velocidadeNoMomento != null ? velocidadeNoMomento : (ultimaLeituraCompleta ? ultimaLeituraCompleta.velocidade : 0);
         var statusAtual2 = statusNoMomento || (ultimaLeituraCompleta ? ultimaLeituraCompleta.status : "PARADO");
-        registrarESincronizarPonto(lat, lon, statusAtual2, velAtual2, null, agora2, { rua: rua, bairro: bairro, cidade: cidade, estado: estado, tipoVia: "rua" }, "troca_rua");
+        registrarESincronizarPonto(lat, lon, statusAtual2, velAtual2, precisaoNoMomento != null ? precisaoNoMomento : null, agora2, { rua: rua, bairro: bairro, cidade: cidade, estado: estado, tipoVia: "rua" }, "troca_rua");
     } else {
         salvarTudo();
         sincronizarTempoRealImediato();
@@ -1091,7 +1091,7 @@ function processarFilaGeocodificacao() {
             var bairro = addr.suburb || addr.neighbourhood || "Bairro não localizado";
             var cidade = addr.city || addr.town || "Cidade não localizada";
             var estado = addr.state || "Estado não localizado";
-            aplicarEnderecoNoPonto(ponto.lat, ponto.lon, rua, bairro, cidade, estado, data, ponto.velocidadeNoMomento, ponto.statusNoMomento, ponto.ts);
+            aplicarEnderecoNoPonto(ponto.lat, ponto.lon, rua, bairro, cidade, estado, data, ponto.velocidadeNoMomento, ponto.statusNoMomento, ponto.ts, ponto.precisaoNoMomento);
             filaGeocodificarDepois.pop();
         }).catch(err => {
             ponto.tentativas = (ponto.tentativas || 0) + 1;
@@ -1242,7 +1242,12 @@ setInterval(function() {
     if (appSuspenso) return;
     if (!ultimaLeituraCompleta || listaVeiculos.length === 0) return;
     var agoraPulso = new Date();
-    registrarESincronizarPonto(ultimaLeituraCompleta.lat, ultimaLeituraCompleta.lon, ultimaLeituraCompleta.status, ultimaLeituraCompleta.velocidade, null, agoraPulso, {
+    // CORREÇÃO: antes passava "null" fixo aqui, mesmo já tendo a precisão real disponível
+    // em ultimaLeituraCompleta.precisao — por isso os pontos de "pulso" (o mais comum tipo
+    // de ponto num veículo parado por um tempo) sempre apareciam como "Precisão GPS: não
+    // informada" no painel, mesmo quando o GPS tinha uma leitura de precisão perfeitamente
+    // válida no momento.
+    registrarESincronizarPonto(ultimaLeituraCompleta.lat, ultimaLeituraCompleta.lon, ultimaLeituraCompleta.status, ultimaLeituraCompleta.velocidade, ultimaLeituraCompleta.precisao, agoraPulso, {
         rua: viaState.nome || null,
         bairro: document.getElementById('txtBairro').textContent,
         cidade: document.getElementById('txtCidade').textContent,
