@@ -114,6 +114,20 @@
         }
         .ponto-excesso { animation: piscar-excesso 0.9s infinite; }
 
+        /* NOVO: linha do trajeto "andando" (marching ants) — o traço tracejado se desloca
+           continuamente no sentido do deslocamento, pra dar noção visual de ida/volta.
+           Como a rota é desenhada em SVG pelo Leaflet, animamos o stroke-dashoffset do
+           próprio elemento <path> da polyline. */
+        @keyframes andar-tracejado {
+            to { stroke-dashoffset: -40; }
+        }
+        .rota-ida path.leaflet-interactive {
+            animation: andar-tracejado 1.6s linear infinite;
+        }
+        .rota-volta path.leaflet-interactive {
+            animation: andar-tracejado 1.6s linear infinite reverse;
+        }
+
         /* NOVO: responsivo pra celular — abaixo de 768px de largura */
         @media (max-width: 768px) {
             .filter-container { padding: 10px 12px; gap: 8px; }
@@ -228,6 +242,15 @@
         let refStatusEmpresa = null;
         let EMPRESA_ID_ATUAL = null;
 
+        // CORREÇÃO: antes o código verificava `btnVoltarTempoReal.style.display === 'none'`
+        // pra saber se estava em modo "tempo real" ou "histórico". Só que esse botão nunca
+        // recebe um estilo inline até a primeira pesquisa ser feita — então, logo depois de
+        // abrir o painel (antes de pesquisar qualquer coisa), `style.display` valia "" (string
+        // vazia), não "none". Essa comparação sempre dava falso, e por isso trocar o veículo
+        // no seletor não atualizava o mapa em tempo real (parecia que "o painel não
+        // atualiza"). Agora usamos uma variável própria para controlar o modo atual.
+        let emModoTempoReal = true;
+
         auth.onAuthStateChanged(user => {
             if (user) {
                 document.getElementById('authScreen').style.display = 'none';
@@ -314,7 +337,10 @@
             });
 
             document.getElementById('selectVeiculo').addEventListener('change', function() {
-                if (document.getElementById('btnVoltarTempoReal').style.display === 'none') {
+                // CORREÇÃO: agora usa a variável `emModoTempoReal` (ver comentário acima)
+                // em vez de checar o estilo do botão — trocar de veículo funciona
+                // corretamente mesmo antes de qualquer pesquisa ter sido feita.
+                if (emModoTempoReal) {
                     iniciarEscutaTempoReal(this.value);
                 }
             });
@@ -328,7 +354,11 @@
             const pathAtual = 'empresas/' + sanitizarChavePath(EMPRESA_ID_ATUAL) + '/veiculos/' + sanitizarChavePath(veiculoNome) + '/atual';
             listenerTempoReal = pathAtual;
 
+            // CORREÇÃO: reinicia a trilha visual ao trocar de veículo (antes ficava
+            // acumulando pontos do veículo anterior junto com o novo, misturando as duas
+            // rotas na mesma linha).
             let historicoTempoRealCoords = [];
+            polyline.setLatLngs([]);
 
             db.ref(pathAtual).on('value', (snap) => {
                 const dados = snap.val();
@@ -395,6 +425,7 @@
                 db.ref(listenerTempoReal).off();
                 listenerTempoReal = null;
             }
+            emModoTempoReal = false;
 
             db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ATUAL) + '/veiculos/' + sanitizarChavePath(veiculo) + '/historico').once('value', (snap) => {
                 const historicoObj = snap.val();
@@ -439,11 +470,16 @@
                     let badgeClass = emMovimento ? 'badge-mov' : 'badge-parada';
                     let badgeTexto = emMovimento ? 'Em Movimento' : 'Veículo Parado';
                     let iconeCor = emMovimento ? '#00ffa6' : '#ffb020';
-                    if (p.motivo === 'excesso_velocidade') iconeCor = '#ff5470';
+                    // NOVO: ponto de excesso de velocidade agora sempre aparece em vermelho e
+                    // piscando (classe .ponto-excesso), tanto pelo motivo salvo quanto pela
+                    // velocidade do próprio ponto — cobre também registros antigos que não
+                    // tinham o campo "motivo" preenchido.
+                    let excessoNestePonto = (p.motivo === 'excesso_velocidade') || vel > 80;
+                    if (excessoNestePonto) iconeCor = '#ff5470';
 
                     var pontoMarcador = L.circleMarker([p.lat, p.lon], {
                         radius: 5, color: iconeCor, fillColor: iconeCor, fillOpacity: 0.85, weight: 1.5,
-                        className: p.motivo === 'excesso_velocidade' ? 'ponto-excesso' : ''
+                        className: excessoNestePonto ? 'ponto-excesso' : ''
                     }).addTo(map);
 
                     let dataObj = new Date(p.timestampCalculado);
@@ -458,6 +494,7 @@
                     pontoMarcador.bindPopup(
                         '<div style="font-size:0.85em;line-height:1.6;">' +
                         '<b>' + (emMovimento ? '🚗 Em Movimento' : '🅿️ Parado') + '</b><br>' +
+                        (excessoNestePonto ? '<b style="color:#ff5470;">⚠️ Excesso de velocidade</b><br>' : '') +
                         '<b>📍 ' + ruaNome + '</b><br>' +
                         '🏙 ' + cidadeNome + '<br>' +
                         '🕐 ' + dataTxt + ' ' + horarioTxt + '<br>' +
@@ -510,6 +547,33 @@
             document.getElementById('painelHistorico').style.display = 'none';
         }
 
+        // NOVO: separa os trechos da rota "ida" e "volta" com base na ordem cronológica dos
+        // pontos, e aplica a animação de traço "andando" em sentidos opostos em cada uma —
+        // dá pra visualmente diferenciar o trajeto de ida do de volta mesmo quando passam
+        // pela mesma rua. A divisão usa o ponto médio (no tempo) da lista de coordenadas
+        // como corte simples entre ida/volta.
+        let camadaRotaIda = null;
+        let camadaRotaVolta = null;
+        function desenharRotaComDirecao(coords) {
+            if (camadaRotaIda) { map.removeLayer(camadaRotaIda); camadaRotaIda = null; }
+            if (camadaRotaVolta) { map.removeLayer(camadaRotaVolta); camadaRotaVolta = null; }
+            if (coords.length < 2) return;
+
+            const meio = Math.ceil(coords.length / 2);
+            const trechoIda = coords.slice(0, meio + 1);
+            const trechoVolta = coords.slice(meio);
+
+            camadaRotaIda = L.polyline(trechoIda, {
+                color: '#2dd4ff', weight: 4, dashArray: '12, 10', opacity: 0.9, className: 'rota-ida'
+            }).addTo(map);
+
+            if (trechoVolta.length > 1) {
+                camadaRotaVolta = L.polyline(trechoVolta, {
+                    color: '#00ffa6', weight: 4, dashArray: '12, 10', opacity: 0.9, className: 'rota-volta'
+                }).addTo(map);
+            }
+        }
+
         function encaixarNasRuas(coords) {
             polylineRuas.setLatLngs([]);
             if (coords.length < 2) return;
@@ -529,9 +593,14 @@
                     let pts = [];
                     const trechos = data.matchings || data.routes || [];
                     trechos.forEach(m => { if (m.geometry && m.geometry.coordinates) m.geometry.coordinates.forEach(c => pts.push([c[1], c[0]])); });
-                    if (pts.length > 0) polylineRuas.setLatLngs(pts);
+                    if (pts.length > 0) {
+                        polylineRuas.setLatLngs(pts);
+                        desenharRotaComDirecao(pts);
+                    } else {
+                        desenharRotaComDirecao(coords);
+                    }
                 })
-                .catch(() => {});
+                .catch(() => { desenharRotaComDirecao(coords); });
         }
 
         function voltarAoTempoReal() {
@@ -542,6 +611,9 @@
             marcadoresPontos.forEach(m => map.removeLayer(m));
             marcadoresPontos = [];
             polylineRuas.setLatLngs([]);
+            if (camadaRotaIda) { map.removeLayer(camadaRotaIda); camadaRotaIda = null; }
+            if (camadaRotaVolta) { map.removeLayer(camadaRotaVolta); camadaRotaVolta = null; }
+            emModoTempoReal = true;
             const veiculoSelecionado = document.getElementById('selectVeiculo').value;
             if (veiculoSelecionado) {
                 iniciarEscutaTempoReal(veiculoSelecionado);
