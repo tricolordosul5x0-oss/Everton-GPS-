@@ -239,6 +239,9 @@ db.ref(".info/connected").on("value", function(snap) {
 });
 
 var LIMITE_VELOCIDADE = 80;
+// NOVO: movida pro escopo global (antes era local dentro de processarNovaPosicao) porque
+// agora também é usada em registrarESincronizarPonto, pra marcar pontos com GPS impreciso.
+var PRECISAO_MAXIMA_ACEITAVEL_M = 60;
 var EMPRESA_ID = localStorage.getItem('empresa_id') || "tricolordosul5x0_gmail_com";
 document.getElementById('empresaIdInput').value = EMPRESA_ID;
 atualizarInfoEmpresaSalva();
@@ -597,6 +600,12 @@ function registrarESincronizarPonto(lat, lon, situacao, velKmh, precisao, agora,
         id: idPonto, lat: lat, lon: lon, velocidade: (situacao === "PARADO" ? 0 : velKmh), status: situacao,
         tempoParado: document.getElementById('txtTempoParado').textContent,
         hora: agora.toLocaleTimeString('pt-BR'), data: agora.toLocaleDateString('pt-BR'),
+        // NOVO: grava a precisão do GPS (em metros) reportada pelo aparelho no momento
+        // deste ponto, e uma flag de alerta quando ela é ruim (>60m). Sem isso, não tinha
+        // como saber depois se um endereço "errado" foi causado por um erro de GPS naquele
+        // instante ou por outra coisa — agora dá pra ver isso direto no painel.
+        precisao: precisao || null,
+        precisaoBaixa: !!(precisao && precisao > PRECISAO_MAXIMA_ACEITAVEL_M),
         rua: ruaExibida, bairro: bairroExibido, cidade: cidadeExibida, estado: estadoExibido,
         endereco: ruaExibida + (bairroExibido !== "—" ? ", " + bairroExibido : "") + (cidadeExibida !== "—" ? " - " + cidadeExibida + "/" + estadoExibido : ""),
         tipoVia: enderecoInfo.tipoVia, motivo: motivo, fonteKm: enderecoInfo.fonteKm || null
@@ -722,21 +731,31 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
 
     // ---- Regras de sincronização: só grava novo ponto de histórico quando há informação NOVA ----
     if (iniciouParadaAgora) {
-        // CORREÇÃO: em vez de reaproveitar o endereço em cache (viaState.nome), que pode
-        // estar desatualizado se o veículo parou logo após virar uma esquina, busca o
-        // endereço exato desta posição na hora. Se a consulta falhar, cai de volta pro
-        // valor em cache (mesmo comportamento de antes) em vez de deixar o ponto sem rua.
+        // CORREÇÃO: em vez de buscar o endereço imediatamente com a leitura de GPS exata do
+        // instante em que o veículo foi considerado parado (que pode estar imprecisa —
+        // GPS de celular costuma "assentar"/melhorar de precisão poucos segundos depois de
+        // parar), espera alguns segundos e usa a leitura mais recente e precisa disponível
+        // SÓ para a consulta de endereço. A posição (lat/lon) e o horário GRAVADOS no ponto
+        // continuam sendo os do instante exato da parada — não muda o que fica no histórico,
+        // só melhora a chance de acertar o nome da rua.
         (function(latP, lonP, situacaoP, velP, precisaoP, agoraP) {
-            buscarEnderecoImediato(latP, lonP).then(function(fresco) {
-                registrarESincronizarPonto(latP, lonP, situacaoP, velP, precisaoP, agoraP, {
-                    rua: (fresco && fresco.rua) || viaState.nome || null,
-                    bairro: (fresco && fresco.bairro) || document.getElementById('txtBairro').textContent,
-                    cidade: (fresco && fresco.cidade) || document.getElementById('txtCidade').textContent,
-                    estado: (fresco && fresco.estado) || document.getElementById('txtEstado').textContent,
-                    tipoVia: (fresco && fresco.tipoVia) || viaState.tipo || 'rua',
-                    km: viaState.kmSincronizado
-                }, 'inicio_parada');
-            });
+            setTimeout(function() {
+                var latConsulta = latP, lonConsulta = lonP;
+                if (ultimaLeituraCompleta && ultimaLeituraCompleta.precisao != null &&
+                    (precisaoP == null || ultimaLeituraCompleta.precisao < precisaoP)) {
+                    latConsulta = ultimaLeituraCompleta.lat; lonConsulta = ultimaLeituraCompleta.lon;
+                }
+                buscarEnderecoImediato(latConsulta, lonConsulta).then(function(fresco) {
+                    registrarESincronizarPonto(latP, lonP, situacaoP, velP, precisaoP, agoraP, {
+                        rua: (fresco && fresco.rua) || viaState.nome || null,
+                        bairro: (fresco && fresco.bairro) || document.getElementById('txtBairro').textContent,
+                        cidade: (fresco && fresco.cidade) || document.getElementById('txtCidade').textContent,
+                        estado: (fresco && fresco.estado) || document.getElementById('txtEstado').textContent,
+                        tipoVia: (fresco && fresco.tipoVia) || viaState.tipo || 'rua',
+                        km: viaState.kmSincronizado
+                    }, 'inicio_parada');
+                });
+            }, 4000);
         })(lat, lon, situacao, vel, precisao, agora);
     } else if (iniciouExcessoAgora) {
         // NOVO: registro de excesso de velocidade — fica gravado no histórico normal do
@@ -790,7 +809,6 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     // dezenas de metros (reflexo do sinal), e isso fazia às vezes registrar o endereço do
     // outro lado da via. Com um erro muito grande (>60m) é melhor esperar uma leitura
     // melhor do que travar um endereço errado.
-    var PRECISAO_MAXIMA_ACEITAVEL_M = 60;
     var precisaoAceitavel = !precisao || precisao <= PRECISAO_MAXIMA_ACEITAVEL_M;
     if (distanciaChecagem >= limiarChecagemM && precisaoAceitavel) {
         ultimoPontoChecadoEndereco = [lat, lon];
