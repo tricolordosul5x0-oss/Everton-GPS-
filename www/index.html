@@ -722,25 +722,38 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
 
     // ---- Regras de sincronização: só grava novo ponto de histórico quando há informação NOVA ----
     if (iniciouParadaAgora) {
-        registrarESincronizarPonto(lat, lon, situacao, vel, precisao, agora, {
-            rua: viaState.nome || null,
-            bairro: document.getElementById('txtBairro').textContent,
-            cidade: document.getElementById('txtCidade').textContent,
-            estado: document.getElementById('txtEstado').textContent,
-            tipoVia: viaState.tipo || 'rua',
-            km: viaState.kmSincronizado
-        }, 'inicio_parada');
+        // CORREÇÃO: em vez de reaproveitar o endereço em cache (viaState.nome), que pode
+        // estar desatualizado se o veículo parou logo após virar uma esquina, busca o
+        // endereço exato desta posição na hora. Se a consulta falhar, cai de volta pro
+        // valor em cache (mesmo comportamento de antes) em vez de deixar o ponto sem rua.
+        (function(latP, lonP, situacaoP, velP, precisaoP, agoraP) {
+            buscarEnderecoImediato(latP, lonP).then(function(fresco) {
+                registrarESincronizarPonto(latP, lonP, situacaoP, velP, precisaoP, agoraP, {
+                    rua: (fresco && fresco.rua) || viaState.nome || null,
+                    bairro: (fresco && fresco.bairro) || document.getElementById('txtBairro').textContent,
+                    cidade: (fresco && fresco.cidade) || document.getElementById('txtCidade').textContent,
+                    estado: (fresco && fresco.estado) || document.getElementById('txtEstado').textContent,
+                    tipoVia: (fresco && fresco.tipoVia) || viaState.tipo || 'rua',
+                    km: viaState.kmSincronizado
+                }, 'inicio_parada');
+            });
+        })(lat, lon, situacao, vel, precisao, agora);
     } else if (iniciouExcessoAgora) {
         // NOVO: registro de excesso de velocidade — fica gravado no histórico normal do
         // veículo, com motivo "excesso_velocidade", pra poder filtrar/consultar depois.
-        registrarESincronizarPonto(lat, lon, situacao, vel, precisao, agora, {
-            rua: viaState.nome || null,
-            bairro: document.getElementById('txtBairro').textContent,
-            cidade: document.getElementById('txtCidade').textContent,
-            estado: document.getElementById('txtEstado').textContent,
-            tipoVia: viaState.tipo || 'rua',
-            km: viaState.kmSincronizado
-        }, 'excesso_velocidade');
+        // CORREÇÃO: mesma lógica de endereço imediato aplicada acima, pelo mesmo motivo.
+        (function(latE, lonE, situacaoE, velE, precisaoE, agoraE) {
+            buscarEnderecoImediato(latE, lonE).then(function(fresco) {
+                registrarESincronizarPonto(latE, lonE, situacaoE, velE, precisaoE, agoraE, {
+                    rua: (fresco && fresco.rua) || viaState.nome || null,
+                    bairro: (fresco && fresco.bairro) || document.getElementById('txtBairro').textContent,
+                    cidade: (fresco && fresco.cidade) || document.getElementById('txtCidade').textContent,
+                    estado: (fresco && fresco.estado) || document.getElementById('txtEstado').textContent,
+                    tipoVia: (fresco && fresco.tipoVia) || viaState.tipo || 'rua',
+                    km: viaState.kmSincronizado
+                }, 'excesso_velocidade');
+            });
+        })(lat, lon, situacao, vel, precisao, agora);
     } else if (kmMudou) {
         // Antes de gravar o novo km, tenta confirmar com o marco oficial mais próximo (Overpass/OSM).
         // Isso também recalibra a base, corrigindo desvios acumulados do GPS.
@@ -1019,6 +1032,30 @@ function podarFilaGeocodificacao() {
         filaGeocodificarDepois.splice(0, filaGeocodificarDepois.length - TAMANHO_MAXIMO_FILA_ENDERECO);
     }
     if (filaGeocodificarDepois.length !== tamanhoAntes) salvarTudo();
+}
+
+// NOVO: busca o endereço de uma posição exata NA HORA, sem passar pela fila normal de
+// geocodificação (que só é acionada quando o veículo se afasta 60m do último ponto
+// verificado). É usada especificamente para os eventos de "início de parada" e "excesso de
+// velocidade" — eventos importantes que antes podiam ficar com o nome de uma rua anterior
+// (desatualizada) se o veículo parasse logo depois de virar uma esquina, antes de percorrer
+// os 60m que disparariam uma nova consulta de endereço. Resolve o "local errado" mesmo com
+// o pino (lat/lon) já estando no lugar certo no mapa.
+function buscarEnderecoImediato(lat, lon) {
+    return fetchComTimeout(`https://us1.locationiq.com/v1/reverse?key=${LOCATIONIQ_API_KEY}&lat=${lat}&lon=${lon}&format=json&zoom=18&addressdetails=1&accept-language=pt-BR`, {}, TIMEOUT_FETCH_MS)
+        .then(res => res.json())
+        .then(data => {
+            var addr = data.address || {};
+            var rua = addr.road || addr.pedestrian || null;
+            return {
+                rua: rua,
+                bairro: addr.suburb || addr.neighbourhood || null,
+                cidade: addr.city || addr.town || null,
+                estado: addr.state || null,
+                tipoVia: classificarVia(rua || "", data)
+            };
+        })
+        .catch(function() { return null; }); // falha na consulta: quem chamou usa o valor em cache como reserva
 }
 
 var geocodificando = false;
