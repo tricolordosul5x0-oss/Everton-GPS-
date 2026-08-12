@@ -70,9 +70,8 @@
 
 <div id="authModal" class="auth-overlay">
     <div class="auth-card">
-        <button class="btn-fechar-modal" id="btnFecharLogin">×</button>
         <h3>🔐 Login da Empresa</h3>
-        <p style="font-size:0.8em;color:var(--text-dim);text-align:center;margin:0 0 4px;">Use o e-mail/senha da sua empresa. É só uma vez — o aparelho fica logado.</p>
+        <p style="font-size:0.8em;color:var(--text-dim);text-align:center;margin:0 0 4px;">Faça login com o e-mail/senha da sua empresa para liberar o aplicativo. É só uma vez — o aparelho fica logado.</p>
         <div>
             <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">E-mail</label>
             <input type="email" id="authEmail" placeholder="seu-email@gmail.com" style="width: 100%; box-sizing: border-box;">
@@ -81,7 +80,7 @@
             <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">Senha</label>
             <input type="password" id="authSenha" placeholder="******" style="width: 100%; box-sizing: border-box;">
         </div>
-        <button id="btnConfirmarLogin" style="background: var(--telemetry); width: 100%;">Entrar e Executar</button>
+        <button id="btnConfirmarLogin" style="background: var(--telemetry); width: 100%;">Entrar e Liberar o App</button>
     </div>
 </div>
 
@@ -199,6 +198,12 @@ var historicoCoordenadasLocais = JSON.parse(localStorage.getItem('historico_coor
 var registroCompleto = JSON.parse(localStorage.getItem('registro_completo') || "[]");
 var ultimoIdPontoParadaGravado = localStorage.getItem('ultimo_id_ponto_parada_gravado') || null;
 
+// NOVO: flag global que reflete se a empresa está suspensa por falta de pagamento.
+// Enquanto for true, todo o pipeline de rastreio (captura de posição, fila de
+// geocodificação, envio pro Firebase) é pausado — não é só a tela que fica bloqueada
+// visualmente, o app realmente para de gerar e enviar dados até a empresa ser reativada.
+var appSuspenso = false;
+
 // ===================== CONFIGURAÇÃO =====================
 var firebaseConfig = {
     apiKey: "AIzaSyDwKIS8wL3D7OuaysVFV_xyAsFsKo2eXzY",
@@ -244,8 +249,8 @@ function atualizarInfoEmpresaSalva() {
 
 // NOVO: observa o campo "status" da empresa em tempo real. Se estiver marcado como
 // "suspenso" (uso feito pelo Everton no Firebase Console quando o cliente não paga),
-// mostra um aviso bem visível na tela — em vez do app só ficar tentando sincronizar
-// escondido e falhando sem explicação nenhuma pro motorista/usuário do aparelho.
+// mostra um aviso bem visível na tela — e, além disso, ativa a flag "appSuspenso" que
+// desliga de verdade a captura/envio de dados (ver comentário na declaração da flag).
 var refStatusEmpresa = null;
 function observarStatusEmpresa() {
     if (refStatusEmpresa) { refStatusEmpresa.off(); }
@@ -253,7 +258,9 @@ function observarStatusEmpresa() {
     refStatusEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID) + '/status');
     refStatusEmpresa.on('value', function(snap) {
         var suspenso = snap.val() === 'suspenso';
+        appSuspenso = suspenso;
         document.getElementById('avisoSuspenso').style.display = suspenso ? 'flex' : 'none';
+        atualizarInterfaceEstado();
     }, function(erro) {
         console.warn(erro); // sem permissão de ler ainda (ex: login não confirmado) — ignora
     });
@@ -452,15 +459,16 @@ function salvarTudo() {
 }
 
 // ===================== MODAL LOGIN =====================
+// CORREÇÃO/NOVO: o login agora é obrigatório para usar o app. Antes existia um botão "×"
+// que fechava o modal sem logar, deixando o app aberto (mesmo que sem sincronizar nada).
+// Esse botão foi removido do HTML — o único jeito de sair da tela de login é logando com
+// e-mail/senha válidos. Isso cobre o pedido de sempre exigir login após instalar o app.
 var acaoPendente = null;
 function abrirModalLogin(callbackAcao) {
     if (auth.currentUser) { callbackAcao(); return; }
     acaoPendente = callbackAcao;
     document.getElementById('authModal').style.display = "flex";
 }
-document.getElementById('btnFecharLogin').addEventListener('click', function() {
-    document.getElementById('authModal').style.display = "none"; acaoPendente = null;
-});
 document.getElementById('btnConfirmarLogin').addEventListener('click', function() {
     var email = document.getElementById('authEmail').value.trim();
     var senha = document.getElementById('authSenha').value;
@@ -474,11 +482,11 @@ document.getElementById('btnConfirmarLogin').addEventListener('click', function(
 auth.onAuthStateChanged(user => {
     document.getElementById('userLogadoInfo').style.display = user ? "block" : "none";
     // CORREÇÃO: com as novas regras de segurança do Firebase, o aparelho só consegue
-    // enviar dados estando logado com o e-mail/senha da empresa. Antes, o login só era
-    // pedido na hora de cadastrar/remover um veículo, e saía logo em seguida — agora ele
-    // fica logado o tempo todo (pede login uma vez só, ao abrir o app, se ainda não
-    // estiver logado).
+    // enviar dados estando logado com o e-mail/senha da empresa. O login agora fica
+    // ativo o tempo todo e é exigido logo na abertura do app, sem opção de pular.
     if (!user) {
+        appSuspenso = false;
+        document.getElementById('avisoSuspenso').style.display = 'none';
         abrirModalLogin(function() {});
     } else {
         observarStatusEmpresa();
@@ -564,6 +572,7 @@ function valorOuTraco(valor, textoAusente) {
 // Monta e envia (histórico + nó "atual") um novo ponto sincronizado.
 // motivo: 'inicio_parada' | 'km_rodovia' | 'entrada_rodovia' | 'troca_rua'
 function registrarESincronizarPonto(lat, lon, situacao, velKmh, precisao, agora, enderecoInfo, motivo) {
+    if (appSuspenso) return; // NOVO: empresa suspensa — não grava nem envia nenhum ponto novo
     var idPonto = gerarIdPonto(agora.getTime());
     if (situacao === "PARADO") { ultimoIdPontoParadaGravado = idPonto; }
 
@@ -600,6 +609,7 @@ function registrarESincronizarPonto(lat, lon, situacao, velKmh, precisao, agora,
 }
 
 function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
+    if (appSuspenso) return; // NOVO: empresa suspensa — o rastreio fica pausado até reativar
     esconderAvisoGps(); errosGpsConsecutivos = 0;
     var precisao = precisaoRaw ? Math.round(precisaoRaw) : null;
     var agora = new Date(); var agoraTs = agora.getTime();
@@ -782,6 +792,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
 }
 
 function sincronizarTempoRealImediato() {
+    if (appSuspenso) return; // NOVO: empresa suspensa — não atualiza mais a posição ao vivo
     // CORREÇÃO: antes isso não rodava se "firebaseOnlineConfirmado" ainda estivesse falso,
     // mas esse indicador pode demorar a atualizar mesmo com a conexão já disponível — e o
     // próprio Firebase enfileira a escrita sozinho quando está offline. Tirar essa trava
@@ -817,6 +828,7 @@ function sincronizarTempoRealImediato() {
 }
 
 setInterval(function() {
+    if (appSuspenso) return;
     var statusAtual = document.getElementById('badStatus').textContent;
     if (statusAtual.indexOf("PARADO") !== -1 && ultimoIdPontoParadaGravado && listaVeiculos.length > 0 && firebaseOnlineConfirmado) {
         var tempoAtualizado = document.getElementById('txtTempoParado').textContent;
@@ -1011,6 +1023,7 @@ function podarFilaGeocodificacao() {
 
 var geocodificando = false;
 function processarFilaGeocodificacao() {
+    if (appSuspenso) return; // NOVO: empresa suspensa — não continua resolvendo endereços
     podarFilaGeocodificacao();
     if (geocodificando || filaGeocodificarDepois.length === 0) return;
     geocodificando = true; atualizarInterfaceEstado();
@@ -1038,6 +1051,7 @@ var enviando = false; var falhasConsecutivasLote = 0;
 var ultimoAvisoErroEnvioTs = 0;
 var MAX_FILA_PENDENTES = 300; // CORREÇÃO: limite pra não crescer sem parar quando as escritas ficam falhando por muito tempo (ex: empresa suspensa/excluída)
 function enviarDadosFila() {
+    if (appSuspenso) return; // NOVO: empresa suspensa — não envia mais nada pro Firebase
     if (enviando || filaPendentes.length === 0) { atualizarInterfaceEstado(); return; }
     if (filaPendentes.length > MAX_FILA_PENDENTES) {
         filaPendentes.splice(0, filaPendentes.length - MAX_FILA_PENDENTES);
@@ -1063,7 +1077,7 @@ function enviarDadosFila() {
             }
         }).finally(() => {
             enviando = false; atualizarInterfaceEstado();
-            if (filaPendentes.length > 0) {
+            if (filaPendentes.length > 0 && !appSuspenso) {
                 // CORREÇÃO: espera antes de tentar de novo — cresce até 30s conforme o
                 // número de falhas seguidas, em vez de tentar instantaneamente sem parar.
                 var esperaMs = Math.min(30000, 1000 * Math.pow(2, Math.min(falhasConsecutivasLote, 5)));
@@ -1075,7 +1089,9 @@ function enviarDadosFila() {
 
 function atualizarInterfaceEstado() {
     var barra = document.getElementById('statusConexao'); var totalPendente = filaPendentes.length + filaGeocodificarDepois.length;
-    if (listaVeiculos.length === 0) {
+    if (appSuspenso) {
+        barra.className = "status-bar status-erro"; barra.innerHTML = "🚫 CONTA SUSPENSA — Sincronização pausada";
+    } else if (listaVeiculos.length === 0) {
         barra.className = "status-bar status-offline"; barra.innerHTML = "MODO OFFLINE — Adicione um Veículo";
     } else if (firebaseOnlineConfirmado && totalPendente === 0) {
         barra.className = "status-bar status-online"; barra.innerHTML = "📡 SISTEMA ONLINE — Sincronizado!";
@@ -1091,6 +1107,7 @@ window.addEventListener('online', function() { firebaseOnlineConfirmado = true; 
 window.addEventListener('offline', function() { firebaseOnlineConfirmado = false; atualizarInterfaceEstado(); });
 
 document.getElementById('btnForcar').addEventListener('click', function() {
+    if (appSuspenso) { alert("Conta suspensa por falta de pagamento. Entre em contato com o suporte."); return; }
     // CORREÇÃO: força a liberação das flags de controle antes de tentar de novo,
     // caso alguma tenha ficado travada por uma tentativa anterior sem resposta.
     geocodificando = false;
@@ -1167,6 +1184,7 @@ setInterval(function() { if (filaGeocodificarDepois.length > 0) processarFilaGeo
 // consultas de geocodificação) — garantindo que sempre tenha um ponto próximo de qualquer
 // horário pesquisado.
 setInterval(function() {
+    if (appSuspenso) return;
     if (!ultimaLeituraCompleta || listaVeiculos.length === 0) return;
     var agoraPulso = new Date();
     registrarESincronizarPonto(ultimaLeituraCompleta.lat, ultimaLeituraCompleta.lon, ultimaLeituraCompleta.status, ultimaLeituraCompleta.velocidade, null, agoraPulso, {
