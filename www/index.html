@@ -556,6 +556,15 @@ var ultimoTsPosicaoBruta = null; // usado para calcular velocidade por distânci
 var ultimoPontoChecadoEndereco = null;
 var errosGpsConsecutivos = 0;
 var ultimaLeituraCompleta = null;
+// NOVO: guarda a última velocidade considerada válida (não descartada por implausível) —
+// usada como referência pra detectar saltos de GPS e como valor de fallback quando uma
+// leitura é descartada por ruído (ver processarNovaPosicao).
+var ultimaVelocidadeValida = 0;
+// NOVO: exige leituras consecutivas acima do limite antes de GRAVAR um evento de excesso
+// de velocidade no histórico (o selo/cor na tela pode reagir na hora, mas o registro
+// permanente só é criado depois de confirmado) — evita gravar um alerta de excesso de
+// velocidade por causa de uma única leitura de GPS com erro.
+var contadorConfirmacaoExcesso = 0;
 
 function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
     var R = 6371000;
@@ -629,9 +638,10 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     // calculamos a velocidade pela distância percorrida entre os dois últimos pontos e o
     // tempo decorrido entre eles.
     var velCalculadaPorDistancia = 0;
+    var deltaSegundosBruto = null;
     if (ultimoPontoBruto && ultimoTsPosicaoBruta) {
         var distDesdeUltimoBruto = calcularDistanciaMetros(ultimoPontoBruto[0], ultimoPontoBruto[1], lat, lon);
-        var deltaSegundosBruto = (agoraTs - ultimoTsPosicaoBruta) / 1000;
+        deltaSegundosBruto = (agoraTs - ultimoTsPosicaoBruta) / 1000;
         // O piso de ruído agora usa a própria precisão informada pelo GPS (em vez de um
         // valor fixo de 3m) — assim, com um GPS bom (± poucos metros) o app reconhece
         // movimento real mesmo devagar, e só ignora deslocamento menor que a margem de
@@ -641,8 +651,43 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
             velCalculadaPorDistancia = (distDesdeUltimoBruto / deltaSegundosBruto) * 3.6;
         }
     }
-    var vel = (velRaw && velRaw > 0) ? Math.round(velRaw * 3.6) : Math.round(velCalculadaPorDistancia);
-    ultimoTsPosicaoBruta = agoraTs;
+
+    var velPorRaw = (velRaw && velRaw > 0) ? Math.round(velRaw * 3.6) : null;
+    var velPorDistancia = Math.round(velCalculadaPorDistancia);
+
+    // NOVO: filtro contra "saltos" de GPS — um erro de leitura comum perto de prédios,
+    // garagens/estacionamentos cobertos, ou logo que o sinal volta depois de uma perda.
+    // Um veículo de frota não consegue, fisicamente, saltar de parado pra 100+ km/h num
+    // único ciclo de GPS (poucos segundos) — se a leitura implica isso, é praticamente
+    // certeza de que é ruído do GPS, não movimento real. Quando isso é detectado, a
+    // leitura é descartada: mantém a última velocidade válida e NÃO avança o ponto de
+    // referência, pra que a próxima leitura boa seja comparada contra o último ponto
+    // confiável (e não contra o ponto com erro, que poderia gerar outro salto em cadeia).
+    var ACELERACAO_MAXIMA_PLAUSIVEL_MS2 = 6; // ~0 a 100 km/h em pouco mais de 4,5s — já é um carro forte acelerando
+    var MAX_VELOCIDADE_PLAUSIVEL_KMH = 180;
+    var leituraDescartadaPorGlitch = false;
+    if (deltaSegundosBruto != null && deltaSegundosBruto > 0) {
+        var aceleracaoImplicada = Math.abs(velPorDistancia - ultimaVelocidadeValida) / 3.6 / deltaSegundosBruto;
+        if (velPorDistancia > MAX_VELOCIDADE_PLAUSIVEL_KMH || aceleracaoImplicada > ACELERACAO_MAXIMA_PLAUSIVEL_MS2) {
+            leituraDescartadaPorGlitch = true;
+        }
+    }
+
+    var vel;
+    if (leituraDescartadaPorGlitch) {
+        vel = ultimaVelocidadeValida;
+    } else {
+        // Se o campo "speed" bruto do GPS (mais sujeito a ruído de sinal fraco/efeito
+        // Doppler) e o cálculo por distância percorrida discordam muito — um perto de
+        // zero e o outro alto — confiamos no valor mais conservador dos dois.
+        if (velPorRaw != null && velPorDistancia < 5 && velPorRaw > 30) {
+            vel = velPorDistancia;
+        } else {
+            vel = (velPorRaw != null) ? velPorRaw : velPorDistancia;
+        }
+        ultimoTsPosicaoBruta = agoraTs;
+        ultimaVelocidadeValida = vel;
+    }
 
     // ---- Atualização local imediata (mapa, velocidade, coordenadas) — sempre, a cada posição ----
     map.setView([lat, lon], map.getZoom() < 14 ? 16 : map.getZoom());
@@ -687,13 +732,19 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         badgeStatus.textContent = situacao;
         badgeStatus.className = (vel > LIMITE_VELOCIDADE) ? "badge badge-perigo" : "badge badge-movimento";
 
-        // NOVO: registra um evento de excesso de velocidade só no momento em que COMEÇA a
-        // ultrapassar o limite (não fica gravando um ponto a cada poucos segundos enquanto
-        // continuar acima do limite — só quando muda de "normal" pra "acima do limite").
+        // NOVO: registra um evento de excesso de velocidade só depois de pelo menos 2
+        // leituras consecutivas acima do limite (não uma leitura isolada) — o selo/cor na
+        // tela já reage na hora, mas o registro permanente no histórico só é gravado
+        // depois de confirmado, evitando um alerta de excesso "fantasma" por causa de uma
+        // única leitura de GPS ruidosa.
         if (situacao === "VELOCIDADE ACIMA DO LIMITE") {
-            if (!jaRegistrouEsteExcesso) { iniciouExcessoAgora = true; jaRegistrouEsteExcesso = true; }
+            contadorConfirmacaoExcesso++;
+            if (!jaRegistrouEsteExcesso && contadorConfirmacaoExcesso >= 2) {
+                iniciouExcessoAgora = true; jaRegistrouEsteExcesso = true;
+            }
         } else {
             jaRegistrouEsteExcesso = false;
+            contadorConfirmacaoExcesso = 0;
         }
 
         inicioParadaTs = null; jaGravouPontoInicialParada = false; ultimoIdPontoParadaGravado = null; coordenadaParadaFixa = null;
@@ -704,6 +755,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     } else {
         situacao = "PARADO"; badgeStatus.textContent = "PARADO"; badgeStatus.className = "badge badge-parado";
         jaRegistrouEsteExcesso = false;
+        contadorConfirmacaoExcesso = 0;
         if (!inicioParadaTs) { inicioParadaTs = agoraTs; localStorage.setItem('inicio_parada_ts', String(inicioParadaTs)); }
         if (!coordenadaParadaFixa) { coordenadaParadaFixa = [lat, lon]; localStorage.setItem('coordenada_parada_fixa', JSON.stringify(coordenadaParadaFixa)); }
         if (!jaGravouPontoInicialParada) { iniciouParadaAgora = true; jaGravouPontoInicialParada = true; localStorage.setItem('ja_gravou_parada', 'true'); }
@@ -717,17 +769,25 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     };
 
     // ---- Odômetro de rodovia: soma a cada posição (não depende de geocodificação) ----
+    // NOVO: pulado inteiramente quando a leitura foi descartada por glitch — soma-la ao
+    // odômetro adicionaria uma distância que provavelmente não foi percorrida de verdade.
     var kmMudou = false;
-    if (ultimoPontoBruto && viaState.tipo === 'rodovia' && !atualizandoKmRodovia) {
-        var delta = calcularDistanciaMetros(ultimoPontoBruto[0], ultimoPontoBruto[1], lat, lon);
-        if (delta > 2 && delta < 500) { viaState.odometroM += delta; } // ignora ruído de GPS e saltos absurdos
-        var kmEstimadoAtual = viaState.kmBase + Math.floor(viaState.odometroM / 1000);
-        if (viaState.kmSincronizado === null || kmEstimadoAtual !== viaState.kmSincronizado) {
-            kmMudou = true;
+    if (!leituraDescartadaPorGlitch) {
+        if (ultimoPontoBruto && viaState.tipo === 'rodovia' && !atualizandoKmRodovia) {
+            var delta = calcularDistanciaMetros(ultimoPontoBruto[0], ultimoPontoBruto[1], lat, lon);
+            if (delta > 2 && delta < 500) { viaState.odometroM += delta; } // ignora ruído de GPS e saltos absurdos
+            var kmEstimadoAtual = viaState.kmBase + Math.floor(viaState.odometroM / 1000);
+            if (viaState.kmSincronizado === null || kmEstimadoAtual !== viaState.kmSincronizado) {
+                kmMudou = true;
+            }
+            salvarViaState();
         }
-        salvarViaState();
+        // CORREÇÃO: antes esta linha rodava sempre, mesmo em leituras com salto de GPS —
+        // isso "contaminava" o ponto de referência com uma posição ruim, fazendo a PRÓXIMA
+        // leitura (mesmo que boa) ser comparada contra um ponto errado e gerar mais um
+        // salto em cadeia. Agora só avança quando a leitura atual passou no filtro.
+        ultimoPontoBruto = [lat, lon];
     }
-    ultimoPontoBruto = [lat, lon];
 
     // ---- Regras de sincronização: só grava novo ponto de histórico quando há informação NOVA ----
     if (iniciouParadaAgora) {
