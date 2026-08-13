@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cadastro - Everton GPS</title>
+    <style>
+        :root {
+            --bg-main: #0a0d12; --bg-card: #131820; --border: rgba(255,255,255,.1);
+            --signal-on: #00ffa6; --danger: #ff5470; --telemetry: #2dd4ff;
+            --text: #eef2f6; --text-dim: #74808f;
+        }
+        body {
+            margin: 0; padding: 0; font-family: system-ui, sans-serif;
+            background: var(--bg-main); color: var(--text); min-height: 100vh;
+            display: flex; align-items: center; justify-content: center; padding: 20px 16px;
+            box-sizing: border-box;
+        }
+        .card {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+            padding: 28px 24px; width: 100%; max-width: 440px; box-sizing: border-box;
+        }
+        h1 { font-size: 1.4em; text-align: center; margin: 0 0 4px; }
+        p.sub { color: var(--text-dim); font-size: .85em; text-align: center; margin: 0 0 20px; }
+        label { font-size: .75em; text-transform: uppercase; color: var(--text-dim); font-weight: bold; display: block; margin: 14px 0 6px; }
+        input {
+            width: 100%; box-sizing: border-box; background: #1a212b; border: 1px solid var(--border);
+            padding: 12px; border-radius: 8px; color: white; font-size: 1em;
+        }
+        .linha-termos { display: flex; align-items: flex-start; gap: 10px; margin-top: 18px; font-size: .8em; color: var(--text-dim); }
+        .linha-termos input { width: auto; margin-top: 3px; }
+        button {
+            background: var(--signal-on); color: #000; border: none; padding: 15px;
+            font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 1em; width: 100%; margin-top: 20px;
+        }
+        button:disabled { opacity: .5; cursor: not-allowed; }
+        .aviso {
+            background: rgba(255,84,112,.12); border: 1px solid var(--danger); color: var(--danger);
+            padding: 10px 12px; border-radius: 8px; font-size: .85em; margin-top: 14px; display: none;
+        }
+        .beneficio {
+            background: rgba(0,255,166,.08); border: 1px solid rgba(0,255,166,.3); border-radius: 10px;
+            padding: 12px 14px; font-size: .82em; color: var(--text-dim); margin-bottom: 18px; line-height: 1.6;
+        }
+        .beneficio b { color: var(--signal-on); }
+        .tela-sucesso { display: none; text-align: center; }
+        .tela-sucesso h2 { color: var(--signal-on); font-size: 1.3em; }
+        .linha-copia {
+            display: flex; gap: 8px; align-items: center; background: #1a212b; border: 1px solid var(--border);
+            border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; font-size: .9em; text-align: left;
+        }
+        .linha-copia b { color: var(--text-dim); min-width: 90px; font-size: .8em; text-transform: uppercase; }
+        .linha-copia span { flex: 1; word-break: break-all; }
+        .passos { text-align: left; font-size: .85em; color: var(--text-dim); line-height: 1.8; margin-top: 18px; }
+        .passos b { color: var(--text); }
+        .contato-suporte { margin-top: 20px; font-size: .8em; color: var(--text-dim); text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <div id="telaFormulario">
+        <h1>🚛 Everton GPS</h1>
+        <p class="sub">Crie sua conta e comece a rastrear sua frota agora mesmo.</p>
+
+        <div class="beneficio">
+            <b>7 dias grátis</b> pra testar com sua frota. Depois disso, entre em contato pra continuar usando — sem cartão de crédito necessário agora.
+        </div>
+
+        <label>Nome da empresa</label>
+        <input type="text" id="nomeEmpresa" placeholder="Ex: Transportes Silva Ltda" oninput="sugerirId()">
+
+        <label>E-mail</label>
+        <input type="email" id="emailCliente" placeholder="seu-email@gmail.com">
+
+        <label>Crie uma senha</label>
+        <input type="password" id="senhaCliente" placeholder="Mínimo 6 caracteres">
+
+        <label>WhatsApp para contato (opcional)</label>
+        <input type="tel" id="telefoneCliente" placeholder="(51) 99999-9999">
+
+        <div class="linha-termos">
+            <input type="checkbox" id="aceiteTermos">
+            <label for="aceiteTermos" style="text-transform:none;font-weight:normal;margin:0;">Li e concordo com os termos de uso e o contrato de prestação de serviço.</label>
+        </div>
+
+        <button id="btnCadastrar" onclick="criarConta()">Criar minha conta</button>
+        <div id="avisoErro" class="aviso"></div>
+
+        <div class="contato-suporte">Já tem conta? Use o e-mail e senha direto no app do motorista ou no painel.</div>
+    </div>
+
+    <div id="telaSucesso" class="tela-sucesso">
+        <h2>✅ Conta criada!</h2>
+        <p style="color:var(--text-dim);font-size:.85em;">Guarde essas informações — você vai precisar delas para configurar o app do motorista.</p>
+        <div class="linha-copia"><b>ID Empresa</b><span id="resId"></span></div>
+        <div class="linha-copia"><b>E-mail</b><span id="resEmail"></span></div>
+
+        <div class="passos">
+            <b>Próximos passos:</b><br>
+            1. Abra o app rastreador em cada veículo.<br>
+            2. No campo "Empresa deste aparelho", digite o <b>ID da empresa</b> acima e toque em Salvar.<br>
+            3. Faça login com o e-mail e a senha que você acabou de criar.<br>
+            4. Cadastre o nome de cada veículo direto no app.<br>
+            5. Para acompanhar no computador ou celular, acesse o painel administrativo e faça login com o mesmo e-mail/senha.
+        </div>
+
+        <div class="contato-suporte">Seu teste grátis vale por 7 dias. Qualquer dúvida, chama no suporte.</div>
+    </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
+
+<script>
+var firebaseConfig = {
+    apiKey: "AIzaSyDwKIS8wL3D7OuaysVFV_xyAsFsKo2eXzY",
+    authDomain: "everton-gps.firebaseapp.com",
+    databaseURL: "https://everton-gps-default-rtdb.firebaseio.com",
+    projectId: "everton-gps",
+    storageBucket: "everton-gps.firebasestorage.app",
+    messagingSenderId: "688936933095",
+    appId: "1:688936933095:web:790b2407334e8b148e3442"
+};
+firebase.initializeApp(firebaseConfig);
+var db = firebase.database();
+var auth = firebase.auth();
+
+// NOVO: quantos dias de teste grátis um cadastro público recebe automaticamente. Depois
+// desse prazo, se a empresa não tiver sido marcada como "ativo" (pagamento confirmado),
+// o rastreador e o painel travam sozinhos — ver a checagem de "trialExpiraEm" adicionada
+// em observarStatusEmpresa() nos outros dois arquivos.
+var DIAS_TESTE_GRATIS = 7;
+
+function sanitizarChavePath(valor) {
+    return String(valor).replace(/[.#$\[\]\/]/g, "_");
+}
+
+function sugerirId() {
+    var nome = document.getElementById('nomeEmpresa').value;
+    var slug = nome.toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    document.getElementById('nomeEmpresa').dataset.slug = slug;
+}
+
+function mostrarErro(msg) {
+    var el = document.getElementById('avisoErro');
+    el.textContent = "⚠️ " + msg;
+    el.style.display = 'block';
+}
+
+function criarConta() {
+    var nome = document.getElementById('nomeEmpresa').value.trim();
+    var email = document.getElementById('emailCliente').value.trim();
+    var senha = document.getElementById('senhaCliente').value;
+    var telefone = document.getElementById('telefoneCliente').value.trim();
+    var aceitou = document.getElementById('aceiteTermos').checked;
+
+    document.getElementById('avisoErro').style.display = 'none';
+
+    if (!nome || !email || !senha) return mostrarErro("Preencha nome da empresa, e-mail e senha.");
+    if (senha.length < 6) return mostrarErro("A senha precisa ter pelo menos 6 caracteres.");
+    if (!aceitou) return mostrarErro("Você precisa aceitar os termos de uso para continuar.");
+
+    var idEmpresa = sanitizarChavePath(nome.toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''));
+
+    if (!idEmpresa) return mostrarErro("Digite um nome de empresa válido.");
+
+    document.getElementById('btnCadastrar').disabled = true;
+    document.getElementById('btnCadastrar').textContent = "Criando conta...";
+
+    db.ref('empresas/' + idEmpresa).once('value').then(function(snap) {
+        if (snap.exists()) {
+            // Nome já em uso — adiciona um sufixo curto pra evitar colisão, já que aqui
+            // (diferente do onboarding manual) não tem um admin escolhendo o ID na hora.
+            idEmpresa = idEmpresa + '_' + Math.random().toString(36).slice(2, 6);
+        }
+        return auth.createUserWithEmailAndPassword(email, senha);
+    }).then(function(cred) {
+        var uid = cred.user.uid;
+        var agora = new Date();
+        var trialExpira = new Date(agora.getTime() + DIAS_TESTE_GRATIS * 86400000);
+        var updates = {};
+        updates['empresas/' + idEmpresa + '/nome'] = nome;
+        updates['empresas/' + idEmpresa + '/status'] = 'trial';
+        updates['empresas/' + idEmpresa + '/criadoEm'] = agora.toISOString();
+        updates['empresas/' + idEmpresa + '/trialExpiraEm'] = trialExpira.toISOString();
+        if (telefone) updates['empresas/' + idEmpresa + '/telefone'] = telefone;
+        updates['mapaUsuarioEmpresa/' + uid] = idEmpresa;
+        return db.ref().update(updates).then(function() { return idEmpresa; });
+    }).then(function(idFinal) {
+        document.getElementById('resId').textContent = idFinal;
+        document.getElementById('resEmail').textContent = email;
+        document.getElementById('telaFormulario').style.display = 'none';
+        document.getElementById('telaSucesso').style.display = 'block';
+    }).catch(function(e) {
+        var msg = e.message || String(e);
+        if (e.code === 'auth/email-already-in-use') msg = "Este e-mail já está cadastrado. Se já é seu cliente, use o login direto no app.";
+        if (e.code === 'auth/weak-password') msg = "Senha muito fraca — use pelo menos 6 caracteres.";
+        mostrarErro(msg);
+    }).finally(function() {
+        document.getElementById('btnCadastrar').disabled = false;
+        document.getElementById('btnCadastrar').textContent = "Criar minha conta";
+    });
+}
+</script>
+</body>
+</html>
