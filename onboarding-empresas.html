@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Onboarding de Empresas - Everton GPS</title>
+    <style>
+        :root {
+            --bg-main: #0a0d12; --bg-card: #131820; --border: rgba(255,255,255,.1);
+            --signal-on: #00ffa6; --danger: #ff5470; --telemetry: #2dd4ff;
+            --text: #eef2f6; --text-dim: #74808f;
+        }
+        body {
+            margin: 0; padding: 0; font-family: system-ui, sans-serif;
+            background: var(--bg-main); color: var(--text); min-height: 100vh;
+        }
+        .auth-overlay {
+            position: fixed; inset: 0; background: rgba(10,13,18,.97); z-index: 9999;
+            display: flex; align-items: center; justify-content: center; padding: 16px;
+        }
+        .card {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+            padding: 24px; width: 100%; max-width: 420px; box-sizing: border-box;
+        }
+        .card h2 { margin: 0 0 4px; text-align: center; }
+        .card p.sub { color: var(--text-dim); font-size: .85em; text-align: center; margin: 0 0 16px; }
+        label { font-size: .75em; text-transform: uppercase; color: var(--text-dim); font-weight: bold; display: block; margin: 12px 0 6px; }
+        input, textarea {
+            width: 100%; box-sizing: border-box; background: #1a212b; border: 1px solid var(--border);
+            padding: 12px; border-radius: 8px; color: white; font-size: 1em;
+        }
+        textarea { resize: vertical; min-height: 60px; font-family: inherit; }
+        button {
+            background: var(--telemetry); color: #000; border: none; padding: 14px;
+            font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 1em; width: 100%; margin-top: 16px;
+        }
+        button.secundario { background: #1a212b; color: var(--text); border: 1px solid var(--border); }
+        button:disabled { opacity: .5; cursor: not-allowed; }
+        .container { max-width: 700px; margin: 0 auto; padding: 20px 16px 60px; }
+        .aviso {
+            background: rgba(255,176,32,.12); border: 1px solid #ffb020; color: #ffb020;
+            padding: 10px 12px; border-radius: 8px; font-size: .85em; margin-bottom: 16px; display: none;
+        }
+        .resultado {
+            background: rgba(0,255,166,.1); border: 1px solid var(--signal-on); border-radius: 10px;
+            padding: 16px; margin-top: 20px; display: none;
+        }
+        .resultado h3 { margin: 0 0 10px; color: var(--signal-on); }
+        .linha-copia {
+            display: flex; gap: 8px; align-items: center; background: #1a212b; border: 1px solid var(--border);
+            border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; font-size: .9em;
+        }
+        .linha-copia b { color: var(--text-dim); min-width: 90px; font-size: .8em; text-transform: uppercase; }
+        .linha-copia span { flex: 1; word-break: break-all; }
+        .linha-copia button { width: auto; margin: 0; padding: 6px 10px; font-size: .8em; }
+        .lista-empresas { margin-top: 30px; }
+        .item-empresa {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+            padding: 12px 14px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;
+        }
+        .item-empresa .info b { display: block; }
+        .item-empresa .info span { color: var(--text-dim); font-size: .8em; }
+        .badge-status { font-size: .75em; padding: 3px 10px; border-radius: 12px; font-weight: bold; }
+        .badge-ativo { background: rgba(0,255,166,.15); color: var(--signal-on); }
+        .badge-suspenso { background: rgba(255,84,112,.15); color: var(--danger); }
+        .badge-teste { background: rgba(45,212,255,.15); color: var(--telemetry); }
+        .btn-toggle { width: auto; margin: 0; padding: 8px 14px; font-size: .8em; }
+        h1 { font-size: 1.3em; }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .top-bar button { width: auto; margin: 0; padding: 8px 14px; font-size: .8em; }
+    </style>
+</head>
+<body>
+
+<div id="authScreen" class="auth-overlay">
+    <div class="card">
+        <h2>🔐 Onboarding</h2>
+        <p class="sub">Acesso restrito ao administrador do sistema (Everton GPS).</p>
+        <label>E-mail</label>
+        <input type="email" id="email" placeholder="seu-email@gmail.com">
+        <label>Senha</label>
+        <input type="password" id="pass" placeholder="******">
+        <button onclick="fazerLogin()">Entrar</button>
+    </div>
+</div>
+
+<div class="container">
+    <div class="top-bar">
+        <h1>📋 Onboarding de Empresas</h1>
+        <button class="secundario btn-toggle" onclick="auth.signOut()">Sair</button>
+    </div>
+    <div id="avisoSemPermissao" class="aviso"></div>
+
+    <div class="card">
+        <h2 style="text-align:left;font-size:1em;">Nova empresa</h2>
+        <label>Nome da empresa</label>
+        <input type="text" id="nomeEmpresa" placeholder="Ex: Transportes Silva Ltda" oninput="sugerirId()">
+        <label>ID da empresa (usado no app do motorista e no painel)</label>
+        <input type="text" id="idEmpresa" placeholder="ex: transportes_silva">
+        <label>E-mail de login do cliente</label>
+        <input type="email" id="emailCliente" placeholder="cliente@gmail.com">
+        <label>Senha inicial</label>
+        <div style="display:flex;gap:8px;">
+            <input type="text" id="senhaCliente" placeholder="Mínimo 6 caracteres">
+            <button class="secundario" style="width:auto;margin:0;padding:0 14px;" onclick="gerarSenha()">Gerar</button>
+        </div>
+        <label>Veículos iniciais (opcional, um por linha)</label>
+        <textarea id="veiculosIniciais" placeholder="FIAT UNO&#10;NISSAN ISA"></textarea>
+
+        <button id="btnCriar" onclick="criarEmpresa()">Criar empresa e liberar acesso</button>
+    </div>
+
+    <div id="resultado" class="resultado">
+        <h3>✅ Empresa criada com sucesso</h3>
+        <p style="font-size:.85em;color:var(--text-dim);margin-top:-4px;">Envie estes dados para o cliente. No app do motorista (rastreador), ele deve preencher o "ID da empresa" abaixo e logar com o e-mail/senha na primeira abertura.</p>
+        <div class="linha-copia"><b>ID Empresa</b><span id="resId"></span><button onclick="copiar('resId')">Copiar</button></div>
+        <div class="linha-copia"><b>E-mail</b><span id="resEmail"></span><button onclick="copiar('resEmail')">Copiar</button></div>
+        <div class="linha-copia"><b>Senha</b><span id="resSenha"></span><button onclick="copiar('resSenha')">Copiar</button></div>
+    </div>
+
+    <div class="lista-empresas">
+        <h2 style="font-size:1em;">Empresas cadastradas</h2>
+        <div id="listaEmpresas"><p style="color:var(--text-dim);font-size:.85em;">Carregando...</p></div>
+    </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
+
+<script>
+var firebaseConfig = {
+    apiKey: "AIzaSyDwKIS8wL3D7OuaysVFV_xyAsFsKo2eXzY",
+    authDomain: "everton-gps.firebaseapp.com",
+    databaseURL: "https://everton-gps-default-rtdb.firebaseio.com",
+    projectId: "everton-gps",
+    storageBucket: "everton-gps.firebasestorage.app",
+    messagingSenderId: "688936933095",
+    appId: "1:688936933095:web:790b2407334e8b148e3442"
+};
+firebase.initializeApp(firebaseConfig);
+var db = firebase.database();
+var auth = firebase.auth();
+
+function sanitizarChavePath(valor) {
+    return String(valor).replace(/[.#$\[\]\/]/g, "_");
+}
+
+// ===================== LOGIN / PERMISSÃO =====================
+// IMPORTANTE: esta checagem de "sou super admin" acontece aqui no navegador, só pra
+// mostrar/esconder a tela. A segurança de verdade tem que estar nas REGRAS do Firebase:
+// a escrita em "empresas" e "mapaUsuarioEmpresa" só deve ser permitida se
+// root.child('superAdmins').child(auth.uid).exists() for verdadeiro. Sem isso nas regras,
+// qualquer pessoa logada (mesmo um cliente comum) poderia, tecnicamente, chamar as mesmas
+// funções e criar/alterar empresas. Ver instruções de regras sugeridas no final do arquivo.
+var souSuperAdmin = false;
+
+auth.onAuthStateChanged(function(user) {
+    if (!user) {
+        document.getElementById('authScreen').style.display = 'flex';
+        souSuperAdmin = false;
+        return;
+    }
+    db.ref('superAdmins/' + user.uid).once('value').then(function(snap) {
+        if (snap.val()) {
+            souSuperAdmin = true;
+            document.getElementById('authScreen').style.display = 'none';
+            carregarListaEmpresas();
+        } else {
+            document.getElementById('avisoSemPermissao').style.display = 'block';
+            document.getElementById('avisoSemPermissao').textContent = "⚠️ Este login não tem permissão de administrador. Cadastre o UID (" + user.uid + ") em 'superAdmins/' no Firebase para liberar.";
+            document.getElementById('authScreen').style.display = 'flex';
+        }
+    }).catch(function(e) {
+        document.getElementById('avisoSemPermissao').style.display = 'block';
+        document.getElementById('avisoSemPermissao').textContent = "⚠️ Erro ao checar permissão: " + e.message;
+    });
+});
+
+function fazerLogin() {
+    var email = document.getElementById('email').value.trim();
+    var pass = document.getElementById('pass').value;
+    if (!email || !pass) return alert("Preencha e-mail e senha!");
+    auth.signInWithEmailAndPassword(email, pass).catch(function(e) { alert("Erro ao entrar: " + e.message); });
+}
+
+// ===================== CRIAR EMPRESA =====================
+function sugerirId() {
+    var nome = document.getElementById('nomeEmpresa').value;
+    var campoId = document.getElementById('idEmpresa');
+    if (campoId.dataset.editadoManualmente === 'true') return;
+    var slug = nome.toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
+        .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    campoId.value = slug;
+}
+document.getElementById('idEmpresa').addEventListener('input', function() { this.dataset.editadoManualmente = 'true'; });
+
+function gerarSenha() {
+    var chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+    var senha = "";
+    for (var i = 0; i < 10; i++) senha += chars[Math.floor(Math.random() * chars.length)];
+    document.getElementById('senhaCliente').value = senha;
+}
+
+function copiar(idEl) {
+    var texto = document.getElementById(idEl).textContent;
+    navigator.clipboard.writeText(texto).then(function() {}).catch(function() {});
+}
+
+function criarEmpresa() {
+    if (!souSuperAdmin) return alert("Sem permissão.");
+    var nome = document.getElementById('nomeEmpresa').value.trim();
+    var idBruto = document.getElementById('idEmpresa').value.trim();
+    var email = document.getElementById('emailCliente').value.trim();
+    var senha = document.getElementById('senhaCliente').value;
+    var veiculosTxt = document.getElementById('veiculosIniciais').value.trim();
+
+    if (!nome || !idBruto || !email || !senha) return alert("Preencha nome, ID, e-mail e senha.");
+    if (senha.length < 6) return alert("A senha precisa ter pelo menos 6 caracteres (exigência do Firebase Auth).");
+    var idEmpresa = sanitizarChavePath(idBruto);
+
+    document.getElementById('btnCriar').disabled = true;
+    document.getElementById('btnCriar').textContent = "Verificando...";
+
+    db.ref('empresas/' + idEmpresa).once('value').then(function(snap) {
+        if (snap.exists()) throw new Error("Já existe uma empresa com este ID. Escolha outro.");
+
+        document.getElementById('btnCriar').textContent = "Criando login do cliente...";
+
+        // CORREÇÃO/TÉCNICA: criar um usuário novo com createUserWithEmailAndPassword faz
+        // o Firebase Auth AUTOMATICAMENTE logar como esse novo usuário na sessão atual —
+        // o que derrubaria o seu próprio login de super admin no meio do processo. Para
+        // evitar isso, criamos uma segunda instância do Firebase app (com outro nome),
+        // usamos ela só para criar o usuário, e depois a descartamos — sua sessão de
+        // admin nunca é afetada.
+        var appSecundario = firebase.initializeApp(firebaseConfig, "onboarding_" + Date.now());
+        var authSecundario = appSecundario.auth();
+
+        return authSecundario.createUserWithEmailAndPassword(email, senha).then(function(cred) {
+            var uid = cred.user.uid;
+            return authSecundario.signOut().then(function() {
+                return appSecundario.delete();
+            }).then(function() {
+                document.getElementById('btnCriar').textContent = "Salvando dados da empresa...";
+                var updates = {};
+                updates['empresas/' + idEmpresa + '/nome'] = nome;
+                updates['empresas/' + idEmpresa + '/status'] = 'ativo';
+                updates['empresas/' + idEmpresa + '/criadoEm'] = new Date().toISOString();
+                updates['mapaUsuarioEmpresa/' + uid] = idEmpresa;
+
+                if (veiculosTxt) {
+                    veiculosTxt.split('\n').map(function(v) { return v.trim().toUpperCase(); }).filter(Boolean).forEach(function(vNome) {
+                        updates['empresas/' + idEmpresa + '/veiculos/' + sanitizarChavePath(vNome)] = true;
+                    });
+                }
+                return db.ref().update(updates);
+            });
+        });
+    }).then(function() {
+        document.getElementById('resId').textContent = idEmpresa;
+        document.getElementById('resEmail').textContent = email;
+        document.getElementById('resSenha').textContent = senha;
+        document.getElementById('resultado').style.display = 'block';
+        document.getElementById('resultado').scrollIntoView({ behavior: 'smooth' });
+
+        document.getElementById('nomeEmpresa').value = "";
+        document.getElementById('idEmpresa').value = ""; document.getElementById('idEmpresa').dataset.editadoManualmente = 'false';
+        document.getElementById('emailCliente').value = "";
+        document.getElementById('senhaCliente').value = "";
+        document.getElementById('veiculosIniciais').value = "";
+
+        carregarListaEmpresas();
+    }).catch(function(e) {
+        alert("Erro ao criar empresa: " + e.message);
+    }).finally(function() {
+        document.getElementById('btnCriar').disabled = false;
+        document.getElementById('btnCriar').textContent = "Criar empresa e liberar acesso";
+    });
+}
+
+// ===================== LISTA DE EMPRESAS =====================
+function carregarListaEmpresas() {
+    db.ref('empresas').once('value').then(function(snap) {
+        var dados = snap.val() || {};
+        var container = document.getElementById('listaEmpresas');
+        var ids = Object.keys(dados);
+        if (ids.length === 0) { container.innerHTML = '<p style="color:var(--text-dim);font-size:.85em;">Nenhuma empresa cadastrada ainda.</p>'; return; }
+
+        container.innerHTML = "";
+        ids.forEach(function(id) {
+            var emp = dados[id];
+            var qtdVeiculos = emp.veiculos ? Object.keys(emp.veiculos).length : 0;
+            var suspenso = emp.status === 'suspenso';
+            // NOVO: contas criadas pelo cadastro público (autoatendimento) nascem com
+            // status "trial" e um prazo em "trialExpiraEm" — aqui calculamos se esse
+            // prazo já passou (teste vencido) pra mostrar o alerta certo e o botão de
+            // ativar depois que o pagamento for confirmado por fora do sistema (Pix, etc.).
+            var emTeste = emp.status === 'trial';
+            var testeVencido = emTeste && emp.trialExpiraEm && new Date(emp.trialExpiraEm).getTime() < Date.now();
+            var diasRestantes = (emTeste && emp.trialExpiraEm && !testeVencido)
+                ? Math.max(0, Math.ceil((new Date(emp.trialExpiraEm).getTime() - Date.now()) / 86400000))
+                : null;
+
+            var badgeClasse = 'badge-ativo', badgeTexto = 'ATIVO';
+            if (suspenso) { badgeClasse = 'badge-suspenso'; badgeTexto = 'SUSPENSO'; }
+            else if (testeVencido) { badgeClasse = 'badge-suspenso'; badgeTexto = 'TESTE VENCIDO'; }
+            else if (emTeste) { badgeClasse = 'badge-teste'; badgeTexto = 'TESTE (' + diasRestantes + (diasRestantes === 1 ? ' dia' : ' dias') + ')'; }
+
+            var botoes = '';
+            if (emTeste) {
+                // Confirmar pagamento converte definitivamente de "trial" pra "ativo" —
+                // sai do regime de teste e não depende mais do prazo.
+                botoes += '<button class="secundario btn-toggle" onclick="ativarDefinitivo(\'' + id + '\')">Confirmar pagamento</button>';
+                botoes += '<button class="secundario btn-toggle" onclick="alternarStatus(\'' + id + '\', true)">Suspender</button>';
+            } else {
+                botoes += '<button class="secundario btn-toggle" onclick="alternarStatus(\'' + id + '\', ' + (!suspenso) + ')">' + (suspenso ? 'Reativar' : 'Suspender') + '</button>';
+            }
+            if (emp.telefone) {
+                botoes += '<a class="secundario btn-toggle" style="text-decoration:none;display:inline-block;text-align:center;" target="_blank" href="https://wa.me/55' + emp.telefone.replace(/\D/g,'') + '">WhatsApp</a>';
+            }
+
+            var div = document.createElement('div');
+            div.className = 'item-empresa';
+            div.innerHTML =
+                '<div class="info"><b>' + (emp.nome || id) + '</b>' +
+                '<span>ID: ' + id + ' · ' + qtdVeiculos + ' veículo(s)' + (emp.telefone ? ' · ' + emp.telefone : '') + '</span></div>' +
+                '<span class="badge-status ' + badgeClasse + '">' + badgeTexto + '</span>' +
+                botoes;
+            container.appendChild(div);
+        });
+    });
+}
+
+function alternarStatus(idEmpresa, suspenderAgora) {
+    var novoStatus = suspenderAgora ? 'suspenso' : 'ativo';
+    if (!confirm((suspenderAgora ? 'Suspender' : 'Reativar') + ' a empresa "' + idEmpresa + '"?')) return;
+    db.ref('empresas/' + idEmpresa + '/status').set(novoStatus).then(carregarListaEmpresas).catch(function(e) { alert("Erro: " + e.message); });
+}
+
+function ativarDefinitivo(idEmpresa) {
+    if (!confirm('Confirmar pagamento e ativar "' + idEmpresa + '" definitivamente (sai do período de teste)?')) return;
+    db.ref('empresas/' + idEmpresa + '/status').set('ativo').then(carregarListaEmpresas).catch(function(e) { alert("Erro: " + e.message); });
+}
+</script>
+</body>
+</html>
