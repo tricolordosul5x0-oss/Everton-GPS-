@@ -275,9 +275,11 @@
 
         function observarStatusEmpresa() {
             if (refStatusEmpresa) { refStatusEmpresa.off(); }
-            refStatusEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ATUAL) + '/status');
+            refStatusEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ATUAL));
             refStatusEmpresa.on('value', function(snap) {
-                var suspenso = snap.val() === 'suspenso';
+                var dados = snap.val() || {};
+                var testeVencido = dados.status === 'trial' && dados.trialExpiraEm && new Date(dados.trialExpiraEm).getTime() < Date.now();
+                var suspenso = dados.status === 'suspenso' || testeVencido;
                 document.getElementById('telaSuspensa').style.display = suspenso ? 'flex' : 'none';
             });
         }
