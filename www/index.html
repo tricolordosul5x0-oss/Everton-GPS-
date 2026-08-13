@@ -100,6 +100,7 @@
 
 <div class="container">
     <div id="avisoGps" class="gps-warning"></div>
+    <div id="avisoTeste" style="display:none; background: rgba(45,212,255,.12); border: 1px solid var(--telemetry); color: var(--telemetry); padding: 10px 12px; border-radius: 6px; font-size: .85em; text-align: center; font-weight: bold;"></div>
 
     <div class="input-box">
         <label>🏢 Empresa deste aparelho</label>
@@ -250,19 +251,32 @@ function atualizarInfoEmpresaSalva() {
     document.getElementById('empresaSalvaInfo').textContent = "Enviando dados para: " + EMPRESA_ID;
 }
 
-// NOVO: observa o campo "status" da empresa em tempo real. Se estiver marcado como
-// "suspenso" (uso feito pelo Everton no Firebase Console quando o cliente não paga),
-// mostra um aviso bem visível na tela — e, além disso, ativa a flag "appSuspenso" que
-// desliga de verdade a captura/envio de dados (ver comentário na declaração da flag).
+// NOVO: observa os dados da empresa em tempo real (status + prazo de teste). Cobre dois
+// casos de bloqueio: "suspenso" (marcado manualmente por você quando o cliente não paga)
+// e teste grátis vencido (para empresas criadas pelo cadastro público, com status
+// "trial" e um prazo em "trialExpiraEm" — se esse prazo passar sem você marcar a empresa
+// como "ativo", o app trava sozinho, do mesmo jeito que uma suspensão manual).
 var refStatusEmpresa = null;
 function observarStatusEmpresa() {
     if (refStatusEmpresa) { refStatusEmpresa.off(); }
     if (!auth.currentUser) { return; } // precisa estar logado pra ler, mesmo esse campo
-    refStatusEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID) + '/status');
+    refStatusEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID));
     refStatusEmpresa.on('value', function(snap) {
-        var suspenso = snap.val() === 'suspenso';
+        var dados = snap.val() || {};
+        var testeVencido = dados.status === 'trial' && dados.trialExpiraEm && new Date(dados.trialExpiraEm).getTime() < Date.now();
+        var suspenso = dados.status === 'suspenso' || testeVencido;
         appSuspenso = suspenso;
         document.getElementById('avisoSuspenso').style.display = suspenso ? 'flex' : 'none';
+
+        var faixaTeste = document.getElementById('avisoTeste');
+        if (!suspenso && dados.status === 'trial' && dados.trialExpiraEm) {
+            var diasRestantes = Math.max(0, Math.ceil((new Date(dados.trialExpiraEm).getTime() - Date.now()) / 86400000));
+            faixaTeste.style.display = 'block';
+            faixaTeste.textContent = "🎁 Período de teste grátis — " + diasRestantes + (diasRestantes === 1 ? " dia restante" : " dias restantes");
+        } else {
+            faixaTeste.style.display = 'none';
+        }
+
         atualizarInterfaceEstado();
     }, function(erro) {
         console.warn(erro); // sem permissão de ler ainda (ex: login não confirmado) — ignora
