@@ -256,30 +256,48 @@ function atualizarInfoEmpresaSalva() {
 // e teste grátis vencido (para empresas criadas pelo cadastro público, com status
 // "trial" e um prazo em "trialExpiraEm" — se esse prazo passar sem você marcar a empresa
 // como "ativo", o app trava sozinho, do mesmo jeito que uma suspensão manual).
+// IMPORTANTE: lê "status" e "trialExpiraEm" como dois campos SEPARADOS (não o nó da
+// empresa inteiro) porque as regras de segurança do Firebase só liberam leitura campo a
+// campo, não do nó pai inteiro — ler o nó inteiro daria "permission denied".
 var refStatusEmpresa = null;
+var refTrialEmpresa = null;
+var estadoEmpresaAtual = { status: null, trialExpiraEm: null };
+
+function avaliarEstadoEmpresa() {
+    var testeVencido = estadoEmpresaAtual.status === 'trial' && estadoEmpresaAtual.trialExpiraEm && new Date(estadoEmpresaAtual.trialExpiraEm).getTime() < Date.now();
+    var suspenso = estadoEmpresaAtual.status === 'suspenso' || testeVencido;
+    appSuspenso = suspenso;
+    document.getElementById('avisoSuspenso').style.display = suspenso ? 'flex' : 'none';
+
+    var faixaTeste = document.getElementById('avisoTeste');
+    if (!suspenso && estadoEmpresaAtual.status === 'trial' && estadoEmpresaAtual.trialExpiraEm) {
+        var diasRestantes = Math.max(0, Math.ceil((new Date(estadoEmpresaAtual.trialExpiraEm).getTime() - Date.now()) / 86400000));
+        faixaTeste.style.display = 'block';
+        faixaTeste.textContent = "🎁 Período de teste grátis — " + diasRestantes + (diasRestantes === 1 ? " dia restante" : " dias restantes");
+    } else {
+        faixaTeste.style.display = 'none';
+    }
+
+    atualizarInterfaceEstado();
+}
+
 function observarStatusEmpresa() {
     if (refStatusEmpresa) { refStatusEmpresa.off(); }
+    if (refTrialEmpresa) { refTrialEmpresa.off(); }
     if (!auth.currentUser) { return; } // precisa estar logado pra ler, mesmo esse campo
-    refStatusEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID));
+    refStatusEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID) + '/status');
+    refTrialEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID) + '/trialExpiraEm');
     refStatusEmpresa.on('value', function(snap) {
-        var dados = snap.val() || {};
-        var testeVencido = dados.status === 'trial' && dados.trialExpiraEm && new Date(dados.trialExpiraEm).getTime() < Date.now();
-        var suspenso = dados.status === 'suspenso' || testeVencido;
-        appSuspenso = suspenso;
-        document.getElementById('avisoSuspenso').style.display = suspenso ? 'flex' : 'none';
-
-        var faixaTeste = document.getElementById('avisoTeste');
-        if (!suspenso && dados.status === 'trial' && dados.trialExpiraEm) {
-            var diasRestantes = Math.max(0, Math.ceil((new Date(dados.trialExpiraEm).getTime() - Date.now()) / 86400000));
-            faixaTeste.style.display = 'block';
-            faixaTeste.textContent = "🎁 Período de teste grátis — " + diasRestantes + (diasRestantes === 1 ? " dia restante" : " dias restantes");
-        } else {
-            faixaTeste.style.display = 'none';
-        }
-
-        atualizarInterfaceEstado();
+        estadoEmpresaAtual.status = snap.val();
+        avaliarEstadoEmpresa();
     }, function(erro) {
         console.warn(erro); // sem permissão de ler ainda (ex: login não confirmado) — ignora
+    });
+    refTrialEmpresa.on('value', function(snap) {
+        estadoEmpresaAtual.trialExpiraEm = snap.val();
+        avaliarEstadoEmpresa();
+    }, function(erro) {
+        console.warn(erro);
     });
 }
 
