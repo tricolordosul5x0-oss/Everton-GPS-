@@ -594,6 +594,21 @@ document.getElementById('btnConfirmarLogin').addEventListener('click', function(
 // trava sozinho — mesma lógica de "empresa suspensa", ver observarStatusEmpresa().
 var DIAS_TESTE_GRATIS = 7;
 
+// NOVO: notifica o Everton no Telegram sempre que uma empresa nova se cadastra sozinha
+// pelo app — não depende de nenhum servidor, é só uma chamada direta pra API do Telegram.
+// Se TELEGRAM_CHAT_ID ainda não estiver preenchido, a notificação é pulada silenciosamente
+// (não trava o cadastro do cliente por causa disso).
+var TELEGRAM_BOT_TOKEN = "8300711164:AAEB-bggEtUiI3gP1GOEsWSacGPzV1cLqhc";
+var TELEGRAM_CHAT_ID = "7737583011";
+
+function notificarNovoCadastroTelegram(nome, email, telefone, idEmpresa) {
+    if (!TELEGRAM_CHAT_ID) return;
+    var texto = "🆕 Novo cadastro (app) - Everton GPS\n\n🏢 " + nome + "\n📧 " + email +
+        (telefone ? "\n📱 " + telefone : "") + "\n🆔 " + idEmpresa + "\n⏳ Teste grátis: " + DIAS_TESTE_GRATIS + " dias";
+    var url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage?chat_id=" + TELEGRAM_CHAT_ID + "&text=" + encodeURIComponent(texto);
+    fetch(url).catch(function(e) { console.warn("Falha ao notificar Telegram:", e); });
+}
+
 document.getElementById('btnConfirmarCadastro').addEventListener('click', function() {
     var nome = document.getElementById('cadNomeEmpresa').value.trim();
     var email = document.getElementById('cadEmail').value.trim();
@@ -631,6 +646,7 @@ document.getElementById('btnConfirmarCadastro').addEventListener('click', functi
         updates['mapaUsuarioEmpresa/' + uid] = idEmpresa;
         return db.ref().update(updates).then(function() { return idEmpresa; });
     }).then(function(idFinal) {
+        notificarNovoCadastroTelegram(nome, email, telefone, idFinal);
         // Configura este aparelho pra usar a empresa recém-criada, igual ao fluxo manual
         // de digitar o ID e clicar em "Salvar".
         localStorage.setItem('empresa_id', idFinal);
