@@ -70,17 +70,57 @@
 
 <div id="authModal" class="auth-overlay">
     <div class="auth-card">
-        <h3>🔐 Login da Empresa</h3>
-        <p style="font-size:0.8em;color:var(--text-dim);text-align:center;margin:0 0 4px;">Faça login com o e-mail/senha da sua empresa para liberar o aplicativo. É só uma vez — o aparelho fica logado.</p>
-        <div>
-            <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">E-mail</label>
-            <input type="email" id="authEmail" placeholder="seu-email@gmail.com" style="width: 100%; box-sizing: border-box;">
+        <h3 id="authTitulo">🔐 Login da Empresa</h3>
+        <p id="authSubtitulo" style="font-size:0.8em;color:var(--text-dim);text-align:center;margin:0 0 4px;">Faça login com o e-mail/senha da sua empresa para liberar o aplicativo. É só uma vez — o aparelho fica logado.</p>
+
+        <div id="painelLogin">
+            <div>
+                <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">E-mail</label>
+                <input type="email" id="authEmail" placeholder="seu-email@gmail.com" autocomplete="off" style="width: 100%; box-sizing: border-box;">
+            </div>
+            <div>
+                <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">Senha</label>
+                <input type="password" id="authSenha" placeholder="******" autocomplete="new-password" style="width: 100%; box-sizing: border-box;">
+            </div>
+            <button id="btnConfirmarLogin" style="background: var(--telemetry); width: 100%;">Entrar e Liberar o App</button>
+            <div style="text-align:center;margin-top:14px;font-size:0.82em;">
+                <span style="color:var(--text-dim);">Ainda não tem conta?</span>
+                <a href="#" id="linkIrParaCadastro" style="color:var(--signal-on);font-weight:bold;text-decoration:none;"> Criar conta — 7 dias grátis</a>
+            </div>
         </div>
-        <div>
-            <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">Senha</label>
-            <input type="password" id="authSenha" placeholder="******" style="width: 100%; box-sizing: border-box;">
+
+        <!-- NOVO: cadastro de teste grátis direto no app — o cliente que baixa o APK sem
+             ter conta ainda consegue criar a empresa aqui mesmo, sem precisar visitar uma
+             página separada. Cria a conta com status "trial" e 7 dias de acesso, do mesmo
+             jeito que a página pública de cadastro (cadastro-empresa.html) faz. -->
+        <div id="painelCadastro" style="display:none;">
+            <div class="beneficio-trial" style="background: rgba(0,255,166,.08); border: 1px solid rgba(0,255,166,.3); border-radius: 10px; padding: 10px 12px; font-size: .8em; color: var(--text-dim); margin-bottom: 14px; line-height: 1.5;">
+                <b style="color:var(--signal-on);">7 dias grátis</b> pra testar com sua frota. Sem cartão de crédito agora.
+            </div>
+            <div>
+                <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">Nome da empresa</label>
+                <input type="text" id="cadNomeEmpresa" placeholder="Ex: Transportes Silva Ltda" autocomplete="off" style="width: 100%; box-sizing: border-box;">
+            </div>
+            <div>
+                <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">E-mail</label>
+                <input type="email" id="cadEmail" placeholder="seu-email@gmail.com" autocomplete="off" style="width: 100%; box-sizing: border-box;">
+            </div>
+            <div>
+                <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">Crie uma senha</label>
+                <input type="password" id="cadSenha" placeholder="Mínimo 6 caracteres" autocomplete="new-password" style="width: 100%; box-sizing: border-box;">
+            </div>
+            <div>
+                <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">WhatsApp (opcional)</label>
+                <input type="tel" id="cadTelefone" placeholder="(51) 99999-9999" autocomplete="off" style="width: 100%; box-sizing: border-box;">
+            </div>
+            <button id="btnConfirmarCadastro" style="background: var(--signal-on); color:#000; width: 100%;">Criar conta e começar teste grátis</button>
+            <div style="text-align:center;margin-top:14px;font-size:0.82em;">
+                <span style="color:var(--text-dim);">Já tem conta?</span>
+                <a href="#" id="linkIrParaLogin" style="color:var(--telemetry);font-weight:bold;text-decoration:none;"> Fazer login</a>
+            </div>
         </div>
-        <button id="btnConfirmarLogin" style="background: var(--telemetry); width: 100%;">Entrar e Liberar o App</button>
+
+        <div id="authErro" style="display:none;color:var(--danger);font-size:.8em;text-align:center;margin-top:10px;"></div>
     </div>
 </div>
 
@@ -239,16 +279,21 @@ db.ref(".info/connected").on("value", function(snap) {
     atualizarInterfaceEstado();
 });
 
+// CORREÇÃO: antes tinha um ID de empresa de teste ("tricolordosul5x0_gmail_com") fixo
+// como valor padrão — isso fazia todo APK novo (ainda sem nenhuma configuração feita)
+// nascer com uma empresa de teste sua já preenchida no campo, em vez de vir zerado.
 var LIMITE_VELOCIDADE = 80;
 // NOVO: movida pro escopo global (antes era local dentro de processarNovaPosicao) porque
 // agora também é usada em registrarESincronizarPonto, pra marcar pontos com GPS impreciso.
 var PRECISAO_MAXIMA_ACEITAVEL_M = 60;
-var EMPRESA_ID = localStorage.getItem('empresa_id') || "tricolordosul5x0_gmail_com";
+var EMPRESA_ID = localStorage.getItem('empresa_id') || "";
 document.getElementById('empresaIdInput').value = EMPRESA_ID;
 atualizarInfoEmpresaSalva();
 
 function atualizarInfoEmpresaSalva() {
-    document.getElementById('empresaSalvaInfo').textContent = "Enviando dados para: " + EMPRESA_ID;
+    document.getElementById('empresaSalvaInfo').textContent = EMPRESA_ID
+        ? "Enviando dados para: " + EMPRESA_ID
+        : "⚠️ Nenhuma empresa configurada — preencha o ID acima e toque em Salvar.";
 }
 
 // NOVO: observa os dados da empresa em tempo real (status + prazo de teste). Cobre dois
@@ -497,23 +542,114 @@ function salvarTudo() {
 // CORREÇÃO/NOVO: o login agora é obrigatório para usar o app. Antes existia um botão "×"
 // que fechava o modal sem logar, deixando o app aberto (mesmo que sem sincronizar nada).
 // Esse botão foi removido do HTML — o único jeito de sair da tela de login é logando com
-// e-mail/senha válidos. Isso cobre o pedido de sempre exigir login após instalar o app.
+// e-mail/senha válidos (ou criando uma conta nova). Isso cobre o pedido de sempre exigir
+// login/cadastro após instalar o app.
 var acaoPendente = null;
 function abrirModalLogin(callbackAcao) {
     if (auth.currentUser) { callbackAcao(); return; }
     acaoPendente = callbackAcao;
+    mostrarPainelLogin();
     document.getElementById('authModal').style.display = "flex";
 }
+
+// NOVO: alterna entre a aba de login e a aba de cadastro (teste grátis) dentro do mesmo
+// modal — assim quem baixa o APK sem ter conta ainda consegue criar a empresa direto no
+// app, sem precisar visitar uma página separada primeiro.
+function mostrarPainelLogin() {
+    document.getElementById('painelLogin').style.display = 'block';
+    document.getElementById('painelCadastro').style.display = 'none';
+    document.getElementById('authTitulo').textContent = '🔐 Login da Empresa';
+    document.getElementById('authSubtitulo').textContent = 'Faça login com o e-mail/senha da sua empresa para liberar o aplicativo. É só uma vez — o aparelho fica logado.';
+    document.getElementById('authErro').style.display = 'none';
+}
+function mostrarPainelCadastro() {
+    document.getElementById('painelLogin').style.display = 'none';
+    document.getElementById('painelCadastro').style.display = 'block';
+    document.getElementById('authTitulo').textContent = '🚛 Criar conta';
+    document.getElementById('authSubtitulo').textContent = 'Cadastre sua empresa e comece a rastrear sua frota agora mesmo.';
+    document.getElementById('authErro').style.display = 'none';
+}
+document.getElementById('linkIrParaCadastro').addEventListener('click', function(e) { e.preventDefault(); mostrarPainelCadastro(); });
+document.getElementById('linkIrParaLogin').addEventListener('click', function(e) { e.preventDefault(); mostrarPainelLogin(); });
+
+function mostrarErroAuth(msg) {
+    var el = document.getElementById('authErro');
+    el.textContent = "⚠️ " + msg;
+    el.style.display = 'block';
+}
+
 document.getElementById('btnConfirmarLogin').addEventListener('click', function() {
     var email = document.getElementById('authEmail').value.trim();
     var senha = document.getElementById('authSenha').value;
-    if (!email || !senha) return alert("Preencha tudo!");
+    if (!email || !senha) return mostrarErroAuth("Preencha tudo!");
     document.getElementById('btnConfirmarLogin').disabled = true;
     auth.signInWithEmailAndPassword(email, senha).then(() => {
         document.getElementById('authModal').style.display = "none";
         if (acaoPendente) { acaoPendente(); acaoPendente = null; }
-    }).catch(err => alert("Erro: " + err.message)).finally(() => { document.getElementById('btnConfirmarLogin').disabled = false; });
+    }).catch(err => mostrarErroAuth(err.message)).finally(() => { document.getElementById('btnConfirmarLogin').disabled = false; });
 });
+
+// NOVO: quantos dias de teste grátis uma conta criada direto no app recebe. Depois desse
+// prazo, se você não tiver marcado a empresa como "ativo" (pagamento confirmado), o app
+// trava sozinho — mesma lógica de "empresa suspensa", ver observarStatusEmpresa().
+var DIAS_TESTE_GRATIS = 7;
+
+document.getElementById('btnConfirmarCadastro').addEventListener('click', function() {
+    var nome = document.getElementById('cadNomeEmpresa').value.trim();
+    var email = document.getElementById('cadEmail').value.trim();
+    var senha = document.getElementById('cadSenha').value;
+    var telefone = document.getElementById('cadTelefone').value.trim();
+
+    if (!nome || !email || !senha) return mostrarErroAuth("Preencha nome da empresa, e-mail e senha.");
+    if (senha.length < 6) return mostrarErroAuth("A senha precisa ter pelo menos 6 caracteres.");
+
+    var idEmpresa = sanitizarChavePath(nome.toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''));
+    if (!idEmpresa) return mostrarErroAuth("Digite um nome de empresa válido.");
+
+    document.getElementById('btnConfirmarCadastro').disabled = true;
+    document.getElementById('btnConfirmarCadastro').textContent = "Criando conta...";
+
+    db.ref('empresas/' + idEmpresa + '/status').once('value').then(function(snap) {
+        if (snap.exists()) {
+            // Nome já em uso por outra empresa — evita colidir, já que aqui não tem um
+            // administrador escolhendo o ID manualmente como no cadastro/onboarding.
+            idEmpresa = idEmpresa + '_' + Math.random().toString(36).slice(2, 6);
+        }
+        return auth.createUserWithEmailAndPassword(email, senha);
+    }).then(function(cred) {
+        var uid = cred.user.uid;
+        var agora = new Date();
+        var trialExpira = new Date(agora.getTime() + DIAS_TESTE_GRATIS * 86400000);
+        var updates = {};
+        updates['empresas/' + idEmpresa + '/nome'] = nome;
+        updates['empresas/' + idEmpresa + '/status'] = 'trial';
+        updates['empresas/' + idEmpresa + '/criadoEm'] = agora.toISOString();
+        updates['empresas/' + idEmpresa + '/trialExpiraEm'] = trialExpira.toISOString();
+        if (telefone) updates['empresas/' + idEmpresa + '/telefone'] = telefone;
+        updates['mapaUsuarioEmpresa/' + uid] = idEmpresa;
+        return db.ref().update(updates).then(function() { return idEmpresa; });
+    }).then(function(idFinal) {
+        // Configura este aparelho pra usar a empresa recém-criada, igual ao fluxo manual
+        // de digitar o ID e clicar em "Salvar".
+        localStorage.setItem('empresa_id', idFinal);
+        EMPRESA_ID = idFinal;
+        document.getElementById('empresaIdInput').value = EMPRESA_ID;
+        atualizarInfoEmpresaSalva();
+        document.getElementById('authModal').style.display = "none";
+        if (acaoPendente) { acaoPendente(); acaoPendente = null; }
+    }).catch(function(e) {
+        var msg = e.message || String(e);
+        if (e.code === 'auth/email-already-in-use') msg = "Este e-mail já está cadastrado. Use a aba de login.";
+        if (e.code === 'auth/weak-password') msg = "Senha muito fraca — use pelo menos 6 caracteres.";
+        mostrarErroAuth(msg);
+    }).finally(function() {
+        document.getElementById('btnConfirmarCadastro').disabled = false;
+        document.getElementById('btnConfirmarCadastro').textContent = "Criar conta e começar teste grátis";
+    });
+});
+
 auth.onAuthStateChanged(user => {
     document.getElementById('userLogadoInfo').style.display = user ? "block" : "none";
     // CORREÇÃO: com as novas regras de segurança do Firebase, o aparelho só consegue
@@ -916,6 +1052,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
 
 function sincronizarTempoRealImediato() {
     if (appSuspenso) return; // NOVO: empresa suspensa — não atualiza mais a posição ao vivo
+    if (!EMPRESA_ID) return; // NOVO: nenhuma empresa configurada ainda neste aparelho
     // CORREÇÃO: antes isso não rodava se "firebaseOnlineConfirmado" ainda estivesse falso,
     // mas esse indicador pode demorar a atualizar mesmo com a conexão já disponível — e o
     // próprio Firebase enfileira a escrita sozinho quando está offline. Tirar essa trava
@@ -1199,6 +1336,7 @@ var ultimoAvisoErroEnvioTs = 0;
 var MAX_FILA_PENDENTES = 300; // CORREÇÃO: limite pra não crescer sem parar quando as escritas ficam falhando por muito tempo (ex: empresa suspensa/excluída)
 function enviarDadosFila() {
     if (appSuspenso) return; // NOVO: empresa suspensa — não envia mais nada pro Firebase
+    if (!EMPRESA_ID) return; // NOVO: nenhuma empresa configurada ainda neste aparelho
     if (enviando || filaPendentes.length === 0) { atualizarInterfaceEstado(); return; }
     if (filaPendentes.length > MAX_FILA_PENDENTES) {
         filaPendentes.splice(0, filaPendentes.length - MAX_FILA_PENDENTES);
@@ -1236,7 +1374,9 @@ function enviarDadosFila() {
 
 function atualizarInterfaceEstado() {
     var barra = document.getElementById('statusConexao'); var totalPendente = filaPendentes.length + filaGeocodificarDepois.length;
-    if (appSuspenso) {
+    if (!EMPRESA_ID) {
+        barra.className = "status-bar status-offline"; barra.innerHTML = "⚠️ Configure o ID da empresa acima pra começar";
+    } else if (appSuspenso) {
         barra.className = "status-bar status-erro"; barra.innerHTML = "🚫 CONTA SUSPENSA — Sincronização pausada";
     } else if (listaVeiculos.length === 0) {
         barra.className = "status-bar status-offline"; barra.innerHTML = "MODO OFFLINE — Adicione um Veículo";
