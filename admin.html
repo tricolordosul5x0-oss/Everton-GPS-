@@ -166,7 +166,6 @@
                 <input type="password" id="pass" placeholder="******">
             </div>
             <button onclick="fazerLogin()">Entrar no Painel</button>
-            <a href="cadastro-empresa.html" style="text-align:center; color:var(--telemetry); font-size:0.85em; text-decoration:none;">➕ Cadastrar nova empresa (teste grátis de 7 dias)</a>
         </div>
     </div>
 
@@ -274,14 +273,29 @@
             }
         });
 
+        var refTrialEmpresa = null;
+        var estadoEmpresaAtual = { status: null, trialExpiraEm: null };
+
+        function avaliarEstadoEmpresaAdmin() {
+            var testeVencido = estadoEmpresaAtual.status === 'trial' && estadoEmpresaAtual.trialExpiraEm && new Date(estadoEmpresaAtual.trialExpiraEm).getTime() < Date.now();
+            var suspenso = estadoEmpresaAtual.status === 'suspenso' || testeVencido;
+            document.getElementById('telaSuspensa').style.display = suspenso ? 'flex' : 'none';
+        }
+
+        // IMPORTANTE: lê "status" e "trialExpiraEm" como dois campos SEPARADOS, não o nó
+        // da empresa inteiro — as regras de segurança só liberam leitura campo a campo.
         function observarStatusEmpresa() {
             if (refStatusEmpresa) { refStatusEmpresa.off(); }
-            refStatusEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ATUAL));
+            if (refTrialEmpresa) { refTrialEmpresa.off(); }
+            refStatusEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ATUAL) + '/status');
+            refTrialEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ATUAL) + '/trialExpiraEm');
             refStatusEmpresa.on('value', function(snap) {
-                var dados = snap.val() || {};
-                var testeVencido = dados.status === 'trial' && dados.trialExpiraEm && new Date(dados.trialExpiraEm).getTime() < Date.now();
-                var suspenso = dados.status === 'suspenso' || testeVencido;
-                document.getElementById('telaSuspensa').style.display = suspenso ? 'flex' : 'none';
+                estadoEmpresaAtual.status = snap.val();
+                avaliarEstadoEmpresaAdmin();
+            });
+            refTrialEmpresa.on('value', function(snap) {
+                estadoEmpresaAtual.trialExpiraEm = snap.val();
+                avaliarEstadoEmpresaAdmin();
             });
         }
 
