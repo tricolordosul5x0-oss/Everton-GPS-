@@ -615,13 +615,14 @@ function notificarNovoCadastroTelegram(nome, email, telefone, idEmpresa) {
     var texto = "🆕 Novo cadastro (app) - Everton GPS\n\n🏢 " + nome + "\n📧 " + email +
         (telefone ? "\n📱 " + telefone : "") + "\n🆔 " + idEmpresa + "\n⏳ Teste grátis: " + DIAS_TESTE_GRATIS + " dias";
     var url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage?chat_id=" + TELEGRAM_CHAT_ID + "&text=" + encodeURIComponent(texto);
-    // CORREÇÃO: fetch() só rejeita em falha de REDE — se o Telegram recusar a mensagem
-    // (ex: chat_id errado), ele responde normalmente com um JSON de erro (ok:false), sem
-    // gerar nenhuma exceção. Antes isso passava batido, sem nenhum aviso. Agora checa o
-    // conteúdo da resposta também.
+    // CORREÇÃO: os erros aqui só iam pro console do navegador, que não dá pra ver
+    // facilmente num APK instalado (precisaria de depuração remota via cabo/USB). Agora
+    // qualquer falha aparece na própria faixa de aviso do app, igual os outros erros.
     fetch(url).then(function(res) { return res.json(); }).then(function(data) {
-        if (!data.ok) console.warn("Telegram recusou a notificação:", data.description);
-    }).catch(function(e) { console.warn("Falha ao notificar Telegram:", e); });
+        if (!data.ok) mostrarAvisoGps("⚠️ Telegram recusou a notificação: " + data.description);
+    }).catch(function(e) {
+        mostrarAvisoGps("⚠️ Falha ao notificar Telegram: " + (e && e.message ? e.message : e));
+    });
 }
 
 document.getElementById('btnConfirmarCadastro').addEventListener('click', function() {
@@ -670,6 +671,12 @@ document.getElementById('btnConfirmarCadastro').addEventListener('click', functi
         EMPRESA_ID = idFinal;
         document.getElementById('empresaIdInput').value = EMPRESA_ID;
         atualizarInfoEmpresaSalva();
+        // CORREÇÃO: o listener de status/teste grátis (observarStatusEmpresa) já tinha
+        // sido acionado automaticamente pelo login (via onAuthStateChanged), só que NESSE
+        // momento o EMPRESA_ID ainda estava vazio/desatualizado — então ele ficava
+        // "escutando" o caminho errado e a faixa de "7 dias grátis" nunca aparecia. Agora
+        // chama de novo aqui, já com o ID certo da empresa recém-criada.
+        observarStatusEmpresa();
         document.getElementById('authModal').style.display = "none";
         if (acaoPendente) { acaoPendente(); acaoPendente = null; }
     }).catch(function(e) {
