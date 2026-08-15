@@ -427,7 +427,13 @@ function esconderAvisoGps() { document.getElementById('avisoGps').style.display 
 // ===================== MAPA =====================
 var map = L.map('map', { zoomControl: false }).setView([-29.6133, -52.1919], 13);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-var marcador = L.marker([-29.6133, -52.1919]).addTo(map);
+var iconeVeiculo = L.divIcon({
+    className: 'icone-veiculo-carro',
+    html: '<div style="font-size:28px; color:#2dd4ff; text-align:center; line-height:1; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));">🚗</div>',
+    iconSize: [28, 28],
+    iconAnchor: [14, 14]
+});
+var marcador = L.marker([-29.6133, -52.1919], { icon: iconeVeiculo }).addTo(map);
 var circuloPrecisao = L.circle([-29.6133, -52.1919], { radius: 0, color: '#2dd4ff', fillOpacity: 0.1, weight: 1 }).addTo(map);
 // CORREÇÃO/MELHORIA: a trilha do trajeto agora é só esta linha, desenhada localmente a
 // partir dos pontos de GPS — sem depender de nenhum serviço externo. Antes existia uma
