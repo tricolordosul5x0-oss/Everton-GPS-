@@ -151,6 +151,21 @@ function mostrarErro(msg) {
     el.style.display = 'block';
 }
 
+// NOVO: notifica o Everton no Telegram sempre que uma empresa nova se cadastra sozinha
+// (autoatendimento) — não depende de nenhum servidor, é só uma chamada direta pra API do
+// Telegram. Se TELEGRAM_CHAT_ID ainda não estiver preenchido, a notificação é pulada
+// silenciosamente (não trava o cadastro do cliente por causa disso).
+var TELEGRAM_BOT_TOKEN = "8300711164:AAEB-bggEtUiI3gP1GOEsWSacGPzV1cLqhc";
+var TELEGRAM_CHAT_ID = "7737583011";
+
+function notificarNovoCadastroTelegram(nome, email, telefone, idEmpresa) {
+    if (!TELEGRAM_CHAT_ID) return;
+    var texto = "🆕 Novo cadastro (site) - Everton GPS\n\n🏢 " + nome + "\n📧 " + email +
+        (telefone ? "\n📱 " + telefone : "") + "\n🆔 " + idEmpresa + "\n⏳ Teste grátis: " + DIAS_TESTE_GRATIS + " dias";
+    var url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage?chat_id=" + TELEGRAM_CHAT_ID + "&text=" + encodeURIComponent(texto);
+    fetch(url).catch(function(e) { console.warn("Falha ao notificar Telegram:", e); });
+}
+
 function criarConta() {
     var nome = document.getElementById('nomeEmpresa').value.trim();
     var email = document.getElementById('emailCliente').value.trim();
@@ -173,26 +188,24 @@ function criarConta() {
     document.getElementById('btnCadastrar').disabled = true;
     document.getElementById('btnCadastrar').textContent = "Criando conta...";
 
-    db.ref('empresas/' + idEmpresa).once('value').then(function(snap) {
-        if (snap.exists()) {
-            // Nome já em uso — adiciona um sufixo curto pra evitar colisão, já que aqui
-            // (diferente do onboarding manual) não tem um admin escolhendo o ID na hora.
+    // CORREÇÃO: mesma correção aplicada no app — checar se o nome já existe ANTES de
+    // criar a conta exige leitura autenticada, mas nesse ponto a pessoa ainda não tem
+    // conta (é o cadastro dela!). Isso sempre dava "permission_denied". Agora cria a
+    // conta primeiro, tenta gravar, e só reage a colisão de nome se a escrita for
+    // recusada pela regra do Firebase (que já protege contra sobrescrever empresa
+    // existente).
+    var uidCriado = null;
+    auth.createUserWithEmailAndPassword(email, senha).then(function(cred) {
+        uidCriado = cred.user.uid;
+        return tentarGravarEmpresa(idEmpresa);
+    }).catch(function(erroGravacao) {
+        if (uidCriado && erroGravacao && erroGravacao.code === 'PERMISSION_DENIED') {
             idEmpresa = idEmpresa + '_' + Math.random().toString(36).slice(2, 6);
+            return tentarGravarEmpresa(idEmpresa);
         }
-        return auth.createUserWithEmailAndPassword(email, senha);
-    }).then(function(cred) {
-        var uid = cred.user.uid;
-        var agora = new Date();
-        var trialExpira = new Date(agora.getTime() + DIAS_TESTE_GRATIS * 86400000);
-        var updates = {};
-        updates['empresas/' + idEmpresa + '/nome'] = nome;
-        updates['empresas/' + idEmpresa + '/status'] = 'trial';
-        updates['empresas/' + idEmpresa + '/criadoEm'] = agora.toISOString();
-        updates['empresas/' + idEmpresa + '/trialExpiraEm'] = trialExpira.toISOString();
-        if (telefone) updates['empresas/' + idEmpresa + '/telefone'] = telefone;
-        updates['mapaUsuarioEmpresa/' + uid] = idEmpresa;
-        return db.ref().update(updates).then(function() { return idEmpresa; });
+        throw erroGravacao;
     }).then(function(idFinal) {
+        notificarNovoCadastroTelegram(nome, email, telefone, idFinal);
         document.getElementById('resId').textContent = idFinal;
         document.getElementById('resEmail').textContent = email;
         document.getElementById('telaFormulario').style.display = 'none';
@@ -201,11 +214,25 @@ function criarConta() {
         var msg = e.message || String(e);
         if (e.code === 'auth/email-already-in-use') msg = "Este e-mail já está cadastrado. Se já é seu cliente, use o login direto no app.";
         if (e.code === 'auth/weak-password') msg = "Senha muito fraca — use pelo menos 6 caracteres.";
+        if (e.code === 'PERMISSION_DENIED') msg = "Não foi possível salvar os dados da empresa. Tente novamente em instantes.";
         mostrarErro(msg);
     }).finally(function() {
         document.getElementById('btnCadastrar').disabled = false;
         document.getElementById('btnCadastrar').textContent = "Criar minha conta";
     });
+
+    function tentarGravarEmpresa(idParaTentar) {
+        var agora = new Date();
+        var trialExpira = new Date(agora.getTime() + DIAS_TESTE_GRATIS * 86400000);
+        var updates = {};
+        updates['empresas/' + idParaTentar + '/nome'] = nome;
+        updates['empresas/' + idParaTentar + '/status'] = 'trial';
+        updates['empresas/' + idParaTentar + '/criadoEm'] = agora.toISOString();
+        updates['empresas/' + idParaTentar + '/trialExpiraEm'] = trialExpira.toISOString();
+        if (telefone) updates['empresas/' + idParaTentar + '/telefone'] = telefone;
+        updates['mapaUsuarioEmpresa/' + uidCriado] = idParaTentar;
+        return db.ref().update(updates).then(function() { return idParaTentar; });
+    }
 }
 </script>
 </body>
