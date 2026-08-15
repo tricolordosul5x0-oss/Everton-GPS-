@@ -326,6 +326,15 @@ function avaliarEstadoEmpresa() {
     atualizarInterfaceEstado();
 }
 
+// NOVO: reavalia o status/contagem de dias a cada 1 minuto, independente de o Firebase ter
+// mandado alguma atualização nova. Sem isso, se o motorista deixasse o app aberto rodando
+// contínuo por vários dias sem reiniciar, a contagem de "dias restantes" ficaria parada e
+// o bloqueio automático do fim do teste só aconteceria na próxima vez que algo mudasse no
+// banco — o que podia demorar bem mais que os 7 dias combinados.
+setInterval(function() {
+    if (auth.currentUser) { avaliarEstadoEmpresa(); }
+}, 60000);
+
 function observarStatusEmpresa() {
     if (refStatusEmpresa) { refStatusEmpresa.off(); }
     if (refTrialEmpresa) { refTrialEmpresa.off(); }
@@ -599,14 +608,20 @@ var DIAS_TESTE_GRATIS = 7;
 // Se TELEGRAM_CHAT_ID ainda não estiver preenchido, a notificação é pulada silenciosamente
 // (não trava o cadastro do cliente por causa disso).
 var TELEGRAM_BOT_TOKEN = "8300711164:AAEB-bggEtUiI3gP1GOEsWSacGPzV1cLqhc";
-var TELEGRAM_CHAT_ID = "7737583011";
+var TELEGRAM_CHAT_ID = "737583011";
 
 function notificarNovoCadastroTelegram(nome, email, telefone, idEmpresa) {
     if (!TELEGRAM_CHAT_ID) return;
     var texto = "🆕 Novo cadastro (app) - Everton GPS\n\n🏢 " + nome + "\n📧 " + email +
         (telefone ? "\n📱 " + telefone : "") + "\n🆔 " + idEmpresa + "\n⏳ Teste grátis: " + DIAS_TESTE_GRATIS + " dias";
     var url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage?chat_id=" + TELEGRAM_CHAT_ID + "&text=" + encodeURIComponent(texto);
-    fetch(url).catch(function(e) { console.warn("Falha ao notificar Telegram:", e); });
+    // CORREÇÃO: fetch() só rejeita em falha de REDE — se o Telegram recusar a mensagem
+    // (ex: chat_id errado), ele responde normalmente com um JSON de erro (ok:false), sem
+    // gerar nenhuma exceção. Antes isso passava batido, sem nenhum aviso. Agora checa o
+    // conteúdo da resposta também.
+    fetch(url).then(function(res) { return res.json(); }).then(function(data) {
+        if (!data.ok) console.warn("Telegram recusou a notificação:", data.description);
+    }).catch(function(e) { console.warn("Falha ao notificar Telegram:", e); });
 }
 
 document.getElementById('btnConfirmarCadastro').addEventListener('click', function() {
