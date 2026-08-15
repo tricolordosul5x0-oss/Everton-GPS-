@@ -669,16 +669,26 @@ document.getElementById('btnConfirmarCadastro').addEventListener('click', functi
     });
 
     function tentarGravarEmpresa(idParaTentar) {
+        // CORREÇÃO: antes, os campos da empresa E o vínculo "mapaUsuarioEmpresa" eram
+        // gravados na MESMA chamada update() — o que exigia que a regra do Firebase
+        // enxergasse os dois like já aplicados juntos pra liberar a escrita. Isso
+        // dependia de um comportamento que eu não conseguia confirmar sem testar ao vivo,
+        // e na prática estava sendo recusado. Agora grava em duas etapas SEPARADAS e
+        // independentes: primeiro os dados da empresa (só precisa que ela ainda não
+        // exista), depois o vínculo do usuário (só precisa ser a primeira vez dele) — cada
+        // etapa se prova sozinha, sem depender da outra ter "acabado de acontecer".
         var agora = new Date();
         var trialExpira = new Date(agora.getTime() + DIAS_TESTE_GRATIS * 86400000);
-        var updates = {};
-        updates['empresas/' + idParaTentar + '/nome'] = nome;
-        updates['empresas/' + idParaTentar + '/status'] = 'trial';
-        updates['empresas/' + idParaTentar + '/criadoEm'] = agora.toISOString();
-        updates['empresas/' + idParaTentar + '/trialExpiraEm'] = trialExpira.toISOString();
-        if (telefone) updates['empresas/' + idParaTentar + '/telefone'] = telefone;
-        updates['mapaUsuarioEmpresa/' + uidCriado] = idParaTentar;
-        return db.ref().update(updates).then(function() { return idParaTentar; });
+        var dadosEmpresa = {};
+        dadosEmpresa['empresas/' + idParaTentar + '/nome'] = nome;
+        dadosEmpresa['empresas/' + idParaTentar + '/status'] = 'trial';
+        dadosEmpresa['empresas/' + idParaTentar + '/criadoEm'] = agora.toISOString();
+        dadosEmpresa['empresas/' + idParaTentar + '/trialExpiraEm'] = trialExpira.toISOString();
+        if (telefone) dadosEmpresa['empresas/' + idParaTentar + '/telefone'] = telefone;
+
+        return db.ref().update(dadosEmpresa).then(function() {
+            return db.ref('mapaUsuarioEmpresa/' + uidCriado).set(idParaTentar);
+        }).then(function() { return idParaTentar; });
     }
 });
 
