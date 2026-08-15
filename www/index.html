@@ -626,25 +626,27 @@ document.getElementById('btnConfirmarCadastro').addEventListener('click', functi
     document.getElementById('btnConfirmarCadastro').disabled = true;
     document.getElementById('btnConfirmarCadastro').textContent = "Criando conta...";
 
-    db.ref('empresas/' + idEmpresa + '/status').once('value').then(function(snap) {
-        if (snap.exists()) {
-            // Nome já em uso por outra empresa — evita colidir, já que aqui não tem um
-            // administrador escolhendo o ID manualmente como no cadastro/onboarding.
+    // CORREÇÃO: antes disso tinha uma checagem "esse nome de empresa já existe?" feita
+    // ANTES do login/cadastro — só que essa leitura exige estar autenticado (regra do
+    // Firebase), e nesse momento a pessoa ainda não tem conta nenhuma. Isso sempre dava
+    // "permission_denied", pra qualquer pessoa, em qualquer cadastro. Agora cria a conta
+    // primeiro (o que autentica a pessoa), e só then tenta gravar os dados da empresa —
+    // se o nome já estiver em uso, a própria regra do Firebase recusa a escrita (porque
+    // exige que o campo "status" ainda não exista), e aí sim tentamos de novo com um
+    // sufixo, sem precisar de nenhuma leitura prévia.
+    var uidCriado = null;
+    auth.createUserWithEmailAndPassword(email, senha).then(function(cred) {
+        uidCriado = cred.user.uid;
+        return tentarGravarEmpresa(idEmpresa);
+    }).catch(function(erroGravacao) {
+        // Se a escrita falhou por permissão (nome já em uso por outra empresa), tenta de
+        // novo com um sufixo aleatório — a essa altura o e-mail/senha já foram criados
+        // com sucesso, só falta achar um ID de empresa livre.
+        if (uidCriado && erroGravacao && erroGravacao.code === 'PERMISSION_DENIED') {
             idEmpresa = idEmpresa + '_' + Math.random().toString(36).slice(2, 6);
+            return tentarGravarEmpresa(idEmpresa);
         }
-        return auth.createUserWithEmailAndPassword(email, senha);
-    }).then(function(cred) {
-        var uid = cred.user.uid;
-        var agora = new Date();
-        var trialExpira = new Date(agora.getTime() + DIAS_TESTE_GRATIS * 86400000);
-        var updates = {};
-        updates['empresas/' + idEmpresa + '/nome'] = nome;
-        updates['empresas/' + idEmpresa + '/status'] = 'trial';
-        updates['empresas/' + idEmpresa + '/criadoEm'] = agora.toISOString();
-        updates['empresas/' + idEmpresa + '/trialExpiraEm'] = trialExpira.toISOString();
-        if (telefone) updates['empresas/' + idEmpresa + '/telefone'] = telefone;
-        updates['mapaUsuarioEmpresa/' + uid] = idEmpresa;
-        return db.ref().update(updates).then(function() { return idEmpresa; });
+        throw erroGravacao;
     }).then(function(idFinal) {
         notificarNovoCadastroTelegram(nome, email, telefone, idFinal);
         // Configura este aparelho pra usar a empresa recém-criada, igual ao fluxo manual
@@ -659,11 +661,25 @@ document.getElementById('btnConfirmarCadastro').addEventListener('click', functi
         var msg = e.message || String(e);
         if (e.code === 'auth/email-already-in-use') msg = "Este e-mail já está cadastrado. Use a aba de login.";
         if (e.code === 'auth/weak-password') msg = "Senha muito fraca — use pelo menos 6 caracteres.";
+        if (e.code === 'PERMISSION_DENIED') msg = "Não foi possível salvar os dados da empresa. Tente novamente em instantes.";
         mostrarErroAuth(msg);
     }).finally(function() {
         document.getElementById('btnConfirmarCadastro').disabled = false;
         document.getElementById('btnConfirmarCadastro').textContent = "Criar conta e começar teste grátis";
     });
+
+    function tentarGravarEmpresa(idParaTentar) {
+        var agora = new Date();
+        var trialExpira = new Date(agora.getTime() + DIAS_TESTE_GRATIS * 86400000);
+        var updates = {};
+        updates['empresas/' + idParaTentar + '/nome'] = nome;
+        updates['empresas/' + idParaTentar + '/status'] = 'trial';
+        updates['empresas/' + idParaTentar + '/criadoEm'] = agora.toISOString();
+        updates['empresas/' + idParaTentar + '/trialExpiraEm'] = trialExpira.toISOString();
+        if (telefone) updates['empresas/' + idParaTentar + '/telefone'] = telefone;
+        updates['mapaUsuarioEmpresa/' + uidCriado] = idParaTentar;
+        return db.ref().update(updates).then(function() { return idParaTentar; });
+    }
 });
 
 auth.onAuthStateChanged(user => {
