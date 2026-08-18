@@ -896,11 +896,11 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     // referência, pra que a próxima leitura boa seja comparada contra o último ponto
     // confiável (e não contra o ponto com erro, que poderia gerar outro salto em cadeia).
     var ACELERACAO_MAXIMA_PLAUSIVEL_MS2 = 6; // ~0 a 100 km/h em pouco mais de 4,5s — já é um carro forte acelerando
-    var MAX_VELOCIDADE_PLAUSIVEL_KMH = 180;
+    var MAX_VELOCIDADE_PLAUSIVEL_KMH = 150; // CORREÇÃO: era 180 — ver comentário abaixo sobre a brecha do filtro
     var leituraDescartadaPorGlitch = false;
     if (deltaSegundosBruto != null && deltaSegundosBruto > 0) {
         var aceleracaoImplicada = Math.abs(velPorDistancia - ultimaVelocidadeValida) / 3.6 / deltaSegundosBruto;
-        if (velPorDistancia > MAX_VELOCIDADE_PLAUSIVEL_KMH || aceleracaoImplicada > ACELERACAO_MAXIMA_PLAUSIVEL_MS2) {
+        if (velPorDistancia >= MAX_VELOCIDADE_PLAUSIVEL_KMH || aceleracaoImplicada > ACELERACAO_MAXIMA_PLAUSIVEL_MS2) {
             leituraDescartadaPorGlitch = true;
         }
     }
@@ -917,8 +917,29 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         } else {
             vel = (velPorRaw != null) ? velPorRaw : velPorDistancia;
         }
-        ultimoTsPosicaoBruta = agoraTs;
-        ultimaVelocidadeValida = vel;
+
+        // NOVO: segunda camada de proteção contra picos de velocidade. A checagem acima
+        // só validava "velPorDistancia" ANTES de decidir se o valor final viria do campo
+        // bruto do GPS (velPorRaw) ou do cálculo por distância — isso deixava uma brecha:
+        // se o campo bruto "speed" do GPS viesse com ruído (efeito Doppler, comum perto
+        // de prédios/garagens ou quando o sinal acabou de voltar) e fosse ELE o escolhido
+        // como "vel", esse valor nunca passava por nenhuma checagem de plausibilidade —
+        // foi essa brecha que permitiu picos como "180 km/h" com o veículo parado. Agora
+        // o valor FINAL (não importa a fonte) é validado de novo contra a última
+        // velocidade confiável e contra a precisão do GPS no momento: um salto de
+        // velocidade alto com GPS impreciso é tratado como ruído e descartado.
+        var precisaoRuimParaVelocidade = precisao && precisao > PRECISAO_MAXIMA_ACEITAVEL_M;
+        var deltaValidoParaVel = (deltaSegundosBruto != null && deltaSegundosBruto > 0);
+        var aceleracaoFinalImplicada = deltaValidoParaVel ? Math.abs(vel - ultimaVelocidadeValida) / 3.6 / deltaSegundosBruto : 0;
+        var saltoFinalImplausivel = deltaValidoParaVel && (vel >= MAX_VELOCIDADE_PLAUSIVEL_KMH || aceleracaoFinalImplicada > ACELERACAO_MAXIMA_PLAUSIVEL_MS2);
+
+        if (saltoFinalImplausivel || (precisaoRuimParaVelocidade && vel > 5)) {
+            leituraDescartadaPorGlitch = true;
+            vel = ultimaVelocidadeValida;
+        } else {
+            ultimoTsPosicaoBruta = agoraTs;
+            ultimaVelocidadeValida = vel;
+        }
     }
 
     // ---- Atualização local imediata (mapa, velocidade, coordenadas) — sempre, a cada posição ----
