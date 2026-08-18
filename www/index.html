@@ -174,6 +174,8 @@
         <button id="btnExportar" class="btn-export">⬇️ Exportar Rota (CSV)</button>
     </div>
     <button id="btnDiagnostico" class="btn-export" style="width:100%;">🔍 Testar Conexão com Serviço de Endereço</button>
+    <!-- NOVO: liga/desliga a rotação automática do mapa (estilo Waze) -->
+    <button id="btnBussolaRastreador" class="btn-export ativo" style="width:100%; background: var(--telemetry); color:#000;" onclick="alternarRotacaoAutomaticaMapa()">🧭 Girar com o veículo</button>
     <div id="diagnosticoResultado" class="fila-info" style="text-align:left; white-space:pre-wrap; word-break:break-word;"></div>
 
     <div class="telemetry-card">
@@ -194,6 +196,10 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" crossorigin="anonymous"></script>
+<!-- NOVO: mesmo plugin usado no painel admin — adiciona suporte a rotação de mapa ao
+     Leaflet (mapa gira, marcador continua reto na tela), pra deixar o mapa do rastreador
+     com o mesmo comportamento "estilo Waze" (topo da tela sempre na direção do veículo). -->
+<script src="https://unpkg.com/leaflet-rotate@0.2.8/dist/leaflet-rotate-src.js" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
@@ -425,7 +431,20 @@ function mostrarAvisoGps(msg) {
 function esconderAvisoGps() { document.getElementById('avisoGps').style.display = "none"; }
 
 // ===================== MAPA =====================
-var map = L.map('map', { zoomControl: false }).setView([-29.6133, -52.1919], 13);
+// CORREÇÃO/NOVO: tenta criar o mapa já com suporte a rotação (plugin leaflet-rotate,
+// mesmo usado no painel admin). Se o plugin não carregar por qualquer motivo, cai
+// automaticamente pro L.map() padrão sem rotação — o resto do app continua funcionando
+// normalmente, só sem o efeito "estilo Waze".
+var suportaRotacaoMapa = false;
+var map;
+try {
+    map = L.map('map', { zoomControl: false, rotate: true, rotateControl: false, touchRotate: true, bearing: 0 }).setView([-29.6133, -52.1919], 13);
+    suportaRotacaoMapa = (typeof map.setBearing === 'function');
+} catch (e) {
+    console.warn("Plugin de rotação indisponível, usando mapa padrão:", e);
+    map = L.map('map', { zoomControl: false }).setView([-29.6133, -52.1919], 13);
+    suportaRotacaoMapa = false;
+}
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 var marcador = L.marker([-29.6133, -52.1919]).addTo(map);
 var circuloPrecisao = L.circle([-29.6133, -52.1919], { radius: 0, color: '#2dd4ff', fillOpacity: 0.1, weight: 1 }).addTo(map);
@@ -437,6 +456,53 @@ var circuloPrecisao = L.circle([-29.6133, -52.1919], { radius: 0, color: '#2dd4f
 // rede pesada (até 100 pontos) a cada poucos segundos. Removendo isso, o app fica mais
 // leve e a trilha passa a aparecer sempre, de forma confiável.
 var polilinhaRota = L.polyline([], {color: '#00ffa6', weight: 5}).addTo(map);
+
+// ===================== ROTAÇÃO DO MAPA (ESTILO WAZE) =====================
+// NOVO: mesma lógica usada no painel admin — o mapa gira automaticamente pra manter a
+// direção do veículo sempre "pra cima" na tela, como no Waze/Google Maps navegando.
+var rotacaoAutomaticaAtiva = true;
+// Se a direção do mapa parecer invertida (ex: o veículo vira à esquerda mas o mapa gira
+// pro lado errado), troque este valor pra true — não precisa mexer em mais nada.
+var INVERTER_ROTACAO_MAPA = false;
+var ultimaPosicaoParaBearing = null; // [lat, lon] usada como referência pro cálculo do rumo
+
+function alternarRotacaoAutomaticaMapa() {
+    rotacaoAutomaticaAtiva = !rotacaoAutomaticaAtiva;
+    var btn = document.getElementById('btnBussolaRastreador');
+    if (btn) {
+        btn.classList.toggle('ativo', rotacaoAutomaticaAtiva);
+        btn.textContent = rotacaoAutomaticaAtiva ? '🧭 Girar com o veículo' : '🧭 Norte fixo';
+    }
+    if (!rotacaoAutomaticaAtiva && suportaRotacaoMapa) {
+        map.setBearing(0); // volta o mapa pro norte tradicional ao desligar
+    }
+}
+
+// Calcula o rumo (bearing), em graus, de um ponto A para um ponto B — 0° = Norte,
+// 90° = Leste, etc. Fórmula padrão de navegação (great-circle bearing).
+function calcularRumoGraus(lat1, lon1, lat2, lon2) {
+    var toRad = function(g) { return g * Math.PI / 180; };
+    var toDeg = function(r) { return r * 180 / Math.PI; };
+    var dLon = toRad(lon2 - lon1);
+    var y = Math.sin(dLon) * Math.cos(toRad(lat2));
+    var x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) - Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLon);
+    var rumo = toDeg(Math.atan2(y, x));
+    return (rumo + 360) % 360;
+}
+
+// Atualiza a rotação do mapa com base no deslocamento entre a última posição conhecida e
+// a nova — só quando o veículo está de fato se movendo (senão, parado num semáforo por
+// exemplo, qualquer tremor de GPS faria o mapa "girar sozinho" sem nenhum movimento real).
+function talvezAtualizarRotacaoMapa(lat, lon, velocidadeAtual) {
+    if (!suportaRotacaoMapa || !rotacaoAutomaticaAtiva) { ultimaPosicaoParaBearing = [lat, lon]; return; }
+    var VELOCIDADE_MINIMA_PARA_GIRAR_KMH = 5;
+    if (ultimaPosicaoParaBearing && (velocidadeAtual == null || velocidadeAtual >= VELOCIDADE_MINIMA_PARA_GIRAR_KMH)) {
+        var rumo = calcularRumoGraus(ultimaPosicaoParaBearing[0], ultimaPosicaoParaBearing[1], lat, lon);
+        if (INVERTER_ROTACAO_MAPA) rumo = (360 - rumo) % 360;
+        try { map.setBearing(rumo); } catch (e) { /* ignora falha pontual de rotação */ }
+    }
+    ultimaPosicaoParaBearing = [lat, lon];
+}
 
 // ===================== MEMÓRIA LOCAL =====================
 // (declaradas mais acima agora, antes do listener do Firebase — ver comentário lá em cima)
@@ -966,6 +1032,9 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     // ---- Atualização local imediata (mapa, velocidade, coordenadas) — sempre, a cada posição ----
     map.setView([lat, lon], map.getZoom() < 14 ? 16 : map.getZoom());
     marcador.setLatLng([lat, lon]);
+    // NOVO: gira o mapa na direção do deslocamento (estilo Waze), só quando o veículo
+    // está de fato em movimento — ver comentário na função.
+    talvezAtualizarRotacaoMapa(lat, lon, vel);
     if (precisao) { circuloPrecisao.setLatLng([lat, lon]).setRadius(precisao); }
 
     document.getElementById('txtVelocidade').textContent = vel + " km/h";
@@ -1580,20 +1649,4 @@ setInterval(function() {
     if (appSuspenso) return;
     if (!ultimaLeituraCompleta || listaVeiculos.length === 0) return;
     var agoraPulso = new Date();
-    // CORREÇÃO: antes passava "null" fixo aqui, mesmo já tendo a precisão real disponível
-    // em ultimaLeituraCompleta.precisao — por isso os pontos de "pulso" (o mais comum tipo
-    // de ponto num veículo parado por um tempo) sempre apareciam como "Precisão GPS: não
-    // informada" no painel, mesmo quando o GPS tinha uma leitura de precisão perfeitamente
-    // válida no momento.
-    registrarESincronizarPonto(ultimaLeituraCompleta.lat, ultimaLeituraCompleta.lon, ultimaLeituraCompleta.status, ultimaLeituraCompleta.velocidade, ultimaLeituraCompleta.precisao, agoraPulso, {
-        rua: viaState.nome || null,
-        bairro: document.getElementById('txtBairro').textContent,
-        cidade: document.getElementById('txtCidade').textContent,
-        estado: document.getElementById('txtEstado').textContent,
-        tipoVia: viaState.tipo || 'rua',
-        km: viaState.kmSincronizado
-    }, 'pulso');
-}, 15000);
-</script>
-</body>
-    </html>
+    // CORREÇÃO: antes passava "null" fixo aqui, mesmo já tendo a precisão real disp
