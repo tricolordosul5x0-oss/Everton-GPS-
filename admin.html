@@ -127,13 +127,21 @@
             animation: andar-tracejado 1.6s linear infinite;
         }
 
+        /* NOVO: botão de bússola (liga/desliga rotação automática do mapa estilo Waze) */
+        .btn-bussola {
+            background: #1a212b; color: var(--text); border: 1px solid var(--border);
+            padding: 10px 14px; font-weight: bold; border-radius: 6px; cursor: pointer;
+            font-size: 0.9em; height: 39px; white-space: nowrap;
+        }
+        .btn-bussola.ativo { background: var(--telemetry); color: #000; border-color: var(--telemetry); }
+
         /* NOVO: responsivo pra celular — abaixo de 768px de largura */
         @media (max-width: 768px) {
             .filter-container { padding: 10px 12px; gap: 8px; }
             .filter-row { flex-direction: column; align-items: stretch; }
             .filter-group { min-width: 0; width: 100%; }
             .filter-container input, .filter-container select { font-size: 1em; padding: 12px; }
-            .btn-pesquisar, .btn-tempo-real { width: 100%; height: 46px; font-size: 1em; }
+            .btn-pesquisar, .btn-tempo-real, .btn-bussola { width: 100%; height: 46px; font-size: 1em; }
 
             .main-content { flex-direction: column; }
             #map { flex: 1; min-height: 0; }
@@ -199,7 +207,13 @@
             </div>
             <button class="btn-pesquisar" onclick="pesquisarHistorico()">🔍 Pesquisar</button>
             <button id="btnVoltarTempoReal" class="btn-tempo-real" onclick="voltarAoTempoReal()">🔴 Tempo Real</button>
+            <!-- NOVO: liga/desliga a rotação automática do mapa (estilo Waze) durante o tempo real -->
+            <button id="btnBussola" class="btn-bussola ativo" onclick="alternarRotacaoAutomatica()">🧭 Girar com o veículo</button>
         </div>
+        <!-- NOVO: mostra quando foi a última posição realmente recebida do veículo em tempo
+             real — serve pra confirmar se o painel está mesmo ao vivo ou preso numa posição
+             antiga (ex: se o rastreador no celular do motorista parou de enviar dados). -->
+        <div id="statusTempoReal" style="font-size:0.75em; color:var(--text-dim); text-align:right;"></div>
     </div>
 
     <div class="main-content">
@@ -215,6 +229,10 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" crossorigin="anonymous"></script>
+    <!-- NOVO: plugin que adiciona suporte a rotação de mapa ao Leaflet (mapa gira, ícones
+         de marcador continuam retos na tela) — é o que permite o comportamento "estilo
+         Waze" pedido: o topo da tela sempre aponta pra direção que o veículo está indo. -->
+    <script src="https://unpkg.com/leaflet-rotate@0.2.8/dist/leaflet-rotate-src.js" crossorigin="anonymous"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js" crossorigin="anonymous"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js" crossorigin="anonymous"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
@@ -229,7 +247,20 @@
         const auth = firebase.auth();
         const LOCATIONIQ_API_KEY = "pk.191e94f621fe663163bc05ef61c98b2b";
 
-        const map = L.map('map').setView([-29.6133, -52.1919], 13);
+        // CORREÇÃO/NOVO: tenta criar o mapa já com suporte a rotação (plugin leaflet-rotate).
+        // Se o plugin não carregar por qualquer motivo (ex: CDN bloqueado na rede do
+        // usuário), cai automaticamente pro L.map() padrão sem rotação — o resto do painel
+        // continua funcionando normalmente, só sem o efeito "estilo Waze".
+        var suportaRotacaoMapa = false;
+        var map;
+        try {
+            map = L.map('map', { rotate: true, rotateControl: false, touchRotate: true, bearing: 0 }).setView([-29.6133, -52.1919], 13);
+            suportaRotacaoMapa = (typeof map.setBearing === 'function');
+        } catch (e) {
+            console.warn("Plugin de rotação indisponível, usando mapa padrão:", e);
+            map = L.map('map').setView([-29.6133, -52.1919], 13);
+            suportaRotacaoMapa = false;
+        }
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
         
         let polyline = L.polyline([], { color: 'rgba(0,255,166,0.25)', weight: 3 }).addTo(map);
@@ -237,9 +268,74 @@
         let marcadoresPontos = [];
         let markerVeiculo = L.marker([-29.6133, -52.1919]).addTo(map);
 
+        // NOVO: estado da rotação automática do mapa (estilo Waze). Liga por padrão;
+        // o botão 🧭 permite desligar caso o usuário prefira o mapa sempre com o norte
+        // pra cima (comportamento clássico).
+        var rotacaoAutomaticaAtiva = true;
+        // Se em algum momento a direção do mapa parecer invertida (ex: o veículo virando
+        // à esquerda mas o mapa girando pro lado errado), troque este valor para true —
+        // não precisa mexer em mais nada.
+        var INVERTER_ROTACAO_MAPA = false;
+        var ultimaPosicaoParaBearing = null; // [lat, lon] usada como referência pro cálculo do rumo
+
+        function alternarRotacaoAutomatica() {
+            rotacaoAutomaticaAtiva = !rotacaoAutomaticaAtiva;
+            var btn = document.getElementById('btnBussola');
+            btn.classList.toggle('ativo', rotacaoAutomaticaAtiva);
+            btn.textContent = rotacaoAutomaticaAtiva ? '🧭 Girar com o veículo' : '🧭 Norte fixo';
+            if (!rotacaoAutomaticaAtiva && suportaRotacaoMapa) {
+                map.setBearing(0); // volta o mapa pro norte tradicional ao desligar
+            }
+        }
+
+        // Calcula o rumo (bearing), em graus, de um ponto A para um ponto B — 0° = Norte,
+        // 90° = Leste, etc. Fórmula padrão de navegação (great-circle bearing).
+        function calcularRumoGraus(lat1, lon1, lat2, lon2) {
+            var toRad = function(g) { return g * Math.PI / 180; };
+            var toDeg = function(r) { return r * 180 / Math.PI; };
+            var dLon = toRad(lon2 - lon1);
+            var y = Math.sin(dLon) * Math.cos(toRad(lat2));
+            var x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) - Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLon);
+            var rumo = toDeg(Math.atan2(y, x));
+            return (rumo + 360) % 360;
+        }
+
+        // Atualiza a rotação do mapa com base no deslocamento entre a última posição
+        // conhecida e a nova — só quando o veículo está de fato se movendo (senão, parado
+        // num semáforo por exemplo, qualquer tremor de GPS faria o mapa "girar sozinho"
+        // sem nenhum movimento real, o que é desconfortável de ver).
+        function talvezAtualizarRotacaoMapa(lat, lon, velocidadeAtual) {
+            if (!suportaRotacaoMapa || !rotacaoAutomaticaAtiva) { ultimaPosicaoParaBearing = [lat, lon]; return; }
+            var VELOCIDADE_MINIMA_PARA_GIRAR_KMH = 5;
+            if (ultimaPosicaoParaBearing && (velocidadeAtual == null || velocidadeAtual >= VELOCIDADE_MINIMA_PARA_GIRAR_KMH)) {
+                var rumo = calcularRumoGraus(ultimaPosicaoParaBearing[0], ultimaPosicaoParaBearing[1], lat, lon);
+                if (INVERTER_ROTACAO_MAPA) rumo = (360 - rumo) % 360;
+                try { map.setBearing(rumo); } catch (e) { /* ignora falha pontual de rotação */ }
+            }
+            ultimaPosicaoParaBearing = [lat, lon];
+        }
+
         let listenerTempoReal = null;
         let refStatusEmpresa = null;
         let EMPRESA_ID_ATUAL = null;
+
+        // NOVO: guarda quando foi a última posição de tempo real recebida do Firebase, pra
+        // alimentar o indicador "última atualização" no topo do painel. Ajuda a distinguir
+        // "está ao vivo mas o veículo mal se moveu" de "não está recebendo dados novos".
+        var ultimaAtualizacaoTempoRealTs = null;
+        function atualizarTextoStatusTempoReal() {
+            var el = document.getElementById('statusTempoReal');
+            if (!emModoTempoReal) { el.textContent = ""; return; }
+            if (!ultimaAtualizacaoTempoRealTs) { el.textContent = "⏳ Aguardando primeira posição do veículo..."; return; }
+            var segundosAtras = Math.floor((Date.now() - ultimaAtualizacaoTempoRealTs) / 1000);
+            var horaTxt = new Date(ultimaAtualizacaoTempoRealTs).toLocaleTimeString('pt-BR');
+            if (segundosAtras > 20) {
+                el.innerHTML = '<span style="color:var(--danger);">⚠️ Sem posição nova há ' + segundosAtras + 's (última: ' + horaTxt + ') — verifique se o rastreador está ativo no celular do veículo</span>';
+            } else {
+                el.textContent = "📡 Última posição: " + horaTxt + " (há " + segundosAtras + "s)";
+            }
+        }
+        setInterval(atualizarTextoStatusTempoReal, 1000);
 
         // CORREÇÃO: antes o código verificava `btnVoltarTempoReal.style.display === 'none'`
         // pra saber se estava em modo "tempo real" ou "histórico". Só que esse botão nunca
@@ -375,6 +471,9 @@
             // rotas na mesma linha).
             let historicoTempoRealCoords = [];
             polyline.setLatLngs([]);
+            // NOVO: reinicia também a referência de rumo — trocar de veículo não deve
+            // calcular um "giro" a partir da posição do veículo anterior.
+            ultimaPosicaoParaBearing = null;
 
             db.ref(pathAtual).on('value', (snap) => {
                 const dados = snap.val();
@@ -382,8 +481,13 @@
 
                 const { lat, lon, velocidade } = dados;
                 if (lat && lon) {
+                    ultimaAtualizacaoTempoRealTs = Date.now();
+                    atualizarTextoStatusTempoReal();
                     markerVeiculo.setLatLng([lat, lon]);
                     map.setView([lat, lon], 16);
+                    // NOVO: gira o mapa na direção do deslocamento (estilo Waze), só quando
+                    // o veículo está de fato em movimento — ver comentário na função.
+                    talvezAtualizarRotacaoMapa(lat, lon, velocidade);
 
                     historicoTempoRealCoords.push([lat, lon]);
                     if (historicoTempoRealCoords.length > 500) historicoTempoRealCoords.shift();
@@ -442,6 +546,12 @@
                 listenerTempoReal = null;
             }
             emModoTempoReal = false;
+            ultimaAtualizacaoTempoRealTs = null;
+            atualizarTextoStatusTempoReal();
+            // NOVO: histórico mostra a rota inteira de uma vez (não é uma posição "ao vivo"
+            // se movendo), então não faz sentido ficar girando o mapa aqui — volta pro
+            // norte fixo enquanto o histórico estiver aberto.
+            if (suportaRotacaoMapa) { try { map.setBearing(0); } catch (e) {} }
 
             db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ATUAL) + '/veiculos/' + sanitizarChavePath(veiculo) + '/historico').once('value', (snap) => {
                 const historicoObj = snap.val();
@@ -598,6 +708,8 @@
             marcadoresPontos = [];
             polylineRuas.setLatLngs([]);
             emModoTempoReal = true;
+            ultimaAtualizacaoTempoRealTs = null;
+            atualizarTextoStatusTempoReal();
             const veiculoSelecionado = document.getElementById('selectVeiculo').value;
             if (veiculoSelecionado) {
                 iniciarEscutaTempoReal(veiculoSelecionado);
