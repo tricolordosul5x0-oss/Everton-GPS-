@@ -792,6 +792,9 @@ var ultimaLeituraCompleta = null;
 // usada como referência pra detectar saltos de GPS e como valor de fallback quando uma
 // leitura é descartada por ruído (ver processarNovaPosicao).
 var ultimaVelocidadeValida = 0;
+// NOVO: conta quantas leituras seguidas foram rejeitadas pelo filtro de velocidade —
+// usado pelo disjuntor em processarNovaPosicao pra nunca travar permanentemente em 0.
+var contadorRejeicoesConsecutivasVel = 0;
 // NOVO: exige leituras consecutivas acima do limite antes de GRAVAR um evento de excesso
 // de velocidade no histórico (o selo/cor na tela pode reagir na hora, mas o registro
 // permanente só é criado depois de confirmado) — evita gravar um alerta de excesso de
@@ -926,17 +929,35 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         // como "vel", esse valor nunca passava por nenhuma checagem de plausibilidade —
         // foi essa brecha que permitiu picos como "180 km/h" com o veículo parado. Agora
         // o valor FINAL (não importa a fonte) é validado de novo contra a última
-        // velocidade confiável e contra a precisão do GPS no momento: um salto de
-        // velocidade alto com GPS impreciso é tratado como ruído e descartado.
-        var precisaoRuimParaVelocidade = precisao && precisao > PRECISAO_MAXIMA_ACEITAVEL_M;
+        // velocidade confiável.
+        // CORREÇÃO: a versão anterior desta checagem também descartava a leitura sempre
+        // que a precisão do GPS estivesse acima de 60m — só que no uso real (dentro do
+        // veículo, perto de prédios, etc.) o celular reporta precisão pior que 60m o
+        // tempo todo, então essa trava rejeitava a velocidade verdadeira quase sempre, e
+        // como "ultimaVelocidadeValida" nunca chegava a ser atualizada, o app ficava
+        // preso mostrando "PARADO" pra sempre. Essa trava de precisão foi removida daqui
+        // (a precisão continua sendo usada normalmente pra decidir a confiabilidade do
+        // ENDEREÇO, só não é mais usada pra vetar a VELOCIDADE).
         var deltaValidoParaVel = (deltaSegundosBruto != null && deltaSegundosBruto > 0);
         var aceleracaoFinalImplicada = deltaValidoParaVel ? Math.abs(vel - ultimaVelocidadeValida) / 3.6 / deltaSegundosBruto : 0;
         var saltoFinalImplausivel = deltaValidoParaVel && (vel >= MAX_VELOCIDADE_PLAUSIVEL_KMH || aceleracaoFinalImplicada > ACELERACAO_MAXIMA_PLAUSIVEL_MS2);
 
-        if (saltoFinalImplausivel || (precisaoRuimParaVelocidade && vel > 5)) {
+        // NOVO: disjuntor contra travamento permanente. Se por qualquer motivo várias
+        // leituras seguidas forem descartadas (ex: "ultimaVelocidadeValida" ficou presa
+        // num valor ruim), a partir da 4ª rejeição consecutiva a leitura atual é aceita
+        // mesmo assim — evita que um único erro vire uma trava permanente que só se
+        // resolveria fechando e abrindo o app.
+        var LIMITE_REJEICOES_CONSECUTIVAS_VEL = 3;
+        if (saltoFinalImplausivel && contadorRejeicoesConsecutivasVel >= LIMITE_REJEICOES_CONSECUTIVAS_VEL) {
+            saltoFinalImplausivel = false;
+        }
+
+        if (saltoFinalImplausivel) {
             leituraDescartadaPorGlitch = true;
+            contadorRejeicoesConsecutivasVel++;
             vel = ultimaVelocidadeValida;
         } else {
+            contadorRejeicoesConsecutivasVel = 0;
             ultimoTsPosicaoBruta = agoraTs;
             ultimaVelocidadeValida = vel;
         }
