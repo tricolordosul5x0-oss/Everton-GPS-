@@ -1031,8 +1031,10 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
                     latConsulta = ultimaLeituraCompleta.lat; lonConsulta = ultimaLeituraCompleta.lon;
                 }
                 buscarEnderecoImediato(latConsulta, lonConsulta).then(function(fresco) {
+                    var ruaBase = (fresco && fresco.rua) || viaState.nome || null;
+                    var ruaFinal = (fresco && fresco.numero && ruaBase && fresco.tipoVia !== 'rodovia') ? (ruaBase + ", " + fresco.numero) : ruaBase;
                     registrarESincronizarPonto(latP, lonP, situacaoP, velP, precisaoP, agoraP, {
-                        rua: (fresco && fresco.rua) || viaState.nome || null,
+                        rua: ruaFinal,
                         bairro: (fresco && fresco.bairro) || document.getElementById('txtBairro').textContent,
                         cidade: (fresco && fresco.cidade) || document.getElementById('txtCidade').textContent,
                         estado: (fresco && fresco.estado) || document.getElementById('txtEstado').textContent,
@@ -1045,8 +1047,10 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     } else if (iniciouExcessoAgora) {
         (function(latE, lonE, situacaoE, velE, precisaoE, agoraE) {
             buscarEnderecoImediato(latE, lonE).then(function(fresco) {
+                var ruaBase = (fresco && fresco.rua) || viaState.nome || null;
+                var ruaFinal = (fresco && fresco.numero && ruaBase && fresco.tipoVia !== 'rodovia') ? (ruaBase + ", " + fresco.numero) : ruaBase;
                 registrarESincronizarPonto(latE, lonE, situacaoE, velE, precisaoE, agoraE, {
-                    rua: (fresco && fresco.rua) || viaState.nome || null,
+                    rua: ruaFinal,
                     bairro: (fresco && fresco.bairro) || document.getElementById('txtBairro').textContent,
                     cidade: (fresco && fresco.cidade) || document.getElementById('txtCidade').textContent,
                     estado: (fresco && fresco.estado) || document.getElementById('txtEstado').textContent,
@@ -1206,15 +1210,16 @@ function talvezBuscarTemperatura(lat, lon) {
         }).catch(e => console.warn(e)).finally(() => { buscandoTemp = false; });
 }
 
-function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResposta, velocidadeNoMomento, statusNoMomento, tsNoMomento, precisaoNoMomento) {
+function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResposta, velocidadeNoMomento, statusNoMomento, tsNoMomento, precisaoNoMomento, numero) {
     var tipoVia = classificarVia(rua, dadosResposta);
+    var ruaComNumero = (rua && numero) ? (rua + ", " + numero) : rua;
 
     if (tipoVia === "rodovia") {
         var kmExibicao = viaState.kmSincronizado !== null && viaState.tipo === 'rodovia' && viaState.nome === rua ? viaState.kmSincronizado : "—";
         document.getElementById('txtRua').textContent = rua + " (rodovia) - Km " + kmExibicao;
         document.getElementById('txtBairro').textContent = valorOuTraco(bairro, "Bairro não localizado");
     } else {
-        document.getElementById('txtRua').textContent = rua;
+        document.getElementById('txtRua').textContent = ruaComNumero;
         document.getElementById('txtBairro').textContent = valorOuTraco(bairro, "Bairro não localizado");
     }
     document.getElementById('txtCidade').textContent = cidade;
@@ -1254,7 +1259,7 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
         var agora2 = tsNoMomento ? new Date(tsNoMomento) : new Date();
         var velAtual2 = velocidadeNoMomento != null ? velocidadeNoMomento : (ultimaLeituraCompleta ? ultimaLeituraCompleta.velocidade : 0);
         var statusAtual2 = statusNoMomento || (ultimaLeituraCompleta ? ultimaLeituraCompleta.status : "PARADO");
-        registrarESincronizarPonto(lat, lon, statusAtual2, velAtual2, precisaoNoMomento != null ? precisaoNoMomento : null, agora2, { rua: rua, bairro: bairro, cidade: cidade, estado: estado, tipoVia: "rua" }, "troca_rua");
+        registrarESincronizarPonto(lat, lon, statusAtual2, velAtual2, precisaoNoMomento != null ? precisaoNoMomento : null, agora2, { rua: ruaComNumero, bairro: bairro, cidade: cidade, estado: estado, tipoVia: "rua" }, "troca_rua");
     } else {
         salvarTudo();
         sincronizarTempoRealImediato();
@@ -1276,6 +1281,13 @@ function podarFilaGeocodificacao() {
     if (filaGeocodificarDepois.length !== tamanhoAntes) salvarTudo();
 }
 
+function bairroDoEndereco(addr) {
+    return addr.suburb || addr.neighbourhood || addr.residential || addr.quarter || addr.city_district || null;
+}
+function cidadeDoEndereco(addr) {
+    return addr.city || addr.town || addr.village || addr.municipality || addr.county || null;
+}
+
 function buscarEnderecoImediato(lat, lon) {
     return fetchComTimeout(`${URL_PROXY_GEOCODIFICACAO}?lat=${lat}&lon=${lon}&zoom=18`, {}, TIMEOUT_FETCH_MS)
         .then(res => res.json())
@@ -1284,8 +1296,9 @@ function buscarEnderecoImediato(lat, lon) {
             var rua = addr.road || addr.pedestrian || null;
             return {
                 rua: rua,
-                bairro: addr.suburb || addr.neighbourhood || null,
-                cidade: addr.city || addr.town || null,
+                numero: addr.house_number || null,
+                bairro: bairroDoEndereco(addr),
+                cidade: cidadeDoEndereco(addr),
                 estado: addr.state || null,
                 tipoVia: classificarVia(rua || "", data)
             };
@@ -1305,10 +1318,11 @@ function processarFilaGeocodificacao() {
         .then(res => res.json()).then(data => {
             var addr = data.address || {};
             var rua = addr.road || addr.pedestrian || "Rua não localizada";
-            var bairro = addr.suburb || addr.neighbourhood || "Bairro não localizado";
-            var cidade = addr.city || addr.town || "Cidade não localizada";
+            var numero = addr.house_number || null;
+            var bairro = bairroDoEndereco(addr) || "Bairro não localizado";
+            var cidade = cidadeDoEndereco(addr) || "Cidade não localizada";
             var estado = addr.state || "Estado não localizado";
-            aplicarEnderecoNoPonto(ponto.lat, ponto.lon, rua, bairro, cidade, estado, data, ponto.velocidadeNoMomento, ponto.statusNoMomento, ponto.ts, ponto.precisaoNoMomento);
+            aplicarEnderecoNoPonto(ponto.lat, ponto.lon, rua, bairro, cidade, estado, data, ponto.velocidadeNoMomento, ponto.statusNoMomento, ponto.ts, ponto.precisaoNoMomento, numero);
             filaGeocodificarDepois.pop();
         }).catch(err => {
             ponto.tentativas = (ponto.tentativas || 0) + 1;
