@@ -900,43 +900,43 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
 
     var ACELERACAO_MAXIMA_PLAUSIVEL_MS2 = 6;
     var MAX_VELOCIDADE_PLAUSIVEL_KMH = 150;
-    var leituraDescartadaPorGlitch = false;
-    if (deltaSegundosBruto != null && deltaSegundosBruto > 0) {
-        var aceleracaoImplicada = Math.abs(velPorDistancia - ultimaVelocidadeValida) / 3.6 / deltaSegundosBruto;
-        if (velPorDistancia >= MAX_VELOCIDADE_PLAUSIVEL_KMH || aceleracaoImplicada > ACELERACAO_MAXIMA_PLAUSIVEL_MS2) {
-            leituraDescartadaPorGlitch = true;
-        }
+    var LIMITE_REJEICOES_CONSECUTIVAS_VEL = 3;
+
+    // CORREÇÃO: antes existiam DUAS checagens de "salto implausível" em sequência — a
+    // primeira (com base em velPorDistancia) não tinha o disjuntor de segurança
+    // (LIMITE_REJEICOES_CONSECUTIVAS_VEL) nem avançava ultimoTsPosicaoBruta/ultimoPontoBruto
+    // quando rejeitava. Resultado: depois de ficar parado por um tempo e o veículo voltar a
+    // se mover, a primeira leitura "de verdade" podia cair nessa primeira checagem, ficar
+    // travada ali (sem nunca contar pro disjuntor da segunda checagem, que nunca chegava a
+    // rodar), e como a referência de posição/tempo ficava congelada no momento da parada, o
+    // app podia continuar preso em "PARADO" por muito tempo mesmo com o veículo andando e
+    // voltando. Agora existe UMA única checagem, com o disjuntor sempre ativo.
+    var vel = (velPorRaw != null && velPorDistancia < 5 && velPorRaw > 30)
+        ? velPorDistancia
+        : ((velPorRaw != null) ? velPorRaw : velPorDistancia);
+
+    var deltaValidoParaVel = (deltaSegundosBruto != null && deltaSegundosBruto > 0);
+    var aceleracaoImplicada = deltaValidoParaVel ? Math.abs(vel - ultimaVelocidadeValida) / 3.6 / deltaSegundosBruto : 0;
+    var saltoImplausivel = deltaValidoParaVel && (vel >= MAX_VELOCIDADE_PLAUSIVEL_KMH || aceleracaoImplicada > ACELERACAO_MAXIMA_PLAUSIVEL_MS2);
+    if (saltoImplausivel && contadorRejeicoesConsecutivasVel >= LIMITE_REJEICOES_CONSECUTIVAS_VEL) {
+        saltoImplausivel = false; // disjuntor: nunca trava rejeitando pra sempre
     }
 
-    var vel;
-    if (leituraDescartadaPorGlitch) {
+    var leituraDescartadaPorGlitch = saltoImplausivel;
+    if (saltoImplausivel) {
+        contadorRejeicoesConsecutivasVel++;
         vel = ultimaVelocidadeValida;
     } else {
-        if (velPorRaw != null && velPorDistancia < 5 && velPorRaw > 30) {
-            vel = velPorDistancia;
-        } else {
-            vel = (velPorRaw != null) ? velPorRaw : velPorDistancia;
-        }
-
-        var deltaValidoParaVel = (deltaSegundosBruto != null && deltaSegundosBruto > 0);
-        var aceleracaoFinalImplicada = deltaValidoParaVel ? Math.abs(vel - ultimaVelocidadeValida) / 3.6 / deltaSegundosBruto : 0;
-        var saltoFinalImplausivel = deltaValidoParaVel && (vel >= MAX_VELOCIDADE_PLAUSIVEL_KMH || aceleracaoFinalImplicada > ACELERACAO_MAXIMA_PLAUSIVEL_MS2);
-
-        var LIMITE_REJEICOES_CONSECUTIVAS_VEL = 3;
-        if (saltoFinalImplausivel && contadorRejeicoesConsecutivasVel >= LIMITE_REJEICOES_CONSECUTIVAS_VEL) {
-            saltoFinalImplausivel = false;
-        }
-
-        if (saltoFinalImplausivel) {
-            leituraDescartadaPorGlitch = true;
-            contadorRejeicoesConsecutivasVel++;
-            vel = ultimaVelocidadeValida;
-        } else {
-            contadorRejeicoesConsecutivasVel = 0;
-            ultimoTsPosicaoBruta = agoraTs;
-            ultimaVelocidadeValida = vel;
-        }
+        contadorRejeicoesConsecutivasVel = 0;
+        ultimaVelocidadeValida = vel;
     }
+    // CORREÇÃO: a referência de posição/tempo agora avança SEMPRE, mesmo quando a leitura é
+    // tratada como glitch pra fins de velocidade exibida — só assim a próxima leitura é
+    // comparada contra uma referência recente (não contra uma posição de minutos atrás, que
+    // faria a distância/velocidade calculada parecer cada vez mais absurda e prolongar a
+    // rejeição). O odômetro de rodovia continua protegido separadamente (só soma distância
+    // quando a leitura não foi descartada), mais abaixo.
+    ultimoTsPosicaoBruta = agoraTs;
 
     map.setView([lat, lon], map.getZoom() < 14 ? 16 : map.getZoom());
     marcador.setLatLng([lat, lon]);
@@ -1008,18 +1008,21 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     };
 
     var kmMudou = false;
-    if (!leituraDescartadaPorGlitch) {
-        if (ultimoPontoBruto && viaState.tipo === 'rodovia' && !atualizandoKmRodovia) {
-            var delta = calcularDistanciaMetros(ultimoPontoBruto[0], ultimoPontoBruto[1], lat, lon);
-            if (delta > 2 && delta < 500) { viaState.odometroM += delta; }
-            var kmEstimadoAtual = viaState.kmBase + Math.floor(viaState.odometroM / 1000);
-            if (viaState.kmSincronizado === null || kmEstimadoAtual !== viaState.kmSincronizado) {
-                kmMudou = true;
-            }
-            salvarViaState();
+    // O odômetro de rodovia só soma distância em leituras confiáveis (protege contra
+    // somar um "salto" de GPS como se fosse km rodado de verdade).
+    if (!leituraDescartadaPorGlitch && ultimoPontoBruto && viaState.tipo === 'rodovia' && !atualizandoKmRodovia) {
+        var delta = calcularDistanciaMetros(ultimoPontoBruto[0], ultimoPontoBruto[1], lat, lon);
+        if (delta > 2 && delta < 500) { viaState.odometroM += delta; }
+        var kmEstimadoAtual = viaState.kmBase + Math.floor(viaState.odometroM / 1000);
+        if (viaState.kmSincronizado === null || kmEstimadoAtual !== viaState.kmSincronizado) {
+            kmMudou = true;
         }
-        ultimoPontoBruto = [lat, lon];
+        salvarViaState();
     }
+    // CORREÇÃO: esta referência agora avança SEMPRE (não só quando a leitura passa no
+    // filtro) — ver comentário na checagem de velocidade acima. Mantê-la sempre atual é o
+    // que evita a próxima leitura parecer "um salto" cada vez maior.
+    ultimoPontoBruto = [lat, lon];
 
     if (iniciouParadaAgora) {
         (function(latP, lonP, situacaoP, velP, precisaoP, agoraP) {
