@@ -251,16 +251,21 @@
         // Se o plugin não carregar por qualquer motivo (ex: CDN bloqueado na rede do
         // usuário), cai automaticamente pro L.map() padrão sem rotação — o resto do painel
         // continua funcionando normalmente, só sem o efeito "estilo Waze".
-        var suportaRotacaoMapa = false;
-        var map;
-        try {
-            map = L.map('map', { rotate: true, rotateControl: false, touchRotate: true, bearing: 0 }).setView([-29.6133, -52.1919], 13);
-            suportaRotacaoMapa = (typeof map.setBearing === 'function');
-        } catch (e) {
-            console.warn("Plugin de rotação indisponível, usando mapa padrão:", e);
-            map = L.map('map').setView([-29.6133, -52.1919], 13);
-            suportaRotacaoMapa = false;
+        // CORREÇÃO: a versão anterior tentava criar o mapa COM rotação e, se desse erro,
+        // tentava criar de novo no mesmo elemento #map dentro do catch — só que o Leaflet
+        // marca o elemento como "já inicializado" na primeira tentativa (mesmo quando ela
+        // falha no meio), então essa segunda chamada sempre dava um erro novo ("Map
+        // container is already initialized"), que travava a execução do resto do script.
+        // Agora o plugin é checado ANTES de criar o mapa e o L.map() só é chamado UMA vez.
+        var suportaRotacaoMapa = !!(window.L && L.Map && L.Map.prototype && typeof L.Map.prototype.setBearing === 'function');
+        var opcoesMapaAdmin = {};
+        if (suportaRotacaoMapa) {
+            opcoesMapaAdmin.rotate = true;
+            opcoesMapaAdmin.rotateControl = false;
+            opcoesMapaAdmin.touchRotate = true;
+            opcoesMapaAdmin.bearing = 0;
         }
+        var map = L.map('map', opcoesMapaAdmin).setView([-29.6133, -52.1919], 13);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
         
         let polyline = L.polyline([], { color: 'rgba(0,255,166,0.25)', weight: 3 }).addTo(map);
