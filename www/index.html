@@ -431,15 +431,22 @@ document.getElementById('btnSalvarEmpresa').addEventListener('click', function()
     alert("Empresa salva com sucesso!");
 });
 
-// SEGURANÇA: a chave do LocationIQ não fica mais aqui — antes era só abrir o APK pra
-// pegar essa chave e gastar sua cota diária. Agora o app fala com uma Cloud Function
-// (URL abaixo) que guarda a chave em segredo no servidor. Veja functions/index.js.
-// IMPORTANTE: troque esta URL pela URL real depois de publicar a função (o comando
-// "firebase deploy --only functions" mostra a URL final no terminal).
-var URL_PROXY_GEOCODIFICACAO = "https://us-central1-everton-gps.cloudfunctions.net/geocodificarReverso";
-var INTERVALO_GEOCODIFICACAO_MS = 550;
+// O proxy antigo (geocodificarReverso) nunca chegou a ser publicado como Cloud Function
+// (a URL retorna 404). Como o app não usa Cloud Functions em nenhum outro lugar, trocamos
+// para o Nominatim (OpenStreetMap) — é gratuito, não precisa de chave, e devolve os mesmos
+// campos (road, house_number, suburb, city, state, class/type) que o resto do código já espera.
+// Política de uso do Nominatim: no máximo ~1 requisição/segundo; o app já espaça as chamadas
+// (INTERVALO_GEOCODIFICACAO_MS) e evita pontos duplicados, então está dentro do limite para
+// uma frota pequena/média. Se a frota crescer muito, considere um provedor pago (LocationIQ,
+// Mapbox, Google) com chave própria.
+var URL_PROXY_GEOCODIFICACAO = "https://nominatim.openstreetmap.org/reverse";
+var INTERVALO_GEOCODIFICACAO_MS = 1100;
 var MAX_TENTATIVAS_GEOCODIFICACAO = 3;
 var TIMEOUT_FETCH_MS = 8000;
+
+function montarUrlGeocodificacao(lat, lon) {
+    return `${URL_PROXY_GEOCODIFICACAO}?format=jsonv2&addressdetails=1&lat=${lat}&lon=${lon}&zoom=18`;
+}
 
 function fetchComTimeout(url, opcoes, timeoutMs) {
     var controller = new AbortController();
@@ -678,22 +685,19 @@ document.getElementById('btnConfirmarLogin').addEventListener('click', function(
 
 var DIAS_TESTE_GRATIS = 7;
 
-// SEGURANÇA: o token do bot do Telegram NÃO fica mais no código do app — antes ficava
-// visível pra qualquer pessoa que abrisse o APK (bastava descompactar o arquivo), o que
-// permitiria enviar mensagens em nome do bot ou ler o chat. Agora o app só GRAVA um
-// pedido de notificação no Firebase; quem realmente manda a mensagem pro Telegram é uma
-// Cloud Function rodando no servidor, com o token guardado em segredo (nunca no
-// dispositivo do cliente). Veja functions/index.js para o código dessa função e como
-// publicá-la — sem publicar a função, o app funciona normalmente, só a notificação no
-// Telegram não é enviada.
+// Notifica o Everton no Telegram sempre que uma empresa nova se cadastra pelo app —
+// mesma abordagem já usada no site de cadastro: chamada direta pra API do Telegram, sem
+// Cloud Function no meio. O token fica visível pra quem descompactar o app (assim como já
+// fica visível pra quem inspeciona o site), mas é a mesma escolha que vocês já fazem hoje.
+var TELEGRAM_BOT_TOKEN = "8300711164:AAEB-bggEtUiI3gP1GOEsWSacGPzV1cLqhc";
+var TELEGRAM_CHAT_ID = "7737583011";
+
 function notificarNovoCadastroTelegram(nome, email, telefone, idEmpresa) {
-    db.ref('filaNotificacoesTelegram/' + idEmpresa).set({
-        nome: nome, email: email, telefone: telefone || null,
-        idEmpresa: idEmpresa, diasTeste: DIAS_TESTE_GRATIS,
-        criadoEm: new Date().toISOString()
-    }).catch(function(e) {
-        console.warn("Não foi possível enfileirar a notificação de cadastro:", e);
-    });
+    if (!TELEGRAM_CHAT_ID) return;
+    var texto = "🆕 Novo cadastro (app) - Everton GPS\n\n🏢 " + nome + "\n📧 " + email +
+        (telefone ? "\n📱 " + telefone : "") + "\n🆔 " + idEmpresa + "\n⏳ Teste grátis: " + DIAS_TESTE_GRATIS + " dias";
+    var url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage?chat_id=" + TELEGRAM_CHAT_ID + "&text=" + encodeURIComponent(texto);
+    fetch(url).catch(function(e) { console.warn("Falha ao notificar Telegram:", e); });
 }
 
 document.getElementById('btnConfirmarCadastro').addEventListener('click', function() {
@@ -1289,7 +1293,7 @@ function cidadeDoEndereco(addr) {
 }
 
 function buscarEnderecoImediato(lat, lon) {
-    return fetchComTimeout(`${URL_PROXY_GEOCODIFICACAO}?lat=${lat}&lon=${lon}&zoom=18`, {}, TIMEOUT_FETCH_MS)
+    return fetchComTimeout(montarUrlGeocodificacao(lat, lon), {}, TIMEOUT_FETCH_MS)
         .then(res => res.json())
         .then(data => {
             var addr = data.address || {};
@@ -1314,7 +1318,7 @@ function processarFilaGeocodificacao() {
     geocodificando = true; atualizarInterfaceEstado();
     var ponto = filaGeocodificarDepois[filaGeocodificarDepois.length - 1];
 
-    fetchComTimeout(`${URL_PROXY_GEOCODIFICACAO}?lat=${ponto.lat}&lon=${ponto.lon}&zoom=18`, {}, TIMEOUT_FETCH_MS)
+    fetchComTimeout(montarUrlGeocodificacao(ponto.lat, ponto.lon), {}, TIMEOUT_FETCH_MS)
         .then(res => res.json()).then(data => {
             var addr = data.address || {};
             var rua = addr.road || addr.pedestrian || "Rua não localizada";
@@ -1447,7 +1451,7 @@ document.getElementById('btnExportar').addEventListener('click', async function(
 
 document.getElementById('btnDiagnostico').addEventListener('click', function() {
     var out = document.getElementById('diagnosticoResultado'); out.textContent = "Testando...";
-    fetchComTimeout(`${URL_PROXY_GEOCODIFICACAO}?lat=-29.6133&lon=-52.1919&zoom=18`, {}, 10000)
+    fetchComTimeout(montarUrlGeocodificacao(-29.6133, -52.1919), {}, 10000)
         .then(res => res.text()).then(txt => { out.textContent = "✅ SUCESSO\n\n" + txt.slice(0, 300); }).catch(e => { out.textContent = "❌ ERRO: " + e.message; });
 });
 
