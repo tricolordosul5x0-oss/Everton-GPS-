@@ -1496,11 +1496,20 @@ setInterval(function() {
     var agoraPulso = new Date();
     if (agoraPulso.getTime() - ultimoPulsoTs < INTERVALO_PULSO_MS) return;
     ultimoPulsoTs = agoraPulso.getTime();
+    // CORREÇÃO: aqui o "rua" era lido de volta do texto já exibido na tela
+    // (document.getElementById('txtRua').textContent) — só que, em rodovia, esse texto já
+    // vem com o sufixo " - Km X" colado (é só pra exibição). Como esse valor era reenviado
+    // pra registrarESincronizarPonto, que TAMBÉM cola " - Km X" no final quando é rodovia,
+    // cada pulso (a cada 15s) duplicava o sufixo em cima do que já estava duplicado —
+    // depois de alguns pulsos virava "RSC-287 - Km 78 - Km 78 - Km 78 - Km 78...".  Agora
+    // usa viaState.nome (o nome puro da via, sem nenhum sufixo) como fonte — igual todo
+    // outro lugar do código já fazia — e deixa registrarESincronizarPonto colar o "- Km X"
+    // uma única vez, na hora certa.
     registrarESincronizarPonto(
         ultimaLeituraCompleta.lat, ultimaLeituraCompleta.lon, ultimaLeituraCompleta.status,
         ultimaLeituraCompleta.velocidade, ultimaLeituraCompleta.precisao, agoraPulso,
         {
-            rua: document.getElementById('txtRua').textContent,
+            rua: (viaState.tipo === 'rodovia') ? viaState.nome : document.getElementById('txtRua').textContent,
             bairro: document.getElementById('txtBairro').textContent,
             cidade: document.getElementById('txtCidade').textContent,
             estado: document.getElementById('txtEstado').textContent,
