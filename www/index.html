@@ -10,7 +10,6 @@
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            /* ===== Sistema de marca — Everton GPS ===== */
             --bg-main: #070a10;
             --bg-panel: #0e1420;
             --bg-card: #121a26;
@@ -18,9 +17,9 @@
             --border: rgba(255,255,255,.08);
             --border-strong: rgba(255,255,255,.14);
 
-            --brand: #00e0a8;          /* verde-sinal — cor de assinatura da marca */
+            --brand: #00e0a8;
             --brand-dim: #00b389;
-            --accent: #34b3ff;         /* azul telemetria/instrumento */
+            --accent: #34b3ff;
             --warn: #ffb020;
             --danger: #ff4d6d;
 
@@ -43,7 +42,6 @@
             -webkit-tap-highlight-color: transparent;
         }
 
-        /* ===== Cabeçalho de marca ===== */
         .brand-bar {
             display: flex; align-items: center; gap: 10px;
             padding: 10px 16px; background: var(--bg-panel);
@@ -273,7 +271,6 @@
         <button id="btnExportar" class="btn-export">⬇️ Exportar Rota (CSV)</button>
     </div>
     <button id="btnDiagnostico" class="btn-export" style="width:100%;">🔍 Testar Conexão com Serviço de Endereço</button>
-    <button id="btnBussolaRastreador" class="btn-export ativo" style="width:100%; background: var(--accent); color:#000;" onclick="alternarRotacaoAutomaticaMapa()">🧭 Girar com o veículo</button>
     <div id="diagnosticoResultado" class="fila-info" style="text-align:left; white-space:pre-wrap; word-break:break-word;"></div>
 
     <div class="telemetry-card">
@@ -294,7 +291,6 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/leaflet-rotate@0.2.8/dist/leaflet-rotate-src.js" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
@@ -364,7 +360,7 @@ db.ref(".info/connected").on("value", function(snap) {
 });
 
 var LIMITE_VELOCIDADE = 80;
-var PRECISAO_MAXIMA_ACEITAVEL_M = 60;
+var PRECISAO_MAXIMA_ACEITAVEL_M = 30;
 var EMPRESA_ID = localStorage.getItem('empresa_id') || "";
 document.getElementById('empresaIdInput').value = EMPRESA_ID;
 atualizarInfoEmpresaSalva();
@@ -431,14 +427,6 @@ document.getElementById('btnSalvarEmpresa').addEventListener('click', function()
     alert("Empresa salva com sucesso!");
 });
 
-// O proxy antigo (geocodificarReverso) nunca chegou a ser publicado como Cloud Function
-// (a URL retorna 404). Como o app não usa Cloud Functions em nenhum outro lugar, trocamos
-// para o Nominatim (OpenStreetMap) — é gratuito, não precisa de chave, e devolve os mesmos
-// campos (road, house_number, suburb, city, state, class/type) que o resto do código já espera.
-// Política de uso do Nominatim: no máximo ~1 requisição/segundo; o app já espaça as chamadas
-// (INTERVALO_GEOCODIFICACAO_MS) e evita pontos duplicados, então está dentro do limite para
-// uma frota pequena/média. Se a frota crescer muito, considere um provedor pago (LocationIQ,
-// Mapbox, Google) com chave própria.
 var URL_PROXY_GEOCODIFICACAO = "https://nominatim.openstreetmap.org/reverse";
 var INTERVALO_GEOCODIFICACAO_MS = 1100;
 var MAX_TENTATIVAS_GEOCODIFICACAO = 3;
@@ -495,36 +483,25 @@ function mostrarAvisoGps(msg) {
 }
 function esconderAvisoGps() { document.getElementById('avisoGps').style.display = "none"; }
 
-var suportaRotacaoMapa = false;
-var map;
-try {
-    map = L.map('map', { zoomControl: false, rotate: true, rotateControl: false, touchRotate: true, bearing: 0 }).setView([-29.6133, -52.1919], 13);
-    suportaRotacaoMapa = (typeof map.setBearing === 'function');
-} catch (e) {
-    console.warn("Plugin de rotação indisponível, usando mapa padrão:", e);
-    map = L.map('map', { zoomControl: false }).setView([-29.6133, -52.1919], 13);
-    suportaRotacaoMapa = false;
-}
+var map = L.map('map', { zoomControl: false }).setView([-29.6133, -52.1919], 13);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-var marcador = L.marker([-29.6133, -52.1919]).addTo(map);
-var circuloPrecisao = L.circle([-29.6133, -52.1919], { radius: 0, color: '#2dd4ff', fillOpacity: 0.1, weight: 1 }).addTo(map);
-var polilinhaRota = L.polyline([], {color: '#00ffa6', weight: 5}).addTo(map);
 
-var rotacaoAutomaticaAtiva = true;
-var INVERTER_ROTACAO_MAPA = false;
-var ultimaPosicaoParaBearing = null;
-
-function alternarRotacaoAutomaticaMapa() {
-    rotacaoAutomaticaAtiva = !rotacaoAutomaticaAtiva;
-    var btn = document.getElementById('btnBussolaRastreador');
-    if (btn) {
-        btn.classList.toggle('ativo', rotacaoAutomaticaAtiva);
-        btn.textContent = rotacaoAutomaticaAtiva ? '🧭 Girar com o veículo' : '🧭 Norte fixo';
-    }
-    if (!rotacaoAutomaticaAtiva && suportaRotacaoMapa) {
-        map.setBearing(0);
-    }
+function criarIconeVeiculo(anguloGraus, cor) {
+    var corFinal = cor || '#00e0a8';
+    return L.divIcon({
+        className: 'icone-veiculo-rastreador',
+        html: '<div style="width:30px;height:30px;transform:rotate(' + anguloGraus + 'deg);transform-origin:50% 50%;filter:drop-shadow(0 2px 5px rgba(0,0,0,.5));">' +
+              '<svg viewBox="0 0 24 24" width="30" height="30">' +
+              '<path d="M12 1.5 L21 21 L12 16.5 L3 21 Z" fill="' + corFinal + '" stroke="#04120e" stroke-width="1.2" stroke-linejoin="round"/>' +
+              '</svg></div>',
+        iconSize: [30, 30],
+        iconAnchor: [15, 15]
+    });
 }
+
+var anguloAtualVeiculo = 0;
+var INVERTER_ANGULO_VEICULO = false;
+var ultimaPosicaoParaRumo = null;
 
 function calcularRumoGraus(lat1, lon1, lat2, lon2) {
     var toRad = function(g) { return g * Math.PI / 180; };
@@ -536,16 +513,20 @@ function calcularRumoGraus(lat1, lon1, lat2, lon2) {
     return (rumo + 360) % 360;
 }
 
-function talvezAtualizarRotacaoMapa(lat, lon, velocidadeAtual) {
-    if (!suportaRotacaoMapa || !rotacaoAutomaticaAtiva) { ultimaPosicaoParaBearing = [lat, lon]; return; }
+function calcularAnguloVeiculo(lat, lon, velocidadeAtual) {
     var VELOCIDADE_MINIMA_PARA_GIRAR_KMH = 5;
-    if (ultimaPosicaoParaBearing && (velocidadeAtual == null || velocidadeAtual >= VELOCIDADE_MINIMA_PARA_GIRAR_KMH)) {
-        var rumo = calcularRumoGraus(ultimaPosicaoParaBearing[0], ultimaPosicaoParaBearing[1], lat, lon);
-        if (INVERTER_ROTACAO_MAPA) rumo = (360 - rumo) % 360;
-        try { map.setBearing(rumo); } catch (e) { }
+    if (ultimaPosicaoParaRumo && (velocidadeAtual == null || velocidadeAtual >= VELOCIDADE_MINIMA_PARA_GIRAR_KMH)) {
+        var rumo = calcularRumoGraus(ultimaPosicaoParaRumo[0], ultimaPosicaoParaRumo[1], lat, lon);
+        if (INVERTER_ANGULO_VEICULO) rumo = (360 - rumo) % 360;
+        anguloAtualVeiculo = rumo;
     }
-    ultimaPosicaoParaBearing = [lat, lon];
+    ultimaPosicaoParaRumo = [lat, lon];
+    return anguloAtualVeiculo;
 }
+
+var marcador = L.marker([-29.6133, -52.1919], { icon: criarIconeVeiculo(0) }).addTo(map);
+var circuloPrecisao = L.circle([-29.6133, -52.1919], { radius: 0, color: '#2dd4ff', fillOpacity: 0.1, weight: 1 }).addTo(map);
+var polilinhaRota = L.polyline([], {color: '#00ffa6', weight: 5}).addTo(map);
 
 var coordenadaParadaFixa = (function() {
     var raw = localStorage.getItem('coordenada_parada_fixa');
@@ -685,10 +666,6 @@ document.getElementById('btnConfirmarLogin').addEventListener('click', function(
 
 var DIAS_TESTE_GRATIS = 7;
 
-// Notifica o Everton no Telegram sempre que uma empresa nova se cadastra pelo app —
-// mesma abordagem já usada no site de cadastro: chamada direta pra API do Telegram, sem
-// Cloud Function no meio. O token fica visível pra quem descompactar o app (assim como já
-// fica visível pra quem inspeciona o site), mas é a mesma escolha que vocês já fazem hoje.
 var TELEGRAM_BOT_TOKEN = "8300711164:AAEB-bggEtUiI3gP1GOEsWSacGPzV1cLqhc";
 var TELEGRAM_CHAT_ID = "7337583011";
 
@@ -833,6 +810,37 @@ var ultimaVelocidadeValida = 0;
 var contadorRejeicoesConsecutivasVel = 0;
 var contadorConfirmacaoExcesso = 0;
 
+// ===================== VELOCIDADE POR JANELA DESLIZANTE =====================
+// CORREÇÃO (causa raiz do "só marca PARADO"): antes a velocidade era calculada comparando
+// só as DUAS últimas leituras de GPS, e só contava como movimento se a distância entre
+// elas superasse a precisão do GPS (10-20m é comum em carro). Só que o navegador manda
+// atualizações de posição a cada 1-3s, e nesse intervalo, em trânsito urbano (20-40 km/h),
+// o carro frequentemente anda MENOS que esses 10-20m — então a velocidade calculada dava
+// 0 quase toda hora, e o app nunca saía de "PARADO" mesmo com o veículo andando de verdade.
+// Agora a velocidade é calculada usando uma JANELA de até 6 segundos de posições (não só a
+// última): a distância percorrida nesse intervalo maior "engole" o ruído do GPS sem
+// precisar de um limiar gigante, porque em 6s um carro real anda muito mais que o ruído de
+// GPS típico. O limiar de ruído também deixou de depender da precisão instantânea (que é
+// instável) e passou a ser um valor fixo (8m).
+var HISTORICO_POSICOES_JANELA_MS = 6000;
+var JANELA_MIN_TEMPO_S = 1.2;
+var JANELA_LIMIAR_RUIDO_M = 8;
+var bufferPosicoesRecentes = [];
+
+function calcularVelocidadePorJanela(lat, lon, agoraTs) {
+    bufferPosicoesRecentes.push({ lat: lat, lon: lon, ts: agoraTs });
+    while (bufferPosicoesRecentes.length > 1 && (agoraTs - bufferPosicoesRecentes[0].ts) > HISTORICO_POSICOES_JANELA_MS) {
+        bufferPosicoesRecentes.shift();
+    }
+    if (bufferPosicoesRecentes.length < 2) return 0;
+    var primeiro = bufferPosicoesRecentes[0];
+    var deltaSeg = (agoraTs - primeiro.ts) / 1000;
+    if (deltaSeg < JANELA_MIN_TEMPO_S) return 0;
+    var dist = calcularDistanciaMetros(primeiro.lat, primeiro.lon, lat, lon);
+    if (dist <= JANELA_LIMIAR_RUIDO_M) return 0;
+    return (dist / deltaSeg) * 3.6;
+}
+
 function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
     var R = 6371000;
     var dLat = (lat2 - lat1) * Math.PI / 180;
@@ -884,69 +892,57 @@ function registrarESincronizarPonto(lat, lon, situacao, velKmh, precisao, agora,
     salvarTudo(); atualizarInterfaceEstado(); enviarDadosFila(); sincronizarTempoRealImediato();
 }
 
+function corVeiculoPorSituacao(situacao) {
+    if (situacao === "VELOCIDADE ACIMA DO LIMITE") return '#ff4d6d';
+    if (situacao === "EM MOVIMENTO") return '#00e0a8';
+    return '#ffb020';
+}
+
 function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     if (appSuspenso) return;
     esconderAvisoGps(); errosGpsConsecutivos = 0;
     var precisao = precisaoRaw ? Math.round(precisaoRaw) : null;
     var agora = new Date(); var agoraTs = agora.getTime();
 
-    var velCalculadaPorDistancia = 0;
     var deltaSegundosBruto = null;
     if (ultimoPontoBruto && ultimoTsPosicaoBruta) {
-        var distDesdeUltimoBruto = calcularDistanciaMetros(ultimoPontoBruto[0], ultimoPontoBruto[1], lat, lon);
         deltaSegundosBruto = (agoraTs - ultimoTsPosicaoBruta) / 1000;
-        var limiarRuidoM = Math.max(3, precisao || 5);
-        if (deltaSegundosBruto > 0.5 && distDesdeUltimoBruto > limiarRuidoM) {
-            velCalculadaPorDistancia = (distDesdeUltimoBruto / deltaSegundosBruto) * 3.6;
-        }
     }
 
+    var velPorJanela = Math.round(calcularVelocidadePorJanela(lat, lon, agoraTs));
     var velPorRaw = (velRaw && velRaw > 0) ? Math.round(velRaw * 3.6) : null;
-    var velPorDistancia = Math.round(velCalculadaPorDistancia);
 
     var ACELERACAO_MAXIMA_PLAUSIVEL_MS2 = 6;
     var MAX_VELOCIDADE_PLAUSIVEL_KMH = 150;
-    var leituraDescartadaPorGlitch = false;
-    if (deltaSegundosBruto != null && deltaSegundosBruto > 0) {
-        var aceleracaoImplicada = Math.abs(velPorDistancia - ultimaVelocidadeValida) / 3.6 / deltaSegundosBruto;
-        if (velPorDistancia >= MAX_VELOCIDADE_PLAUSIVEL_KMH || aceleracaoImplicada > ACELERACAO_MAXIMA_PLAUSIVEL_MS2) {
-            leituraDescartadaPorGlitch = true;
-        }
+    var LIMITE_REJEICOES_CONSECUTIVAS_VEL = 3;
+
+    // Prioriza a velocidade "crua" do GPS (Doppler, normalmente mais precisa que posição a
+    // posição) quando disponível e plausível; usa a velocidade por janela como suporte e
+    // como alternativa quando o aparelho não fornece velocidade do GPS.
+    var vel = (velPorRaw != null && velPorJanela < 5 && velPorRaw > 30)
+        ? velPorJanela
+        : ((velPorRaw != null) ? velPorRaw : velPorJanela);
+
+    var deltaValidoParaVel = (deltaSegundosBruto != null && deltaSegundosBruto > 0);
+    var aceleracaoImplicada = deltaValidoParaVel ? Math.abs(vel - ultimaVelocidadeValida) / 3.6 / deltaSegundosBruto : 0;
+    var saltoImplausivel = deltaValidoParaVel && (vel >= MAX_VELOCIDADE_PLAUSIVEL_KMH || aceleracaoImplicada > ACELERACAO_MAXIMA_PLAUSIVEL_MS2);
+    if (saltoImplausivel && contadorRejeicoesConsecutivasVel >= LIMITE_REJEICOES_CONSECUTIVAS_VEL) {
+        saltoImplausivel = false;
     }
 
-    var vel;
-    if (leituraDescartadaPorGlitch) {
+    var leituraDescartadaPorGlitch = saltoImplausivel;
+    if (saltoImplausivel) {
+        contadorRejeicoesConsecutivasVel++;
         vel = ultimaVelocidadeValida;
     } else {
-        if (velPorRaw != null && velPorDistancia < 5 && velPorRaw > 30) {
-            vel = velPorDistancia;
-        } else {
-            vel = (velPorRaw != null) ? velPorRaw : velPorDistancia;
-        }
-
-        var deltaValidoParaVel = (deltaSegundosBruto != null && deltaSegundosBruto > 0);
-        var aceleracaoFinalImplicada = deltaValidoParaVel ? Math.abs(vel - ultimaVelocidadeValida) / 3.6 / deltaSegundosBruto : 0;
-        var saltoFinalImplausivel = deltaValidoParaVel && (vel >= MAX_VELOCIDADE_PLAUSIVEL_KMH || aceleracaoFinalImplicada > ACELERACAO_MAXIMA_PLAUSIVEL_MS2);
-
-        var LIMITE_REJEICOES_CONSECUTIVAS_VEL = 3;
-        if (saltoFinalImplausivel && contadorRejeicoesConsecutivasVel >= LIMITE_REJEICOES_CONSECUTIVAS_VEL) {
-            saltoFinalImplausivel = false;
-        }
-
-        if (saltoFinalImplausivel) {
-            leituraDescartadaPorGlitch = true;
-            contadorRejeicoesConsecutivasVel++;
-            vel = ultimaVelocidadeValida;
-        } else {
-            contadorRejeicoesConsecutivasVel = 0;
-            ultimoTsPosicaoBruta = agoraTs;
-            ultimaVelocidadeValida = vel;
-        }
+        contadorRejeicoesConsecutivasVel = 0;
+        ultimaVelocidadeValida = vel;
     }
+    ultimoTsPosicaoBruta = agoraTs;
 
     map.setView([lat, lon], map.getZoom() < 14 ? 16 : map.getZoom());
     marcador.setLatLng([lat, lon]);
-    talvezAtualizarRotacaoMapa(lat, lon, vel);
+    var anguloVeiculo = calcularAnguloVeiculo(lat, lon, vel);
     if (precisao) { circuloPrecisao.setLatLng([lat, lon]).setRadius(precisao); }
 
     document.getElementById('txtVelocidade').textContent = vel + " km/h";
@@ -1005,6 +1001,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         if (!jaGravouPontoInicialParada) { iniciouParadaAgora = true; jaGravouPontoInicialParada = true; localStorage.setItem('ja_gravou_parada', 'true'); }
     }
     atualizarTextoTempoParado();
+    marcador.setIcon(criarIconeVeiculo(anguloVeiculo, corVeiculoPorSituacao(situacao)));
 
     ultimaLeituraCompleta = {
         lat: lat, lon: lon, velocidade: (situacao === "PARADO" ? 0 : vel), status: situacao, precisao: precisao,
@@ -1013,18 +1010,16 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     };
 
     var kmMudou = false;
-    if (!leituraDescartadaPorGlitch) {
-        if (ultimoPontoBruto && viaState.tipo === 'rodovia' && !atualizandoKmRodovia) {
-            var delta = calcularDistanciaMetros(ultimoPontoBruto[0], ultimoPontoBruto[1], lat, lon);
-            if (delta > 2 && delta < 500) { viaState.odometroM += delta; }
-            var kmEstimadoAtual = viaState.kmBase + Math.floor(viaState.odometroM / 1000);
-            if (viaState.kmSincronizado === null || kmEstimadoAtual !== viaState.kmSincronizado) {
-                kmMudou = true;
-            }
-            salvarViaState();
+    if (!leituraDescartadaPorGlitch && ultimoPontoBruto && viaState.tipo === 'rodovia' && !atualizandoKmRodovia) {
+        var delta = calcularDistanciaMetros(ultimoPontoBruto[0], ultimoPontoBruto[1], lat, lon);
+        if (delta > 2 && delta < 500) { viaState.odometroM += delta; }
+        var kmEstimadoAtual = viaState.kmBase + Math.floor(viaState.odometroM / 1000);
+        if (viaState.kmSincronizado === null || kmEstimadoAtual !== viaState.kmSincronizado) {
+            kmMudou = true;
         }
-        ultimoPontoBruto = [lat, lon];
+        salvarViaState();
     }
+    ultimoPontoBruto = [lat, lon];
 
     if (iniciouParadaAgora) {
         (function(latP, lonP, situacaoP, velP, precisaoP, agoraP) {
@@ -1186,7 +1181,7 @@ function iniciarRastreioWeb() {
     if (!checarContextoSeguro() || !navigator.geolocation) return;
     navigator.geolocation.watchPosition(position => {
         processarNovaPosicao(position.coords.latitude, position.coords.longitude, position.coords.accuracy, position.coords.speed);
-    }, tratarErroGps, { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 });
+    }, tratarErroGps, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
 }
 
 function iniciarRastreioGps() {
@@ -1460,10 +1455,6 @@ renderizarFrotaLocal(); atualizarInterfaceEstado(); checarContextoSeguro();
 setInterval(function() { sincronizarTempoRealImediato(); }, 3000);
 setInterval(function() { if (filaGeocodificarDepois.length > 0) processarFilaGeocodificacao(); if (filaPendentes.length > 0) enviarDadosFila(); }, 6000);
 
-// Garante que sempre exista um ponto de histórico recente, mesmo quando o veículo passa
-// bastante tempo na mesma rua sem trocar de via, parar ou exceder velocidade — sem isso,
-// uma pesquisa por "1 minuto atrás" podia não encontrar nenhum ponto gravado. Reaproveita
-// o endereço já conhecido em tela (não dispara nenhuma nova consulta de geocodificação).
 var ultimoPulsoTs = 0;
 var INTERVALO_PULSO_MS = 15000;
 setInterval(function() {
