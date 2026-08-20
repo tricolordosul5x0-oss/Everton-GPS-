@@ -360,7 +360,12 @@ db.ref(".info/connected").on("value", function(snap) {
 });
 
 var LIMITE_VELOCIDADE = 80;
-var PRECISAO_MAXIMA_ACEITAVEL_M = 60;
+// CORREÇÃO: baixado de 60m para 30m — 60m de margem de erro é o suficiente pra achar a
+// rua paralela errada em bairros com quadras pequenas. Com 30m, o app espera uma leitura
+// de GPS mais precisa antes de trocar o nome da rua exibida (só mostra "—"/mantém o
+// último valor confiável enquanto isso), então a rua mostrada erra menos, ao custo de
+// atualizar um pouco menos vezes em áreas de sinal ruim.
+var PRECISAO_MAXIMA_ACEITAVEL_M = 30;
 var EMPRESA_ID = localStorage.getItem('empresa_id') || "";
 document.getElementById('empresaIdInput').value = EMPRESA_ID;
 atualizarInfoEmpresaSalva();
@@ -1184,7 +1189,10 @@ function iniciarRastreioWeb() {
     if (!checarContextoSeguro() || !navigator.geolocation) return;
     navigator.geolocation.watchPosition(position => {
         processarNovaPosicao(position.coords.latitude, position.coords.longitude, position.coords.accuracy, position.coords.speed);
-    }, tratarErroGps, { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 });
+    // CORREÇÃO: maximumAge era 3000 (aceitava uma posição em cache de até 3s) — em troca de
+    // um pouco mais de bateria, agora sempre pede a leitura mais fresca disponível, o que
+    // reduz o atraso perceptível entre o veículo se mover e o app mostrar isso na tela.
+    }, tratarErroGps, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
 }
 
 function iniciarRastreioGps() {
