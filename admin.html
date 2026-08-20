@@ -172,6 +172,7 @@
 
     <div id="alertaContainer"></div>
     <div id="bannerAoVivo" class="banner-ao-vivo"></div>
+    <div id="avisoEncaixeRuas" style="display:none; background: rgba(255,176,32,0.12); border-bottom: 1px solid #ffb020; color: #ffb020; padding: 8px 16px; text-align: center; font-size: .8em; z-index: 1000;"></div>
 
     <div id="telaSuspensa">
         <div class="logo-suspenso">📡</div>
@@ -649,7 +650,9 @@
         }
 
         function encaixarNasRuas(coords) {
+            var aviso = document.getElementById('avisoEncaixeRuas');
             polylineRuas.setLatLngs([]);
+            if (aviso) aviso.style.display = 'none';
             if (coords.length < 2) return;
             let amostra = coords;
             const MAX_PONTOS_LOCATIONIQ = 25;
@@ -661,15 +664,37 @@
             }
             const str = amostra.map(c => c[1].toFixed(6) + "," + c[0].toFixed(6)).join(";");
             const url = "https://us1.locationiq.com/v1/matching/driving/" + str + "?key=" + LOCATIONIQ_API_KEY + "&overview=full&geometries=geojson";
+            // CORREÇÃO: antes, se essa chamada falhasse (ex: o plano da chave do LocationIQ
+            // não inclui "map matching", ou o serviço está fora do ar), o erro era engolido
+            // em silêncio (.catch(() => {})) — a linha tracejada simplesmente não aparecia
+            // e ninguém via nenhum aviso disso. Ficava parecendo que o "encaixe nas ruas"
+            // funcionava mal, quando na verdade não estava rodando de jeito nenhum. Agora
+            // qualquer falha (erro de rede, chave sem permissão, resposta vazia) mostra um
+            // aviso explicando que está exibindo o trajeto bruto do GPS em vez do
+            // encaixado — assim dá pra saber se o problema é o serviço externo, não o app.
             fetch(url, { signal: AbortSignal.timeout(12000) })
-                .then(r => r.json())
+                .then(r => {
+                    if (!r.ok) return r.text().then(txt => Promise.reject(new Error("HTTP " + r.status + ": " + txt.slice(0, 200))));
+                    return r.json();
+                })
                 .then(data => {
                     let pts = [];
                     const trechos = data.matchings || data.routes || [];
                     trechos.forEach(m => { if (m.geometry && m.geometry.coordinates) m.geometry.coordinates.forEach(c => pts.push([c[1], c[0]])); });
-                    if (pts.length > 0) polylineRuas.setLatLngs(pts);
+                    if (pts.length > 0) {
+                        polylineRuas.setLatLngs(pts);
+                    } else if (aviso) {
+                        aviso.style.display = 'block';
+                        aviso.textContent = "⚠️ O serviço de encaixe nas ruas não retornou pontos — exibindo o trajeto bruto do GPS (linha fina).";
+                    }
                 })
-                .catch(() => {});
+                .catch(erro => {
+                    console.warn("Falha ao encaixar rota nas ruas:", erro);
+                    if (aviso) {
+                        aviso.style.display = 'block';
+                        aviso.textContent = "⚠️ Não foi possível alinhar a rota às ruas (" + (erro && erro.message ? erro.message : "erro desconhecido") + ") — exibindo o trajeto bruto do GPS.";
+                    }
+                });
         }
 
         function voltarAoTempoReal() {
