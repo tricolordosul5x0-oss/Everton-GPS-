@@ -237,6 +237,7 @@
 
 <div class="container">
     <div id="avisoGps" class="gps-warning"></div>
+    <div id="ultimoErroSync" style="display:none; background: rgba(255,77,109,0.1); border: 1px solid rgba(255,77,109,.35); color: var(--danger); padding: 11px 13px; border-radius: 8px; font-size: 0.78em; white-space:pre-wrap; word-break:break-word;"></div>
     <div id="avisoTeste" style="display:none; background: rgba(45,212,255,.12); border: 1px solid var(--accent); color: var(--accent); padding: 10px 12px; border-radius: 6px; font-size: .85em; text-align: center; font-weight: bold;"></div>
 
     <div class="input-box">
@@ -486,6 +487,20 @@ function mostrarAvisoGps(msg) {
     box.textContent = msg; box.style.display = "block";
 }
 function esconderAvisoGps() { document.getElementById('avisoGps').style.display = "none"; }
+
+// Caixa separada só pra erros de sincronização com o Firebase. Diferente do aviso de GPS
+// (que some sozinho assim que chega uma posição nova, e por isso passa rápido demais pra
+// ler), esta fica na tela até você tocar nela pra fechar — assim dá tempo de ler e me
+// mandar o texto certinho.
+function mostrarErroSyncPersistente(msg) {
+    var box = document.getElementById('ultimoErroSync');
+    var agora = new Date().toLocaleTimeString('pt-BR');
+    box.textContent = "🔴 [" + agora + "] " + msg + "  (toque aqui pra fechar)";
+    box.style.display = "block";
+}
+document.getElementById('ultimoErroSync').addEventListener('click', function() {
+    this.style.display = "none";
+});
 
 // ===================== MAPA (fixo — não gira mais) =====================
 var map = L.map('map', { zoomControl: false }).setView([-29.6133, -52.1919], 13);
@@ -1133,9 +1148,11 @@ function sincronizarTempoRealImediato() {
     }).catch(e => {
         console.warn(e);
         var agora = Date.now();
+        var msgErro1 = "Firebase recusou salvar posição ao vivo: " + (e && e.message ? e.message : e) + " [empresaId: " + EMPRESA_ID + ", logado: " + (auth.currentUser ? auth.currentUser.email : "NÃO") + "]";
+        mostrarErroSyncPersistente(msgErro1);
         if (agora - ultimoAvisoErroEnvioTs > 60000) {
             ultimoAvisoErroEnvioTs = agora;
-            mostrarAvisoGps("⚠️ Firebase recusou salvar posição ao vivo: " + (e && e.message ? e.message : e) + " [empresaId: " + EMPRESA_ID + ", logado: " + (auth.currentUser ? auth.currentUser.email : "NÃO") + "]");
+            mostrarAvisoGps("⚠️ " + msgErro1);
         }
     });
 }
@@ -1387,9 +1404,11 @@ function enviarDadosFila() {
         }).catch(e => {
             falhasConsecutivasLote++; if (falhasConsecutivasLote >= 20) { filaPendentes.shift(); falhasConsecutivasLote = 0; salvarTudo(); }
             var agora = Date.now();
+            var msgErro2 = "Firebase recusou salvar os dados: " + (e && e.message ? e.message : e) + " [empresaId: " + EMPRESA_ID + ", logado: " + (auth.currentUser ? auth.currentUser.email : "NÃO") + "]";
+            mostrarErroSyncPersistente(msgErro2);
             if (agora - ultimoAvisoErroEnvioTs > 60000) {
                 ultimoAvisoErroEnvioTs = agora;
-                mostrarAvisoGps("⚠️ Firebase recusou salvar os dados: " + (e && e.message ? e.message : e) + " [empresaId: " + EMPRESA_ID + ", logado: " + (auth.currentUser ? auth.currentUser.email : "NÃO") + "]");
+                mostrarAvisoGps("⚠️ " + msgErro2);
             }
         }).finally(() => {
             enviando = false; atualizarInterfaceEstado();
