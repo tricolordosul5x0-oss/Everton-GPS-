@@ -341,29 +341,6 @@ firebase.initializeApp(firebaseConfig);
 var db = firebase.database();
 var auth = firebase.auth();
 
-// ===================== ENVIO VIA REST (nativo) =====================
-// O SDK do Firebase (db.ref().update(...)) usa a rede da WebView, que o Android
-// restringe/pausa depois de alguns minutos com o app em segundo plano — por isso
-// o rastreio continuava gravando localmente, mas parava de sincronizar assim que
-// a tela apagava. Esta função manda os mesmos dados só que via fetch, com o
-// CapacitorHttp habilitado (ver capacitor.config.json), que faz a requisição
-// pela camada nativa do Android em vez da WebView, e por isso não sofre essa
-// limitação.
-function atualizarViaRestApi(updates) {
-    if (!auth.currentUser) return Promise.reject(new Error("sem usuário logado"));
-    return auth.currentUser.getIdToken().then(function(token) {
-        var url = firebaseConfig.databaseURL + "/.json?auth=" + encodeURIComponent(token);
-        return fetchComTimeout(url, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(updates)
-        }, 10000).then(function(res) {
-            if (!res.ok) return res.text().then(function(t){ throw new Error("HTTP " + res.status + ": " + t); });
-            return res.json();
-        });
-    });
-}
-
 var firebaseOnlineConfirmado = false;
 
 db.ref(".info/connected").on("value", function(snap) {
@@ -1151,7 +1128,7 @@ function sincronizarTempoRealImediato() {
         updates[basePath + 'cidade'] = document.getElementById('txtCidade').textContent;
         updates[basePath + 'estado'] = document.getElementById('txtEstado').textContent;
     });
-    atualizarViaRestApi(updates).then(() => {
+    comLimiteDeTempo(db.ref().update(updates), 10000).then(() => {
         if(!firebaseOnlineConfirmado) { firebaseOnlineConfirmado = true; atualizarInterfaceEstado(); }
     }).catch(e => {
         console.warn(e);
@@ -1177,7 +1154,7 @@ setInterval(function() {
             patchHistorico[path + 'horaFinalParada'] = agoraStr;
         });
 
-        atualizarViaRestApi(patchHistorico).catch(e => console.warn(e));
+        db.ref().update(patchHistorico).catch(e => console.warn(e));
     }
 }, 30000);
 
@@ -1405,7 +1382,7 @@ function enviarDadosFila() {
             var basePath = 'empresas/' + sanitizarChavePath(item.empresaId || EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(item.vID) + '/historico/' + item.id;
             updates[basePath] = item;
         });
-        atualizarViaRestApi(updates).then(() => {
+        comLimiteDeTempo(db.ref().update(updates), 10000).then(() => {
             filaPendentes.splice(0, lote.length); falhasConsecutivasLote = 0; firebaseOnlineConfirmado = true; salvarTudo();
         }).catch(e => {
             falhasConsecutivasLote++; if (falhasConsecutivasLote >= 20) { filaPendentes.shift(); falhasConsecutivasLote = 0; salvarTudo(); }
