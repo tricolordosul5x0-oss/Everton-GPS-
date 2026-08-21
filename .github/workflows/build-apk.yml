@@ -1,7 +1,7 @@
 name: Build APK
 
-# Roda automaticamente a cada envio de arquivos, e também pode ser
-# disparado manualmente pela aba "Actions" do GitHub (botão "Run workflow").
+# Roda automaticamente a cada envio de arquivos, e tambÃ©m pode ser
+# disparado manualmente pela aba "Actions" do GitHub (botÃ£o "Run workflow").
 on:
   workflow_dispatch:
   push:
@@ -11,7 +11,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Baixar o código do repositório
+      - name: Baixar o cÃ³digo do repositÃ³rio
         uses: actions/checkout@v4
 
       - name: Preparar Node.js
@@ -25,26 +25,25 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Instalar dependências
+      - name: Instalar dependÃªncias
         run: npm install
 
       - name: Criar o projeto Android
         run: npx cap add android
 
-      - name: Preparar pastas e Gerar Ícone do App
+      - name: Preparar pastas e Gerar Ãcone do App
         run: |
           mkdir -p assets
           cp 1784006845314.png assets/icon.png
           npm install @capacitor/assets --no-save
           npx capacitor-assets generate
 
-      - name: Adicionar permissões de localização
+      - name: Adicionar permissÃµes de localizaÃ§Ã£o
         run: |
           python3 - <<'EOF'
           path = "android/app/src/main/AndroidManifest.xml"
           with open(path) as f:
               content = f.read()
-
           perms = (
               '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n'
               '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n'
@@ -54,9 +53,20 @@ jobs:
           )
           if "ACCESS_BACKGROUND_LOCATION" not in content:
               content = content.replace("<application", perms + "\n    <application", 1)
+          with open(path, "w") as f:
+              f.write(content)
+          print("PermissÃµes adicionadas com sucesso.")
+          EOF
 
-          # NOVO: o plugin @capacitor-community/background-geolocation exige que o
-          # <service> dele seja declarado manualmente no manifesto do app (não vem
-          # automático via merge do .aar). Sem isso — principalmente sem o
-          # foregroundServiceType="location", obrigatório a partir do Android 14 —
-          # o serviço de rastreio em segun
+      - name: Sincronizar Capacitor com o projeto Android
+        run: npx cap sync android
+
+      - name: Compilar o APK (versÃ£o de teste/instalaÃ§Ã£o direta)
+        working-directory: android
+        run: chmod +x gradlew && ./gradlew assembleDebug
+
+      - name: Disponibilizar o APK para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: rastreador-everton-gps-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
