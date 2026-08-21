@@ -427,6 +427,16 @@ document.getElementById('btnSalvarEmpresa').addEventListener('click', function()
     if (!novo) return alert("Digite um ID válido.");
     localStorage.setItem('empresa_id', novo);
     EMPRESA_ID = novo;
+    // CORREÇÃO: pontos que já estavam na fila de envio (filaPendentes) guardam o ID da
+    // empresa de quando foram criados. Se o campo acima estava errado e a gente corrige
+    // depois, esses pontos antigos ficavam presos pra sempre tentando enviar pro ID
+    // errado — mesmo com o campo já corrigido na tela. Agora, ao salvar um novo ID,
+    // qualquer ponto ainda pendente é realinhado pro ID atual.
+    var algumRealinhado = false;
+    filaPendentes.forEach(function(item) {
+        if (item.empresaId !== novo) { item.empresaId = novo; algumRealinhado = true; }
+    });
+    if (algumRealinhado) salvarTudo();
     atualizarInfoEmpresaSalva();
     observarStatusEmpresa();
     alert("Empresa salva com sucesso!");
@@ -1404,7 +1414,8 @@ function enviarDadosFila() {
         }).catch(e => {
             falhasConsecutivasLote++; if (falhasConsecutivasLote >= 20) { filaPendentes.shift(); falhasConsecutivasLote = 0; salvarTudo(); }
             var agora = Date.now();
-            var msgErro2 = "Firebase recusou salvar os dados: " + (e && e.message ? e.message : e) + " [empresaId: " + EMPRESA_ID + ", logado: " + (auth.currentUser ? auth.currentUser.email : "NÃO") + "]";
+            var empresaIdsDoLote = Array.from(new Set(lote.map(function(it) { return it.empresaId || EMPRESA_ID; })));
+            var msgErro2 = "Firebase recusou salvar os dados: " + (e && e.message ? e.message : e) + " [empresaId do(s) item(ns) que falharam: " + empresaIdsDoLote.join(", ") + " | empresaId atual do campo: " + EMPRESA_ID + ", logado: " + (auth.currentUser ? auth.currentUser.email : "NÃO") + "]";
             mostrarErroSyncPersistente(msgErro2);
             if (agora - ultimoAvisoErroEnvioTs > 60000) {
                 ultimoAvisoErroEnvioTs = agora;
