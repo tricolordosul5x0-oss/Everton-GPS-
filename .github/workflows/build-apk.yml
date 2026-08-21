@@ -44,6 +44,7 @@ jobs:
           path = "android/app/src/main/AndroidManifest.xml"
           with open(path) as f:
               content = f.read()
+
           perms = (
               '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n'
               '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n'
@@ -53,20 +54,9 @@ jobs:
           )
           if "ACCESS_BACKGROUND_LOCATION" not in content:
               content = content.replace("<application", perms + "\n    <application", 1)
-          with open(path, "w") as f:
-              f.write(content)
-          print("Permissões adicionadas com sucesso.")
-          EOF
 
-      - name: Sincronizar Capacitor com o projeto Android
-        run: npx cap sync android
-
-      - name: Compilar o APK (versão de teste/instalação direta)
-        working-directory: android
-        run: chmod +x gradlew && ./gradlew assembleDebug
-
-      - name: Disponibilizar o APK para download
-        uses: actions/upload-artifact@v4
-        with:
-          name: rastreador-everton-gps-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          # NOVO: o plugin @capacitor-community/background-geolocation exige que o
+          # <service> dele seja declarado manualmente no manifesto do app (não vem
+          # automático via merge do .aar). Sem isso — principalmente sem o
+          # foregroundServiceType="location", obrigatório a partir do Android 14 —
+          # o serviço de rastreio em segun
