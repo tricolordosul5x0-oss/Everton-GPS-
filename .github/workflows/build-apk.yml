@@ -1,7 +1,7 @@
 name: Build APK
 
-# Roda automaticamente a cada envio de arquivos, e tambÃ©m pode ser
-# disparado manualmente pela aba "Actions" do GitHub (botÃ£o "Run workflow").
+# Roda automaticamente a cada envio de arquivos, e tambem pode ser
+# disparado manualmente pela aba "Actions" do GitHub (botao "Run workflow").
 on:
   workflow_dispatch:
   push:
@@ -11,7 +11,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Baixar o cÃ³digo do repositÃ³rio
+      - name: Baixar o codigo do repositorio
         uses: actions/checkout@v4
 
       - name: Preparar Node.js
@@ -25,25 +25,26 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Instalar dependÃªncias
+      - name: Instalar dependencias
         run: npm install
 
       - name: Criar o projeto Android
         run: npx cap add android
 
-      - name: Preparar pastas e Gerar Ãcone do App
+      - name: Preparar pastas e Gerar Icone do App
         run: |
           mkdir -p assets
           cp 1784006845314.png assets/icon.png
           npm install @capacitor/assets --no-save
           npx capacitor-assets generate
 
-      - name: Adicionar permissÃµes de localizaÃ§Ã£o
+      - name: Adicionar permissoes de localizacao e servico de segundo plano
         run: |
           python3 - <<'EOF'
           path = "android/app/src/main/AndroidManifest.xml"
           with open(path) as f:
               content = f.read()
+
           perms = (
               '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n'
               '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n'
@@ -53,15 +54,26 @@ jobs:
           )
           if "ACCESS_BACKGROUND_LOCATION" not in content:
               content = content.replace("<application", perms + "\n    <application", 1)
+
+          service_tag = (
+              '        <service\n'
+              '            android:name="com.equimaps.capacitor_background_geolocation.BackgroundGeolocationService"\n'
+              '            android:enabled="true"\n'
+              '            android:exported="true"\n'
+              '            android:foregroundServiceType="location" />\n'
+          )
+          if "BackgroundGeolocationService" not in content:
+              content = content.replace("</application>", service_tag + "    </application>", 1)
+
           with open(path, "w") as f:
               f.write(content)
-          print("PermissÃµes adicionadas com sucesso.")
+          print("Permissoes e servico de segundo plano adicionados com sucesso.")
           EOF
 
       - name: Sincronizar Capacitor com o projeto Android
         run: npx cap sync android
 
-      - name: Compilar o APK (versÃ£o de teste/instalaÃ§Ã£o direta)
+      - name: Compilar o APK (versao de teste/instalacao direta)
         working-directory: android
         run: chmod +x gradlew && ./gradlew assembleDebug
 
