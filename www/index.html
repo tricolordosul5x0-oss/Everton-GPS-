@@ -378,11 +378,18 @@ function atualizarInfoEmpresaSalva() {
 
 var refStatusEmpresa = null;
 var refTrialEmpresa = null;
-var estadoEmpresaAtual = { status: null, trialExpiraEm: null };
+var refAssinaturaEmpresa = null;
+var estadoEmpresaAtual = { status: null, trialExpiraEm: null, assinaturaExpiraEm: null };
 
+// Depois que o cliente paga, o admin muda o status da empresa no Firebase de 'trial' pra
+// 'ativo' e grava 'assinaturaExpiraEm' com a data 30 dias à frente (mesmo formato ISO já
+// usado em 'trialExpiraEm'). A partir daí o app conta os dias da assinatura em vez do
+// período de teste, e avisa quando ela vence — do mesmo jeito que avisa quando uma conta
+// nova é criada.
 function avaliarEstadoEmpresa() {
     var testeVencido = estadoEmpresaAtual.status === 'trial' && estadoEmpresaAtual.trialExpiraEm && new Date(estadoEmpresaAtual.trialExpiraEm).getTime() < Date.now();
-    var suspenso = estadoEmpresaAtual.status === 'suspenso' || testeVencido;
+    var assinaturaVencida = estadoEmpresaAtual.status === 'ativo' && estadoEmpresaAtual.assinaturaExpiraEm && new Date(estadoEmpresaAtual.assinaturaExpiraEm).getTime() < Date.now();
+    var suspenso = estadoEmpresaAtual.status === 'suspenso' || testeVencido || assinaturaVencida;
     appSuspenso = suspenso;
     document.getElementById('avisoSuspenso').style.display = suspenso ? 'flex' : 'none';
 
@@ -390,12 +397,36 @@ function avaliarEstadoEmpresa() {
     if (!suspenso && estadoEmpresaAtual.status === 'trial' && estadoEmpresaAtual.trialExpiraEm) {
         var diasRestantes = Math.max(0, Math.ceil((new Date(estadoEmpresaAtual.trialExpiraEm).getTime() - Date.now()) / 86400000));
         faixaTeste.style.display = 'block';
+        faixaTeste.style.background = "rgba(45,212,255,.12)"; faixaTeste.style.borderColor = "var(--accent)"; faixaTeste.style.color = "var(--accent)";
         faixaTeste.textContent = "🎁 Período de teste grátis — " + diasRestantes + (diasRestantes === 1 ? " dia restante" : " dias restantes");
+    } else if (!suspenso && estadoEmpresaAtual.status === 'ativo' && estadoEmpresaAtual.assinaturaExpiraEm) {
+        var diasRestantesAssinatura = Math.max(0, Math.ceil((new Date(estadoEmpresaAtual.assinaturaExpiraEm).getTime() - Date.now()) / 86400000));
+        faixaTeste.style.display = 'block';
+        faixaTeste.style.background = "rgba(0,224,168,.12)"; faixaTeste.style.borderColor = "var(--brand)"; faixaTeste.style.color = "var(--brand)";
+        faixaTeste.textContent = "✅ Você tem " + diasRestantesAssinatura + (diasRestantesAssinatura === 1 ? " dia de assinatura" : " dias de assinatura");
     } else {
         faixaTeste.style.display = 'none';
     }
 
+    if (assinaturaVencida) { notificarAssinaturaVencidaSeNecessario(); }
+
     atualizarInterfaceEstado();
+}
+
+// Manda o aviso de assinatura vencida só uma vez por vencimento (evita reenviar toda vez
+// que o app reabre ou o timer de 60s roda de novo). Se o admin renovar a assinatura com
+// uma data nova, essa checagem libera um novo aviso automaticamente pro próximo vencimento.
+function notificarAssinaturaVencidaSeNecessario() {
+    var chaveJaAvisado = 'assinatura_vencida_avisada_' + EMPRESA_ID + '_' + estadoEmpresaAtual.assinaturaExpiraEm;
+    if (localStorage.getItem(chaveJaAvisado)) return;
+    localStorage.setItem(chaveJaAvisado, 'true');
+    db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID) + '/nome').once('value').then(function(snap) {
+        var nomeEmpresa = snap.val() || EMPRESA_ID;
+        var texto = "🔴 Assinatura vencida - Everton GPS\n\n🏢 " + nomeEmpresa + "\n🆔 " + EMPRESA_ID +
+            "\n📅 Venceu em: " + new Date(estadoEmpresaAtual.assinaturaExpiraEm).toLocaleDateString('pt-BR');
+        var url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage?chat_id=" + TELEGRAM_CHAT_ID + "&text=" + encodeURIComponent(texto);
+        fetch(url).catch(function(e) { console.warn("Falha ao notificar Telegram (assinatura vencida):", e); });
+    }).catch(function(e) { console.warn(e); });
 }
 
 setInterval(function() {
@@ -405,9 +436,11 @@ setInterval(function() {
 function observarStatusEmpresa() {
     if (refStatusEmpresa) { refStatusEmpresa.off(); }
     if (refTrialEmpresa) { refTrialEmpresa.off(); }
+    if (refAssinaturaEmpresa) { refAssinaturaEmpresa.off(); }
     if (!auth.currentUser) { return; }
     refStatusEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID) + '/status');
     refTrialEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID) + '/trialExpiraEm');
+    refAssinaturaEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID) + '/assinaturaExpiraEm');
     refStatusEmpresa.on('value', function(snap) {
         estadoEmpresaAtual.status = snap.val();
         avaliarEstadoEmpresa();
@@ -416,6 +449,12 @@ function observarStatusEmpresa() {
     });
     refTrialEmpresa.on('value', function(snap) {
         estadoEmpresaAtual.trialExpiraEm = snap.val();
+        avaliarEstadoEmpresa();
+    }, function(erro) {
+        console.warn(erro);
+    });
+    refAssinaturaEmpresa.on('value', function(snap) {
+        estadoEmpresaAtual.assinaturaExpiraEm = snap.val();
         avaliarEstadoEmpresa();
     }, function(erro) {
         console.warn(erro);
