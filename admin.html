@@ -169,6 +169,89 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 var marcadorVeiculo = L.marker([-29.6133, -52.1919]).addTo(map);
 
+// Setas ao longo do trajeto, na ordem real em que os pontos foram gravados — isso é o que
+// Cada ponto real ganha sua própria seta, girada na direção real de deslocamento
+// (calculada a partir do ponto seguinte). A seta é o próprio marcador clicável, com o
+// popup de dados grudado nela — não é mais uma linha de setas separada por cima do
+// traçado, e sim uma seta exatamente sobre cada ponto gravado. Quando o veículo passa
+// duas vezes pela mesma rua (ida e volta), cada passagem tem suas próprias setas, com
+// ângulo e dados independentes.
+function calcularRumoGrausAdmin(lat1, lon1, lat2, lon2) {
+    var toRad = function(g) { return g * Math.PI / 180; };
+    var toDeg = function(r) { return r * 180 / Math.PI; };
+    var dLon = toRad(lon2 - lon1);
+    var y = Math.sin(dLon) * Math.cos(toRad(lat2));
+    var x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) - Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLon);
+    var rumo = toDeg(Math.atan2(y, x));
+    return (rumo + 360) % 360;
+}
+
+function criarIconeSetaPonto(anguloGraus, cor) {
+    return L.divIcon({
+        className: 'seta-ponto-admin',
+        html: '<div style="width:22px;height:22px;transform:rotate(' + anguloGraus + 'deg);transform-origin:50% 50%;filter:drop-shadow(0 1px 3px rgba(0,0,0,.6));">' +
+              '<svg viewBox="0 0 24 24" width="22" height="22">' +
+              '<path d="M12 1.5 L21 21 L12 16.5 L3 21 Z" fill="' + cor + '" stroke="#04120e" stroke-width="1.2" stroke-linejoin="round"/>' +
+              '</svg></div>',
+        iconSize: [22, 22],
+        iconAnchor: [11, 11]
+    });
+}
+
+// Camada separada com um marcador em cada ponto REAL gravado (lat/lon originais do GPS,
+// não os pontos de encaixe que o motor de rotas cria). Cada um mostra, ao tocar, os mesmos
+// dados que o app já grava por ponto: rua/km da rodovia, bairro, cidade, velocidade e
+// precisão do GPS — igual ao popup de exemplo que já existia antes.
+var camadaPontosTelemetria = L.layerGroup().addTo(map);
+
+function iconeStatusPonto(status) {
+    if (status === 'VELOCIDADE ACIMA DO LIMITE') return '⚠️';
+    if (status === 'PARADO') return '🅿️';
+    return '🚗';
+}
+
+function corPontoPorStatus(status) {
+    if (status === 'VELOCIDADE ACIMA DO LIMITE') return '#ff5470';
+    if (status === 'PARADO') return '#ffb020';
+    return '#00ffa6';
+}
+
+function montarPopupPonto(ponto, indice, total) {
+    var precisaoTxt = ponto.precisao ? ("±" + ponto.precisao + "m") : "—";
+    var bairroTxt = (ponto.bairro && ponto.bairro !== "—") ? (" — " + ponto.bairro) : "";
+    var ordemTxt = (indice != null && total != null) ? ("Ponto " + (indice + 1) + " de " + total + "<br>") : "";
+    return '<div style="font-family: system-ui, sans-serif; font-size: 0.85em; line-height: 1.7; color:#111;">' +
+        ordemTxt +
+        '<b>' + iconeStatusPonto(ponto.status) + ' ' + (ponto.status || 'PARADO') + '</b><br>' +
+        '📍 ' + (ponto.rua || 'Rua não localizada') + '<br>' +
+        '🏙️ ' + (ponto.cidade || '—') + bairroTxt + '<br>' +
+        '🕐 ' + (ponto.data || '') + ' ' + (ponto.hora || '') + '<br>' +
+        '⚡ ' + (ponto.velocidade != null ? ponto.velocidade : 0) + ' km/h<br>' +
+        '🎯 Precisão GPS: ' + precisaoTxt +
+        '</div>';
+}
+
+// Redesenha todas as setas clicáveis a partir de uma lista de pontos completos (com
+// rua/bairro/cidade/velocidade/etc, não só lat/lon). A ordem da lista precisa ser a ordem
+// real de gravação, pra o ângulo de cada seta e o número do ponto ficarem corretos.
+function desenharMarcadoresTelemetria(pontos) {
+    camadaPontosTelemetria.clearLayers();
+    pontos.forEach(function(ponto, indice) {
+        if (!ponto || !ponto.lat || !ponto.lon) return;
+        var anguloPonto = 0;
+        var proximo = pontos[indice + 1];
+        var anterior = pontos[indice - 1];
+        if (proximo && proximo.lat && proximo.lon) {
+            anguloPonto = calcularRumoGrausAdmin(ponto.lat, ponto.lon, proximo.lat, proximo.lon);
+        } else if (anterior && anterior.lat && anterior.lon) {
+            anguloPonto = calcularRumoGrausAdmin(anterior.lat, anterior.lon, ponto.lat, ponto.lon);
+        }
+        L.marker([ponto.lat, ponto.lon], { icon: criarIconeSetaPonto(anguloPonto, corPontoPorStatus(ponto.status)) })
+            .bindPopup(montarPopupPonto(ponto, indice, pontos.length))
+            .addTo(camadaPontosTelemetria);
+    });
+}
+
 // Instanciando o controle de rotas nativo do Leaflet
 var controleRotas = L.Routing.control({
     waypoints: [],
@@ -292,10 +375,12 @@ function verificarEAtivarTempoReal() {
 function desenharLinhaDoTempoReal() {
     db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/veiculos/' + sanitizarChavePath(veiculoSelecionado) + '/historico').limitToLast(30).once('value', function(snapshot) {
         var pontos = [];
+        var pontosCompletos = [];
         snapshot.forEach(function(child) {
             var p = child.val();
-            if(p.lat && p.lon) pontos.push([p.lat, p.lon]);
+            if(p.lat && p.lon) { pontos.push([p.lat, p.lon]); pontosCompletos.push(p); }
         });
+        desenharMarcadoresTelemetria(pontosCompletos);
         if(pontos.length >= 2) processarEncaixeNasRuas(pontos);
     });
 }
@@ -338,6 +423,7 @@ document.getElementById('btnBuscarHistorico').addEventListener('click', function
         }
 
         atualizarPainelEletrico(dadosHistoricoCarregados[dadosHistoricoCarregados.length - 1]);
+        desenharMarcadoresTelemetria(dadosHistoricoCarregados);
         if (coordenadasParaLinha.length >= 2) processarEncaixeNasRuas(coordenadasParaLinha);
     });
 });
