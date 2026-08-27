@@ -505,6 +505,23 @@ function comLimiteDeTempo(promessa, timeoutMs) {
     ]);
 }
 
+// Quando um envio estoura o tempo, na maioria das vezes não é o Android bloqueando rede —
+// é a conexão (WebSocket) do próprio Firebase ficando "travada": parece conectada mas para
+// de responder, e o SDK só percebe isso sozinho depois de um tempo que pode passar bem dos
+// 10s que o app espera. Em vez de só esperar o Firebase se recuperar por conta própria,
+// aqui a gente derruba a conexão e força reconectar na hora — assim o próximo envio já
+// tenta numa conexão nova, sem depender de o SDK notar sozinho que a antiga travou.
+var ultimaReconexaoForcadaTs = 0;
+function forcarReconexaoFirebaseSeTravado() {
+    var agora = Date.now();
+    if (agora - ultimaReconexaoForcadaTs < 15000) return; // não força de novo se acabou de forçar
+    ultimaReconexaoForcadaTs = agora;
+    try {
+        db.goOffline();
+        setTimeout(function() { db.goOnline(); }, 400);
+    } catch (e) { console.warn("Falha ao forçar reconexão do Firebase:", e); }
+}
+
 function gerarIdPonto(ts) {
     return ts + "_" + Math.random().toString(36).slice(2, 8);
 }
@@ -1192,11 +1209,12 @@ function sincronizarTempoRealImediato() {
         updates[basePath + 'cidade'] = document.getElementById('txtCidade').textContent;
         updates[basePath + 'estado'] = document.getElementById('txtEstado').textContent;
     });
-    comLimiteDeTempo(db.ref().update(updates), 10000).then(() => {
+    comLimiteDeTempo(db.ref().update(updates), 18000).then(() => {
         if(!firebaseOnlineConfirmado) { firebaseOnlineConfirmado = true; atualizarInterfaceEstado(); }
     }).catch(e => {
         console.warn(e);
         var agora = Date.now();
+        if (e && e.message === "tempo esgotado") { forcarReconexaoFirebaseSeTravado(); }
         var msgErro1 = "Firebase recusou salvar posição ao vivo: " + (e && e.message ? e.message : e) + " [empresaId: " + EMPRESA_ID + ", logado: " + (auth.currentUser ? auth.currentUser.email : "NÃO") + "]";
         mostrarErroSyncPersistente(msgErro1);
         if (agora - ultimoAvisoErroEnvioTs > 60000) {
@@ -1448,11 +1466,12 @@ function enviarDadosFila() {
             var basePath = 'empresas/' + sanitizarChavePath(item.empresaId || EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(item.vID) + '/historico/' + item.id;
             updates[basePath] = item;
         });
-        comLimiteDeTempo(db.ref().update(updates), 10000).then(() => {
+        comLimiteDeTempo(db.ref().update(updates), 18000).then(() => {
             filaPendentes.splice(0, lote.length); falhasConsecutivasLote = 0; firebaseOnlineConfirmado = true; salvarTudo();
         }).catch(e => {
             falhasConsecutivasLote++; if (falhasConsecutivasLote >= 20) { filaPendentes.shift(); falhasConsecutivasLote = 0; salvarTudo(); }
             var agora = Date.now();
+            if (e && e.message === "tempo esgotado") { forcarReconexaoFirebaseSeTravado(); }
             var empresaIdsDoLote = Array.from(new Set(lote.map(function(it) { return it.empresaId || EMPRESA_ID; })));
             var msgErro2 = "Firebase recusou salvar os dados: " + (e && e.message ? e.message : e) + " [empresaId do(s) item(ns) que falharam: " + empresaIdsDoLote.join(", ") + " | empresaId atual do campo: " + EMPRESA_ID + ", logado: " + (auth.currentUser ? auth.currentUser.email : "NÃO") + "]";
             mostrarErroSyncPersistente(msgErro2);
