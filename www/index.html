@@ -1074,6 +1074,24 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
             contadorConfirmacaoExcesso = 0;
         }
 
+        // NOVO: quando o veículo sai de PARADO pra EM MOVIMENTO, se havia uma parada em
+        // andamento, grava o horário exato de término e a duração total precisa nesse mesmo
+        // ponto de início — antes disso, a única atualização de "tempoParado" vinha de um
+        // patch a cada 30s, que podia ficar até meio minuto desatualizado no momento exato
+        // em que o veículo saiu. Isso não muda mais nada do resto: continua sendo o MESMO
+        // ponto (não cria um ponto novo), só fica com a hora final e o total certinhos.
+        if (ultimoIdPontoParadaGravado && inicioParadaTs && EMPRESA_ID && listaVeiculos.length > 0) {
+            var duracaoFinalSegundos = Math.max(0, Math.floor((agoraTs - inicioParadaTs) / 1000));
+            var idParadaEncerrada = ultimoIdPontoParadaGravado;
+            var patchFinalParada = {};
+            listaVeiculos.forEach(function(vNome) {
+                var pathParada = 'empresas/' + sanitizarChavePath(EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(vNome) + '/historico/' + idParadaEncerrada + '/';
+                patchFinalParada[pathParada + 'tempoParado'] = formatarTempoParado(duracaoFinalSegundos);
+                patchFinalParada[pathParada + 'horaFinalParada'] = agora.toLocaleTimeString('pt-BR');
+            });
+            db.ref().update(patchFinalParada).catch(function(e) { console.warn(e); });
+        }
+
         inicioParadaTs = null; jaGravouPontoInicialParada = false; ultimoIdPontoParadaGravado = null; coordenadaParadaFixa = null;
         localStorage.removeItem('inicio_parada_ts');
         localStorage.removeItem('ja_gravou_parada');
