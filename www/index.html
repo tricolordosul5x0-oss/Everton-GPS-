@@ -1584,6 +1584,19 @@ setInterval(function() {
     var agoraPulso = new Date();
     if (agoraPulso.getTime() - ultimoPulsoTs < INTERVALO_PULSO_MS) return;
     ultimoPulsoTs = agoraPulso.getTime();
+
+    // CORREÇÃO: enquanto o veículo já está PARADO e o ponto de início dessa mesma parada já
+    // foi gravado (ultimoIdPontoParadaGravado), o pulso não cria mais um ponto novo a cada
+    // 15s — isso é o que fazia uma única parada longa aparecer como várias "setas de parada"
+    // separadas no histórico/painel admin. O tempo de parada continua sendo atualizado
+    // normalmente no MESMO ponto original pelo patch que já roda a cada 30s, então nada é
+    // perdido — só para de duplicar pontos. O pulso continua gravando normalmente quando o
+    // veículo está em movimento (pra manter o traçado da rota), e volta a criar um ponto novo
+    // de parada assim que houver movimento real entre uma parada e outra.
+    if (ultimaLeituraCompleta.status === "PARADO" && ultimoIdPontoParadaGravado) {
+        return;
+    }
+
     // CORREÇÃO: aqui o "rua" era lido de volta do texto já exibido na tela
     // (document.getElementById('txtRua').textContent) — só que, em rodovia, esse texto já
     // vem com o sufixo " - Km X" colado (é só pra exibição). Como esse valor era reenviado
