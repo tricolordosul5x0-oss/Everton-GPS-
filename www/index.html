@@ -1104,16 +1104,22 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         // patch a cada 30s, que podia ficar até meio minuto desatualizado no momento exato
         // em que o veículo saiu. Isso não muda mais nada do resto: continua sendo o MESMO
         // ponto (não cria um ponto novo), só fica com a hora final e o total certinhos.
-        if (ultimoIdPontoParadaGravado && inicioParadaTs && EMPRESA_ID && listaVeiculos.length > 0) {
-            var duracaoFinalSegundos = Math.max(0, Math.floor((agoraTs - inicioParadaTs) / 1000));
-            var idParadaEncerrada = ultimoIdPontoParadaGravado;
-            var patchFinalParada = {};
-            listaVeiculos.forEach(function(vNome) {
-                var pathParada = 'empresas/' + sanitizarChavePath(EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(vNome) + '/historico/' + idParadaEncerrada + '/';
-                patchFinalParada[pathParada + 'tempoParado'] = formatarTempoParado(duracaoFinalSegundos);
-                patchFinalParada[pathParada + 'horaFinalParada'] = agora.toLocaleTimeString('pt-BR');
-            });
-            atualizarViaRestApi(patchFinalParada).catch(function(e) { console.warn(e); });
+        // Protegido com try/catch: qualquer falha aqui nunca deve impedir a detecção de
+        // movimento nem as próximas leituras de GPS de continuarem funcionando normalmente.
+        try {
+            if (ultimoIdPontoParadaGravado && inicioParadaTs && EMPRESA_ID && listaVeiculos.length > 0) {
+                var duracaoFinalSegundos = Math.max(0, Math.floor((agoraTs - inicioParadaTs) / 1000));
+                var idParadaEncerrada = ultimoIdPontoParadaGravado;
+                var patchFinalParada = {};
+                listaVeiculos.forEach(function(vNome) {
+                    var pathParada = 'empresas/' + sanitizarChavePath(EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(vNome) + '/historico/' + idParadaEncerrada + '/';
+                    patchFinalParada[pathParada + 'tempoParado'] = formatarTempoParado(duracaoFinalSegundos);
+                    patchFinalParada[pathParada + 'horaFinalParada'] = agora.toLocaleTimeString('pt-BR');
+                });
+                atualizarViaRestApi(patchFinalParada).catch(function(e) { console.warn(e); });
+            }
+        } catch (erroFechamentoParada) {
+            console.warn("Falha ao fechar registro de parada (não afeta o rastreio):", erroFechamentoParada);
         }
 
         inicioParadaTs = null; jaGravouPontoInicialParada = false; ultimoIdPontoParadaGravado = null; coordenadaParadaFixa = null;
