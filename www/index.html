@@ -1116,7 +1116,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
                     patchFinalParada[pathParada + 'tempoParado'] = formatarTempoParado(duracaoFinalSegundos);
                     patchFinalParada[pathParada + 'horaFinalParada'] = agora.toLocaleTimeString('pt-BR');
                 });
-                atualizarViaRestApi(patchFinalParada).catch(function(e) { console.warn(e); });
+                db.ref().update(patchFinalParada).catch(function(e) { console.warn(e); });
             }
         } catch (erroFechamentoParada) {
             console.warn("Falha ao fechar registro de parada (não afeta o rastreio):", erroFechamentoParada);
@@ -1257,12 +1257,12 @@ function sincronizarTempoRealImediato() {
         updates[basePath + 'cidade'] = document.getElementById('txtCidade').textContent;
         updates[basePath + 'estado'] = document.getElementById('txtEstado').textContent;
     });
-    atualizarViaRestApi(updates).then(() => {
+    comLimiteDeTempo(db.ref().update(updates), 18000).then(() => {
         if(!firebaseOnlineConfirmado) { firebaseOnlineConfirmado = true; atualizarInterfaceEstado(); }
     }).catch(e => {
         console.warn(e);
         var agora = Date.now();
-        forcarReconexaoFirebaseSeTravado();
+        if (e && e.message === "tempo esgotado") { forcarReconexaoFirebaseSeTravado(); }
         var msgErro1 = "Firebase recusou salvar posição ao vivo: " + (e && e.message ? e.message : e) + " [empresaId: " + EMPRESA_ID + ", logado: " + (auth.currentUser ? auth.currentUser.email : "NÃO") + "]";
         mostrarErroSyncPersistente(msgErro1);
         if (agora - ultimoAvisoErroEnvioTs > 60000) {
@@ -1286,7 +1286,7 @@ setInterval(function() {
             patchHistorico[path + 'horaFinalParada'] = agoraStr;
         });
 
-        atualizarViaRestApi(patchHistorico).catch(e => console.warn(e));
+        db.ref().update(patchHistorico).catch(e => console.warn(e));
     }
 }, 30000);
 
@@ -1514,12 +1514,12 @@ function enviarDadosFila() {
             var basePath = 'empresas/' + sanitizarChavePath(item.empresaId || EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(item.vID) + '/historico/' + item.id;
             updates[basePath] = item;
         });
-        atualizarViaRestApi(updates).then(() => {
+        comLimiteDeTempo(db.ref().update(updates), 18000).then(() => {
             filaPendentes.splice(0, lote.length); falhasConsecutivasLote = 0; firebaseOnlineConfirmado = true; salvarTudo();
         }).catch(e => {
             falhasConsecutivasLote++; if (falhasConsecutivasLote >= 20) { filaPendentes.shift(); falhasConsecutivasLote = 0; salvarTudo(); }
             var agora = Date.now();
-            forcarReconexaoFirebaseSeTravado();
+            if (e && e.message === "tempo esgotado") { forcarReconexaoFirebaseSeTravado(); }
             var empresaIdsDoLote = Array.from(new Set(lote.map(function(it) { return it.empresaId || EMPRESA_ID; })));
             var msgErro2 = "Firebase recusou salvar os dados: " + (e && e.message ? e.message : e) + " [empresaId do(s) item(ns) que falharam: " + empresaIdsDoLote.join(", ") + " | empresaId atual do campo: " + EMPRESA_ID + ", logado: " + (auth.currentUser ? auth.currentUser.email : "NÃO") + "]";
             mostrarErroSyncPersistente(msgErro2);
