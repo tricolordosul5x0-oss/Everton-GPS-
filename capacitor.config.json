@@ -10,9 +10,6 @@
     "BackgroundGeolocation": {
       "backgroundMessage": "Rastreador Everton GPS está registrando a localização do veículo.",
       "backgroundTitle": "Rastreador ativo"
-    },
-    "CapacitorHttp": {
-      "enabled": true
     }
   }
 }
