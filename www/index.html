@@ -1200,14 +1200,27 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     ultimoPontoBruto = [lat, lon];
 
     if (iniciouParadaAgora) {
-        (function(latP, lonP, situacaoP, velP, precisaoP, agoraP) {
+        (function(latP, lonP, situacaoP, velP, precisaoP, agoraP, inicioParadaTsNoMomento) {
             setTimeout(function() {
+                // CORREÇÃO: antes disso, o app esperava 4s e gravava a parada sem checar se
+                // ela ainda estava acontecendo — um soluço de GPS de um instante só (comum em
+                // curvas, viadutos, perto de prédios) já bastava pra criar uma "seta de
+                // parada" falsa no meio de um trajeto contínuo, mesmo o veículo nunca tendo
+                // parado de verdade. Agora, só grava se o veículo ainda estiver parado nesse
+                // momento (inicioParadaTs não pode ter mudado nem sido zerado nesse meio
+                // tempo por um movimento real detectado).
+                if (inicioParadaTs !== inicioParadaTsNoMomento) {
+                    return; // já voltou a se mover (ou começou outra parada) — não era de verdade
+                }
                 var latConsulta = latP, lonConsulta = lonP;
                 if (ultimaLeituraCompleta && ultimaLeituraCompleta.precisao != null &&
                     (precisaoP == null || ultimaLeituraCompleta.precisao < precisaoP)) {
                     latConsulta = ultimaLeituraCompleta.lat; lonConsulta = ultimaLeituraCompleta.lon;
                 }
                 buscarEnderecoImediato(latConsulta, lonConsulta).then(function(fresco) {
+                    // Confere de novo depois do fetch do endereço (que também leva um tempo) —
+                    // mesma lógica: se já voltou a se mover, cancela.
+                    if (inicioParadaTs !== inicioParadaTsNoMomento) { return; }
                     var ruaBase = (fresco && fresco.rua) || viaState.nome || null;
                     var ruaFinal = (fresco && fresco.numero && ruaBase && fresco.tipoVia !== 'rodovia') ? (ruaBase + ", " + fresco.numero) : ruaBase;
                     registrarESincronizarPonto(latP, lonP, situacaoP, velP, precisaoP, agoraP, {
@@ -1220,7 +1233,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
                     }, 'inicio_parada');
                 });
             }, 4000);
-        })(lat, lon, situacao, vel, precisao, agora);
+        })(lat, lon, situacao, vel, precisao, agora, inicioParadaTs);
     } else if (iniciouExcessoAgora) {
         (function(latE, lonE, situacaoE, velE, precisaoE, agoraE) {
             buscarEnderecoImediato(latE, lonE).then(function(fresco) {
