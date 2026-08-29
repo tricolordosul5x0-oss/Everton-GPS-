@@ -289,6 +289,17 @@
         <div class="telemetry-row"><span>Horário do último ponto</span><span id="txtHora" style="color:var(--accent)">—</span></div>
         <div class="telemetry-row"><span>🌡️ Temperatura no local</span><b id="txtTemperatura">—</b></div>
     </div>
+
+    <div class="telemetry-card">
+        <div style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 8px; font-weight: bold;">🔍 Diagnóstico (números brutos)</div>
+        <div class="telemetry-row"><span>Vel. bruta do GPS (Doppler)</span><b id="diagVelRaw">—</b></div>
+        <div class="telemetry-row"><span>Vel. calc. por distância</span><b id="diagVelDistancia">—</b></div>
+        <div class="telemetry-row"><span>Vel. final usada</span><b id="diagVelFinal">—</b></div>
+        <div class="telemetry-row"><span>Considerado em movimento?</span><b id="diagEstaEmMovimento">—</b></div>
+        <div class="telemetry-row"><span>Distância até centro da parada</span><b id="diagDistCentroParada">—</b></div>
+        <div class="telemetry-row"><span>Leitura descartada (glitch)?</span><b id="diagGlitch">—</b></div>
+        <div class="telemetry-row"><span>Última posição de GPS há</span><b id="diagUltimaPosicaoHa">—</b></div>
+    </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" crossorigin="anonymous"></script>
@@ -944,6 +955,17 @@ setInterval(function() {
 }, 30000);
 // (variável de disjuntor de rejeições removida — a lógica de aceleração que a usava foi
 // simplificada, ver processarNovaPosicao)
+
+// Mantém o campo "Última posição de GPS há" do painel de diagnóstico sempre atualizado,
+// mesmo sem nenhuma leitura nova chegando — assim dá pra ver na tela, sem console, se o
+// GPS simplesmente parou de mandar atualizações (o que explicaria o status nunca mudar).
+setInterval(function() {
+    var elUltima = document.getElementById('diagUltimaPosicaoHa');
+    if (!elUltima) return;
+    elUltima.textContent = ultimaPosicaoRecebidaTs
+        ? Math.floor((Date.now() - ultimaPosicaoRecebidaTs) / 1000) + "s atrás"
+        : "nenhuma leitura ainda";
+}, 1000);
 var contadorConfirmacaoExcesso = 0;
 
 function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
@@ -1082,6 +1104,22 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     var estaEmMovimento = vel >= VELOCIDADE_MOVIMENTO_CONFIAVEL_KMH
         ? true
         : (vel >= LIMITE_MOVIMENTO_KMH && (!coordenadaParadaFixa || distanciaDoCentroDaParada > RAIO_FALSO_MOVIMENTO_METROS));
+
+    // Painel de diagnóstico na tela — só leitura, não influencia a decisão em nada.
+    try {
+        var elVelRaw = document.getElementById('diagVelRaw');
+        var elVelDist = document.getElementById('diagVelDistancia');
+        var elVelFinal = document.getElementById('diagVelFinal');
+        var elEstaMovimento = document.getElementById('diagEstaEmMovimento');
+        var elDistCentro = document.getElementById('diagDistCentroParada');
+        var elGlitch = document.getElementById('diagGlitch');
+        if (elVelRaw) elVelRaw.textContent = (velPorRaw != null ? velPorRaw + " km/h" : "sem dado (null)");
+        if (elVelDist) elVelDist.textContent = velPorDistancia + " km/h";
+        if (elVelFinal) elVelFinal.textContent = vel + " km/h";
+        if (elEstaMovimento) elEstaMovimento.textContent = estaEmMovimento ? "SIM" : "NÃO";
+        if (elDistCentro) elDistCentro.textContent = coordenadaParadaFixa ? Math.round(distanciaDoCentroDaParada) + " m" : "sem parada fixa ainda";
+        if (elGlitch) elGlitch.textContent = leituraDescartadaPorGlitch ? "SIM (descartou leitura!)" : "não";
+    } catch (erroDiag) { /* diagnóstico nunca deve quebrar o rastreio */ }
 
     if (estaEmMovimento) {
         situacao = (vel > LIMITE_VELOCIDADE) ? "VELOCIDADE ACIMA DO LIMITE" : "EM MOVIMENTO";
