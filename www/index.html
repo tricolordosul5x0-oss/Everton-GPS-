@@ -1208,7 +1208,9 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
                 // parada" falsa no meio de um trajeto contínuo, mesmo o veículo nunca tendo
                 // parado de verdade. Agora, só grava se o veículo ainda estiver parado nesse
                 // momento (inicioParadaTs não pode ter mudado nem sido zerado nesse meio
-                // tempo por um movimento real detectado).
+                // tempo por um movimento real detectado). O prazo também subiu de 4s pra 1
+                // minuto — combinado que só conta como "parada" de verdade (semáforo, fila de
+                // trânsito etc. não geram mais seta, só param contínuas de 1min+).
                 if (inicioParadaTs !== inicioParadaTsNoMomento) {
                     return; // já voltou a se mover (ou começou outra parada) — não era de verdade
                 }
@@ -1232,7 +1234,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
                         km: viaState.kmSincronizado
                     }, 'inicio_parada');
                 });
-            }, 4000);
+            }, 60000);
         })(lat, lon, situacao, vel, precisao, agora, inicioParadaTs);
     } else if (iniciouExcessoAgora) {
         (function(latE, lonE, situacaoE, velE, precisaoE, agoraE) {
