@@ -157,6 +157,62 @@
         .auth-card h3 { margin: 0; color: var(--text); font-size: 1.15em; text-align: center; font-family: var(--font-display); font-weight: 700; }
         .btn-fechar-modal { position: absolute; top: 14px; right: 14px; background: none; border: none; color: var(--text-dim); font-size: 1.2em; cursor: pointer; padding: 0; }
         .user-logado-info { font-size: 0.75em; color: var(--brand); text-align: center; margin-top: -4px; display: none; font-weight: 600; }
+
+        /* ===================== CHAT ===================== */
+        .btn-chat-flutuante {
+            position: fixed; right: 16px; bottom: 20px; z-index: 500;
+            width: 54px; height: 54px; border-radius: 50%; padding: 0;
+            background: linear-gradient(155deg, var(--accent), #1b8fe0);
+            box-shadow: 0 8px 22px rgba(52,179,255,.35);
+            display: flex; align-items: center; justify-content: center; font-size: 1.4em;
+        }
+        .btn-chat-flutuante .bolinha-novo {
+            position: absolute; top: 2px; right: 2px; width: 13px; height: 13px; border-radius: 50%;
+            background: var(--danger); border: 2px solid var(--bg-main); display: none;
+        }
+        .btn-chat-flutuante.tem-novo .bolinha-novo { display: block; }
+
+        .chat-overlay {
+            position: fixed; inset: 0; z-index: 9000; background: rgba(4,6,10,.6);
+            display: none; align-items: flex-end; justify-content: center;
+        }
+        .chat-overlay.aberto { display: flex; }
+        .chat-painel {
+            width: 100%; max-width: 480px; height: 78vh; background: var(--bg-panel);
+            border-top-left-radius: 20px; border-top-right-radius: 20px;
+            border: 1px solid var(--border-strong); border-bottom: none;
+            display: flex; flex-direction: column; overflow: hidden;
+            box-shadow: 0 -10px 40px rgba(0,0,0,.5);
+        }
+        .chat-header {
+            display: flex; align-items: center; gap: 8px; padding: 12px 14px;
+            border-bottom: 1px solid var(--border); flex-shrink: 0;
+        }
+        .chat-header .chat-titulo { font-family: var(--font-display); font-weight: 700; font-size: .95em; }
+        .chat-header select {
+            flex: 1; background: var(--bg-input); color: var(--text); border: 1px solid var(--border);
+            border-radius: var(--radius-sm); padding: 9px 10px; font-size: .82em; font-family: var(--font-body);
+        }
+        .btn-fechar-chat {
+            background: none; border: none; color: var(--text-dim); font-size: 1.3em; padding: 0 4px; cursor: pointer;
+        }
+        .chat-mensagens {
+            flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px;
+        }
+        .chat-msg { max-width: 80%; padding: 9px 12px; border-radius: 14px; font-size: .87em; line-height: 1.4; word-break: break-word; }
+        .chat-msg .chat-msg-nome { font-size: .72em; font-weight: 700; color: var(--accent); margin-bottom: 2px; display: block; }
+        .chat-msg .chat-msg-hora { font-size: .65em; color: var(--text-faint); margin-top: 3px; display: block; text-align: right; }
+        .chat-msg.minha { align-self: flex-end; background: var(--brand); color: #04120e; border-bottom-right-radius: 4px; }
+        .chat-msg.minha .chat-msg-nome { display: none; }
+        .chat-msg.minha .chat-msg-hora { color: rgba(4,18,14,.6); }
+        .chat-msg.outro { align-self: flex-start; background: var(--bg-card); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+        .chat-vazio { text-align: center; color: var(--text-faint); font-size: .82em; margin-top: 20px; }
+        .chat-input-row {
+            display: flex; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--border); flex-shrink: 0;
+            background: var(--bg-panel);
+        }
+        .chat-input-row input { margin: 0; }
+        .chat-input-row button { padding: 12px 18px; }
     </style>
 </head>
 <body>
@@ -230,6 +286,23 @@
         <div style="font-size:1.8em; margin-bottom:10px;">🚫</div>
         <div style="color:var(--danger); font-weight:700; font-size:1.05em; line-height:1.5; font-family:var(--font-display);">Acesso suspenso</div>
         <div style="color:var(--text-dim); font-size:0.88em; margin-top:8px; line-height:1.5;">Entre em contato com o suporte para regularizar o pagamento.</div>
+    </div>
+</div>
+
+<button id="btnChatFlutuante" class="btn-chat-flutuante" title="Mensagens">💬<span class="bolinha-novo"></span></button>
+
+<div id="chatOverlay" class="chat-overlay">
+    <div class="chat-painel">
+        <div class="chat-header">
+            <span class="chat-titulo">💬</span>
+            <select id="chatCanalSelect"></select>
+            <button id="btnFecharChat" class="btn-fechar-chat">✕</button>
+        </div>
+        <div id="chatMensagens" class="chat-mensagens"></div>
+        <div class="chat-input-row">
+            <input type="text" id="chatInputTexto" placeholder="Escreva uma mensagem...">
+            <button id="btnEnviarChat">Enviar</button>
+        </div>
     </div>
 </div>
 
@@ -1122,9 +1195,18 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     } catch (erroDiag) { /* diagnóstico nunca deve quebrar o rastreio */ }
 
     if (estaEmMovimento) {
-        situacao = (vel > LIMITE_VELOCIDADE) ? "VELOCIDADE ACIMA DO LIMITE" : "EM MOVIMENTO";
+        // CORREÇÃO: reflexo de sinal de GPS perto de prédios/garagens pode gerar uma leitura
+        // de velocidade alta momentânea mesmo com o veículo parado no mesmo lugar — o teto de
+        // "implausível" (180 km/h) não pega isso porque o limite de excesso (80 km/h) é bem
+        // menor. Fisicamente, não dá pra estar de verdade acima do limite ainda "no mesmo
+        // lugar" de instantes atrás — então só classifica como excesso se o veículo também já
+        // tiver se afastado de verdade do centro da última parada. Não afeta em nada a
+        // detecção normal de EM MOVIMENTO, só evita o alarme falso de excesso.
+        var aindaPertoDoUltimoLocalParado = coordenadaParadaFixa && distanciaDoCentroDaParada <= RAIO_FALSO_MOVIMENTO_METROS;
+        var ehExcessoDeVerdade = vel > LIMITE_VELOCIDADE && !aindaPertoDoUltimoLocalParado;
+        situacao = ehExcessoDeVerdade ? "VELOCIDADE ACIMA DO LIMITE" : "EM MOVIMENTO";
         badgeStatus.textContent = situacao;
-        badgeStatus.className = (vel > LIMITE_VELOCIDADE) ? "badge badge-perigo" : "badge badge-movimento";
+        badgeStatus.className = ehExcessoDeVerdade ? "badge badge-perigo" : "badge badge-movimento";
 
         if (situacao === "VELOCIDADE ACIMA DO LIMITE") {
             contadorConfirmacaoExcesso++;
@@ -1672,53 +1754,5 @@ document.getElementById('btnDiagnostico').addEventListener('click', function() {
         .then(res => res.text()).then(txt => { out.textContent = "✅ SUCESSO\n\n" + txt.slice(0, 300); }).catch(e => { out.textContent = "❌ ERRO: " + e.message; });
 });
 
-renderizarFrotaLocal(); atualizarInterfaceEstado(); checarContextoSeguro();
-
-setInterval(function() { sincronizarTempoRealImediato(); }, 3000);
-setInterval(function() { if (filaGeocodificarDepois.length > 0) processarFilaGeocodificacao(); if (filaPendentes.length > 0) enviarDadosFila(); }, 6000);
-
-var ultimoPulsoTs = 0;
-var INTERVALO_PULSO_MS = 15000;
-setInterval(function() {
-    if (appSuspenso) return;
-    if (!ultimaLeituraCompleta || listaVeiculos.length === 0) return;
-    var agoraPulso = new Date();
-    if (agoraPulso.getTime() - ultimoPulsoTs < INTERVALO_PULSO_MS) return;
-    ultimoPulsoTs = agoraPulso.getTime();
-
-    // CORREÇÃO: enquanto o veículo já está PARADO e o ponto de início dessa mesma parada já
-    // foi gravado (ultimoIdPontoParadaGravado), o pulso não cria mais um ponto novo a cada
-    // 15s — isso é o que fazia uma única parada longa aparecer como várias "setas de parada"
-    // separadas no histórico/painel admin. O tempo de parada continua sendo atualizado
-    // normalmente no MESMO ponto original pelo patch que já roda a cada 30s, então nada é
-    // perdido — só para de duplicar pontos. O pulso continua gravando normalmente quando o
-    // veículo está em movimento (pra manter o traçado da rota), e volta a criar um ponto novo
-    // de parada assim que houver movimento real entre uma parada e outra.
-    if (ultimaLeituraCompleta.status === "PARADO" && ultimoIdPontoParadaGravado) {
-        return;
-    }
-
-    // CORREÇÃO: aqui o "rua" era lido de volta do texto já exibido na tela
-    // (document.getElementById('txtRua').textContent) — só que, em rodovia, esse texto já
-    // vem com o sufixo " - Km X" colado (é só pra exibição). Como esse valor era reenviado
-    // pra registrarESincronizarPonto, que TAMBÉM cola " - Km X" no final quando é rodovia,
-    // cada pulso (a cada 15s) duplicava o sufixo em cima do que já estava duplicado —
-    // depois de alguns pulsos virava "RSC-287 - Km 78 - Km 78 - Km 78 - Km 78...".  Agora
-    // usa viaState.nome (o nome puro da via, sem nenhum sufixo) como fonte — igual todo
-    // outro lugar do código já fazia — e deixa registrarESincronizarPonto colar o "- Km X"
-    // uma única vez, na hora certa.
-    registrarESincronizarPonto(
-        ultimaLeituraCompleta.lat, ultimaLeituraCompleta.lon, ultimaLeituraCompleta.status,
-        ultimaLeituraCompleta.velocidade, ultimaLeituraCompleta.precisao, agoraPulso,
-        {
-            rua: (viaState.tipo === 'rodovia') ? viaState.nome : document.getElementById('txtRua').textContent,
-            bairro: document.getElementById('txtBairro').textContent,
-            cidade: document.getElementById('txtCidade').textContent,
-            estado: document.getElementById('txtEstado').textContent,
-            tipoVia: viaState.tipo || 'rua', km: viaState.kmSincronizado
-        }, 'pulso'
-    );
-}, 15000);
-</script>
-</body>
-</html>
+// ===================== CHAT (Geral + Privado por veículo) =====================
+// Canal "geral": todo mu
