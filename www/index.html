@@ -516,7 +516,7 @@ function observarStatusEmpresa() {
     if (refStatusEmpresa) { refStatusEmpresa.off(); }
     if (refTrialEmpresa) { refTrialEmpresa.off(); }
     if (refAssinaturaEmpresa) { refAssinaturaEmpresa.off(); }
-    if (!auth.currentUser) { return; }
+    if (!auth.currentUser || !EMPRESA_ID) { return; }
     refStatusEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID) + '/status');
     refTrialEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID) + '/trialExpiraEm');
     refAssinaturaEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID) + '/assinaturaExpiraEm');
@@ -1751,4 +1751,4 @@ setInterval(function() {
         return;
     }
 
-    // CORREÇÃO: aqui o "rua" era lido de volta do texto
+    // CORREÇÃO: aqui o "rua" era lido de
