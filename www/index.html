@@ -277,6 +277,7 @@
     <div class="telemetry-card">
         <div style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 8px; font-weight: bold;">Última Telemetria Gerada</div>
         <div class="telemetry-row"><span>Situação</span><span id="badStatus" class="badge badge-parado">PARADO</span></div>
+        <div class="telemetry-row"><span>Limite da Via</span><b id="txtLimiteVia">—</b></div>
         <div class="telemetry-row"><span>Velocidade</span><b id="txtVelocidade">0 km/h</b></div>
         <div class="telemetry-row"><span>Precisão GPS</span><b id="txtPrecisao">—</b></div>
         <div class="telemetry-row"><span>Tempo de Parada</span><b id="txtTempoParado">00:00:00</b></div>
@@ -522,7 +523,22 @@ var MAX_TENTATIVAS_GEOCODIFICACAO = 3;
 var TIMEOUT_FETCH_MS = 8000;
 
 function montarUrlGeocodificacao(lat, lon) {
-    return `${URL_PROXY_GEOCODIFICACAO}?format=jsonv2&addressdetails=1&lat=${lat}&lon=${lon}&zoom=18`;
+    // extratags=1 é o que traz o maxspeed (limite oficial da via) quando o mapa tem essa
+    // informação marcada.
+    return `${URL_PROXY_GEOCODIFICACAO}?format=jsonv2&addressdetails=1&extratags=1&lat=${lat}&lon=${lon}&zoom=18`;
+}
+
+// Lê o limite de velocidade oficial da via (tag "maxspeed" do OpenStreetMap) quando
+// disponível. Vem em formatos variados ("40", "40 km/h", "RS:urban" etc.) — aqui só
+// extraímos o primeiro número razoável. Se não vier nenhum limite marcado no mapa,
+// retorna null e quem chamar decide o padrão (30 km/h pras ruas sem essa marcação).
+function extrairLimiteVelocidadeTag(extratags) {
+    if (!extratags || !extratags.maxspeed) return null;
+    var m = String(extratags.maxspeed).match(/(\d+)/);
+    if (!m) return null;
+    var valor = parseInt(m[1], 10);
+    if (isNaN(valor) || valor <= 0 || valor > 150) return null;
+    return valor;
 }
 
 function fetchComTimeout(url, opcoes, timeoutMs) {
@@ -666,7 +682,7 @@ var coordenadaParadaFixa = (function() {
 
 var viaState = (function() {
     var raw = localStorage.getItem('via_state');
-    var padrao = { tipo: null, nome: null, kmBase: 0, odometroM: 0, kmSincronizado: null };
+    var padrao = { tipo: null, nome: null, kmBase: 0, odometroM: 0, kmSincronizado: null, limiteVelocidade: 30 };
     try {
         return raw ? Object.assign(padrao, JSON.parse(raw)) : padrao;
     } catch (e) {
@@ -1010,7 +1026,9 @@ function registrarESincronizarPonto(lat, lon, situacao, velKmh, precisao, agora,
         precisaoBaixa: !!(precisao && precisao > PRECISAO_MAXIMA_ACEITAVEL_M),
         rua: ruaExibida, bairro: bairroExibido, cidade: cidadeExibida, estado: estadoExibido,
         endereco: ruaExibida + (bairroExibido !== "—" ? ", " + bairroExibido : "") + (cidadeExibida !== "—" ? " - " + cidadeExibida + "/" + estadoExibido : ""),
-        tipoVia: enderecoInfo.tipoVia, motivo: motivo, fonteKm: enderecoInfo.fonteKm || null
+        tipoVia: enderecoInfo.tipoVia, motivo: motivo, fonteKm: enderecoInfo.fonteKm || null,
+        limiteVia: enderecoInfo.limiteVia != null ? enderecoInfo.limiteVia : null,
+        excessoKmh: enderecoInfo.limiteVia != null ? Math.max(0, (situacao === "PARADO" ? 0 : velKmh) - enderecoInfo.limiteVia) : null
     };
     registroCompleto.push(registro);
     if (listaVeiculos.length > 0) {
@@ -1105,6 +1123,12 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         ? true
         : (vel >= LIMITE_MOVIMENTO_KMH && (!coordenadaParadaFixa || distanciaDoCentroDaParada > RAIO_FALSO_MOVIMENTO_METROS));
 
+    // Limite de velocidade da via atual — calculado sempre (parado ou em movimento) pra
+    // poder exibir na telemetria e usar na checagem de excesso logo abaixo.
+    var limiteVelocidadeAtual = (viaState.tipo === 'rodovia') ? LIMITE_VELOCIDADE : (viaState.limiteVelocidade || 30);
+    var elLimiteVia = document.getElementById('txtLimiteVia');
+    if (elLimiteVia) elLimiteVia.textContent = limiteVelocidadeAtual + " km/h";
+
     // Painel de diagnóstico na tela — só leitura, não influencia a decisão em nada.
     try {
         var elVelRaw = document.getElementById('diagVelRaw');
@@ -1130,10 +1154,11 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         // tiver se afastado de verdade do centro da última parada. Não afeta em nada a
         // detecção normal de EM MOVIMENTO, só evita o alarme falso de excesso.
         var aindaPertoDoUltimoLocalParado = coordenadaParadaFixa && distanciaDoCentroDaParada <= RAIO_FALSO_MOVIMENTO_METROS;
-        var limiteVelocidadeAtual = (viaState.tipo === 'rodovia') ? LIMITE_VELOCIDADE : (viaState.limiteVelocidade || 30);
         var ehExcessoDeVerdade = vel > limiteVelocidadeAtual && !aindaPertoDoUltimoLocalParado;
         situacao = ehExcessoDeVerdade ? "VELOCIDADE ACIMA DO LIMITE" : "EM MOVIMENTO";
-        badgeStatus.textContent = situacao;
+        badgeStatus.textContent = ehExcessoDeVerdade
+            ? situacao + " (" + vel + " km/h, via de " + limiteVelocidadeAtual + " km/h)"
+            : situacao;
         badgeStatus.className = ehExcessoDeVerdade ? "badge badge-perigo" : "badge badge-movimento";
 
         if (situacao === "VELOCIDADE ACIMA DO LIMITE") {
@@ -1247,7 +1272,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
             }, 60000);
         })(lat, lon, situacao, vel, precisao, agora, inicioParadaTs);
     } else if (iniciouExcessoAgora) {
-        (function(latE, lonE, situacaoE, velE, precisaoE, agoraE) {
+        (function(latE, lonE, situacaoE, velE, precisaoE, agoraE, limiteViaNoMomento) {
             buscarEnderecoImediato(latE, lonE).then(function(fresco) {
                 var ruaBase = (fresco && fresco.rua) || viaState.nome || null;
                 var ruaFinal = (fresco && fresco.numero && ruaBase && fresco.tipoVia !== 'rodovia') ? (ruaBase + ", " + fresco.numero) : ruaBase;
@@ -1257,10 +1282,11 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
                     cidade: (fresco && fresco.cidade) || document.getElementById('txtCidade').textContent,
                     estado: (fresco && fresco.estado) || document.getElementById('txtEstado').textContent,
                     tipoVia: (fresco && fresco.tipoVia) || viaState.tipo || 'rua',
-                    km: viaState.kmSincronizado
+                    km: viaState.kmSincronizado,
+                    limiteVia: limiteViaNoMomento
                 }, 'excesso_velocidade');
             });
-        })(lat, lon, situacao, vel, precisao, agora);
+        })(lat, lon, situacao, vel, precisao, agora, limiteVelocidadeAtual);
     } else if (kmMudou) {
         atualizandoKmRodovia = true;
         buscarKmOficial(lat, lon).then(function(kmOficial) {
@@ -1479,7 +1505,8 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
         }).catch(function() { atualizandoKmRodovia = false; });
     } else if (mudouDeVia) {
         viaAnterior = viaState.nome;
-        viaState = { tipo: 'rua', nome: rua, kmBase: 0, odometroM: 0, kmSincronizado: null };
+        var limiteTagRua = extrairLimiteVelocidadeTag(dadosResposta && dadosResposta.extratags);
+        viaState = { tipo: 'rua', nome: rua, kmBase: 0, odometroM: 0, kmSincronizado: null, limiteVelocidade: limiteTagRua || 30 };
         salvarViaState();
         ultimoRegistroViaTs = tsNoMomento || Date.now();
 
@@ -1640,8 +1667,8 @@ document.getElementById('btnForcar').addEventListener('click', function() {
 
 document.getElementById('btnExportar').addEventListener('click', async function() {
     if (registroCompleto.length === 0) return alert("Sem pontos.");
-    var lines = ["Data;Hora;Latitude;Longitude;Velocidade(km/h);Situacao;Rua;Bairro;Cidade;Estado;Motivo;FonteKm"];
-    registroCompleto.forEach(p => { lines.push([p.data, p.hora, p.lat, p.lon, p.velocidade, p.status, p.rua, p.bairro, p.cidade, p.estado, p.motivo || "", p.fonteKm || ""].join(";")); });
+    var lines = ["Data;Hora;Latitude;Longitude;Velocidade(km/h);Situacao;Rua;Bairro;Cidade;Estado;Motivo;FonteKm;LimiteVia;ExcessoKmh"];
+    registroCompleto.forEach(p => { lines.push([p.data, p.hora, p.lat, p.lon, p.velocidade, p.status, p.rua, p.bairro, p.cidade, p.estado, p.motivo || "", p.fonteKm || "", p.limiteVia != null ? p.limiteVia : "", p.excessoKmh != null ? p.excessoKmh : ""].join(";")); });
     var conteudoCsv = lines.join("\n");
     var nomeArquivo = "rota_real_" + new Date().toISOString().slice(0,10) + ".csv";
     var out = document.getElementById('diagnosticoResultado');
@@ -1718,17 +1745,4 @@ setInterval(function() {
     // outro lugar do código já fazia — e deixa registrarESincronizarPonto colar o "- Km X"
     // uma única vez, na hora certa.
     registrarESincronizarPonto(
-        ultimaLeituraCompleta.lat, ultimaLeituraCompleta.lon, ultimaLeituraCompleta.status,
-        ultimaLeituraCompleta.velocidade, ultimaLeituraCompleta.precisao, agoraPulso,
-        {
-            rua: (viaState.tipo === 'rodovia') ? viaState.nome : document.getElementById('txtRua').textContent,
-            bairro: document.getElementById('txtBairro').textContent,
-            cidade: document.getElementById('txtCidade').textContent,
-            estado: document.getElementById('txtEstado').textContent,
-            tipoVia: viaState.tipo || 'rua', km: viaState.kmSincronizado
-        }, 'pulso'
-    );
-}, 15000);
-</script>
-</body>
-</html>
+        ul
