@@ -157,26 +157,6 @@
         .auth-card h3 { margin: 0; color: var(--text); font-size: 1.15em; text-align: center; font-family: var(--font-display); font-weight: 700; }
         .btn-fechar-modal { position: absolute; top: 14px; right: 14px; background: none; border: none; color: var(--text-dim); font-size: 1.2em; cursor: pointer; padding: 0; }
         .user-logado-info { font-size: 0.75em; color: var(--brand); text-align: center; margin-top: -4px; display: none; font-weight: 600; }
-
-        /* ===================== CHAT ===================== */
-        .chat-tab-btn {
-            flex: 1; border-radius: 0; background: transparent; color: var(--text-dim);
-            padding: 11px; font-size: 0.82em; box-shadow: none;
-        }
-        .chat-tab-btn.ativa { background: var(--bg-input); color: var(--brand); }
-        .chat-lista { height: 260px; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
-        .msg-bolha {
-            max-width: 80%; padding: 8px 12px; border-radius: 12px; font-size: 0.86em; line-height: 1.4;
-            word-break: break-word; align-self: flex-start; background: var(--bg-input); border: 1px solid var(--border);
-        }
-        .msg-bolha.minha { align-self: flex-end; background: rgba(0,224,168,.14); border-color: rgba(0,224,168,.3); }
-        .msg-bolha .msg-remetente { font-size: 0.72em; font-weight: 700; color: var(--brand); margin-bottom: 2px; }
-        .msg-bolha.minha .msg-remetente { color: var(--accent); }
-        .msg-bolha .msg-hora { font-size: 0.68em; color: var(--text-faint); margin-top: 3px; text-align: right; }
-        .badge-nao-lidas {
-            display: none; background: var(--danger); color: #fff; border-radius: 10px; padding: 1px 7px;
-            font-size: 0.78em; margin-left: 6px; font-weight: 700; vertical-align: middle;
-        }
     </style>
 </head>
 <body>
@@ -281,30 +261,6 @@
     <div class="frota-container">
         <div style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold;">Veículos Monitorados Neste Aparelho</div>
         <div class="frota-lista" id="listaFrotaLocal"></div>
-    </div>
-
-    <div class="input-box">
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-            <label style="margin-bottom:0;">💬 Mensagens</label>
-            <button id="btnAbrirFecharChat" style="padding:9px 16px; font-size:0.82em;">Abrir<span id="badgeMsgNaoLidas" class="badge-nao-lidas">0</span></button>
-        </div>
-    </div>
-
-    <div id="painelChat" class="frota-container" style="display:none; padding:0; overflow:hidden;">
-        <div style="display:flex; border-bottom:1px solid var(--border);">
-            <button id="chatTabMural" class="chat-tab-btn ativa">📢 Mural (todos)</button>
-            <button id="chatTabDireta" class="chat-tab-btn">💬 Conversa direta</button>
-        </div>
-        <div id="chatSeletorDestinatario" style="display:none; padding:10px 14px 0;">
-            <select id="chatSelectDestinatario" style="width:100%;">
-                <option value="">Selecione com quem falar...</option>
-            </select>
-        </div>
-        <div id="chatLista" class="chat-lista"></div>
-        <div style="display:flex; gap:8px; padding:10px 14px; border-top:1px solid var(--border);">
-            <input type="text" id="chatInputMensagem" placeholder="Digite sua mensagem...">
-            <button id="chatBtnEnviar" style="padding:12px 16px;">Enviar</button>
-        </div>
     </div>
 
     <div id="statusConexao" class="status-bar status-offline">MODO OFFLINE</div>
@@ -516,7 +472,7 @@ function observarStatusEmpresa() {
     if (refStatusEmpresa) { refStatusEmpresa.off(); }
     if (refTrialEmpresa) { refTrialEmpresa.off(); }
     if (refAssinaturaEmpresa) { refAssinaturaEmpresa.off(); }
-    if (!auth.currentUser || !EMPRESA_ID) { return; }
+    if (!auth.currentUser) { return; }
     refStatusEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID) + '/status');
     refTrialEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID) + '/trialExpiraEm');
     refAssinaturaEmpresa = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID) + '/assinaturaExpiraEm');
@@ -916,19 +872,13 @@ document.getElementById('btnConfirmarCadastro').addEventListener('click', functi
 });
 
 auth.onAuthStateChanged(user => {
-    try {
-        document.getElementById('userLogadoInfo').style.display = user ? "block" : "none";
-        if (!user) {
-            appSuspenso = false;
-            document.getElementById('avisoSuspenso').style.display = 'none';
-            abrirModalLogin(function() {});
-        } else {
-            observarStatusEmpresa();
-        }
-    } catch (erroAuthState) {
-        console.warn("Falha ao processar estado de autenticação:", erroAuthState);
-        // Mesmo com falha acima, tenta garantir que o modal de login apareça se não há usuário.
-        try { if (!user) { document.getElementById('authModal').style.display = "flex"; } } catch (e2) {}
+    document.getElementById('userLogadoInfo').style.display = user ? "block" : "none";
+    if (!user) {
+        appSuspenso = false;
+        document.getElementById('avisoSuspenso').style.display = 'none';
+        abrirModalLogin(function() {});
+    } else {
+        observarStatusEmpresa();
     }
 });
 
@@ -1180,7 +1130,8 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         // tiver se afastado de verdade do centro da última parada. Não afeta em nada a
         // detecção normal de EM MOVIMENTO, só evita o alarme falso de excesso.
         var aindaPertoDoUltimoLocalParado = coordenadaParadaFixa && distanciaDoCentroDaParada <= RAIO_FALSO_MOVIMENTO_METROS;
-        var ehExcessoDeVerdade = vel > LIMITE_VELOCIDADE && !aindaPertoDoUltimoLocalParado;
+        var limiteVelocidadeAtual = (viaState.tipo === 'rodovia') ? LIMITE_VELOCIDADE : (viaState.limiteVelocidade || 30);
+        var ehExcessoDeVerdade = vel > limiteVelocidadeAtual && !aindaPertoDoUltimoLocalParado;
         situacao = ehExcessoDeVerdade ? "VELOCIDADE ACIMA DO LIMITE" : "EM MOVIMENTO";
         badgeStatus.textContent = situacao;
         badgeStatus.className = ehExcessoDeVerdade ? "badge badge-perigo" : "badge badge-movimento";
@@ -1731,9 +1682,7 @@ document.getElementById('btnDiagnostico').addEventListener('click', function() {
         .then(res => res.text()).then(txt => { out.textContent = "✅ SUCESSO\n\n" + txt.slice(0, 300); }).catch(e => { out.textContent = "❌ ERRO: " + e.message; });
 });
 
-try { renderizarFrotaLocal(); } catch (e) { console.warn("Falha ao renderizar frota:", e); }
-try { atualizarInterfaceEstado(); } catch (e) { console.warn("Falha ao atualizar interface:", e); }
-try { checarContextoSeguro(); } catch (e) { console.warn("Falha ao checar contexto seguro:", e); }
+renderizarFrotaLocal(); atualizarInterfaceEstado(); checarContextoSeguro();
 
 setInterval(function() { sincronizarTempoRealImediato(); }, 3000);
 setInterval(function() { if (filaGeocodificarDepois.length > 0) processarFilaGeocodificacao(); if (filaPendentes.length > 0) enviarDadosFila(); }, 6000);
@@ -1750,4 +1699,36 @@ setInterval(function() {
     // CORREÇÃO: enquanto o veículo já está PARADO e o ponto de início dessa mesma parada já
     // foi gravado (ultimoIdPontoParadaGravado), o pulso não cria mais um ponto novo a cada
     // 15s — isso é o que fazia uma única parada longa aparecer como várias "setas de parada"
-    // s
+    // separadas no histórico/painel admin. O tempo de parada continua sendo atualizado
+    // normalmente no MESMO ponto original pelo patch que já roda a cada 30s, então nada é
+    // perdido — só para de duplicar pontos. O pulso continua gravando normalmente quando o
+    // veículo está em movimento (pra manter o traçado da rota), e volta a criar um ponto novo
+    // de parada assim que houver movimento real entre uma parada e outra.
+    if (ultimaLeituraCompleta.status === "PARADO" && ultimoIdPontoParadaGravado) {
+        return;
+    }
+
+    // CORREÇÃO: aqui o "rua" era lido de volta do texto já exibido na tela
+    // (document.getElementById('txtRua').textContent) — só que, em rodovia, esse texto já
+    // vem com o sufixo " - Km X" colado (é só pra exibição). Como esse valor era reenviado
+    // pra registrarESincronizarPonto, que TAMBÉM cola " - Km X" no final quando é rodovia,
+    // cada pulso (a cada 15s) duplicava o sufixo em cima do que já estava duplicado —
+    // depois de alguns pulsos virava "RSC-287 - Km 78 - Km 78 - Km 78 - Km 78...".  Agora
+    // usa viaState.nome (o nome puro da via, sem nenhum sufixo) como fonte — igual todo
+    // outro lugar do código já fazia — e deixa registrarESincronizarPonto colar o "- Km X"
+    // uma única vez, na hora certa.
+    registrarESincronizarPonto(
+        ultimaLeituraCompleta.lat, ultimaLeituraCompleta.lon, ultimaLeituraCompleta.status,
+        ultimaLeituraCompleta.velocidade, ultimaLeituraCompleta.precisao, agoraPulso,
+        {
+            rua: (viaState.tipo === 'rodovia') ? viaState.nome : document.getElementById('txtRua').textContent,
+            bairro: document.getElementById('txtBairro').textContent,
+            cidade: document.getElementById('txtCidade').textContent,
+            estado: document.getElementById('txtEstado').textContent,
+            tipoVia: viaState.tipo || 'rua', km: viaState.kmSincronizado
+        }, 'pulso'
+    );
+}, 15000);
+</script>
+</body>
+</html>
