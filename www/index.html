@@ -1745,4 +1745,17 @@ setInterval(function() {
     // outro lugar do código já fazia — e deixa registrarESincronizarPonto colar o "- Km X"
     // uma única vez, na hora certa.
     registrarESincronizarPonto(
-        ul
+        ultimaLeituraCompleta.lat, ultimaLeituraCompleta.lon, ultimaLeituraCompleta.status,
+        ultimaLeituraCompleta.velocidade, ultimaLeituraCompleta.precisao, agoraPulso,
+        {
+            rua: (viaState.tipo === 'rodovia') ? viaState.nome : document.getElementById('txtRua').textContent,
+            bairro: document.getElementById('txtBairro').textContent,
+            cidade: document.getElementById('txtCidade').textContent,
+            estado: document.getElementById('txtEstado').textContent,
+            tipoVia: viaState.tipo || 'rua', km: viaState.kmSincronizado
+        }, 'pulso'
+    );
+}, 15000);
+</script>
+</body>
+</html>
