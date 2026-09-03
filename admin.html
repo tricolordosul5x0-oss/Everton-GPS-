@@ -139,6 +139,7 @@ button:hover { opacity: 0.9; }
       <div class="box-title">📊 Dados do Ponto Selecionado</div>
       <div class="telemetry-row"><span>Situação</span><span id="txtStatus" class="badge badge-parado">—</span></div>
       <div class="telemetry-row"><span>Velocidade</span><b id="txtVelocidade">0 km/h</b></div>
+      <div class="telemetry-row"><span>Limite da Via</span><b id="txtLimiteVia">—</b></div>
       <div class="telemetry-row"><span>Tempo Parado</span><b id="txtTempoParado">00:00:00</b></div>
       <div class="telemetry-row"><span>Rua</span><b id="txtRua">—</b></div>
       <div class="telemetry-row"><span>Bairro</span><b id="txtBairro">—</b></div>
@@ -250,9 +251,20 @@ function montarPopupPonto(ponto, indice, total) {
     var precisaoTxt = ponto.precisao ? ("±" + ponto.precisao + "m") : "—";
     var bairroTxt = (ponto.bairro && ponto.bairro !== "—") ? (" — " + ponto.bairro) : "";
     var ordemTxt = (indice != null && total != null) ? ("Ponto " + (indice + 1) + " de " + total + "<br>") : "";
+    // Mostra o limite oficial da via junto com o status — sem isso, "VELOCIDADE ACIMA DO
+    // LIMITE" não dizia qual era o limite permitido ali (30/40/80/100/110, varia por via).
+    var limiteTxt = "";
+    if (ponto.limiteVia != null) {
+        limiteTxt = "🚦 Limite da via: " + ponto.limiteVia + " km/h";
+        if (ponto.excessoKmh != null && ponto.excessoKmh > 0) {
+            limiteTxt += " (excedeu em " + ponto.excessoKmh + " km/h)";
+        }
+        limiteTxt += "<br>";
+    }
     return '<div style="font-family: system-ui, sans-serif; font-size: 0.85em; line-height: 1.7; color:#111;">' +
         ordemTxt +
         '<b>' + iconeStatusPonto(ponto.status) + ' ' + (ponto.status || 'PARADO') + '</b><br>' +
+        limiteTxt +
         '📍 ' + (ponto.rua || 'Rua não localizada') + '<br>' +
         '🏙️ ' + (ponto.cidade || '—') + bairroTxt + '<br>' +
         '🕐 ' + (ponto.data || '') + ' ' + (ponto.hora || '') + '<br>' +
@@ -463,6 +475,13 @@ function atualizarPainelEletrico(dados) {
     map.setView(latlng, map.getZoom() < 14 ? 16 : map.getZoom());
 
     document.getElementById('txtVelocidade').textContent = (dados.velocidade || 0) + " km/h";
+    // Limite da via muda conforme a rua/rodovia (30/40/80/100/110 etc), então mostramos o
+    // valor que veio gravado junto com o ponto, e o quanto foi excedido quando houver.
+    var limiteTxt = dados.limiteVia != null ? (dados.limiteVia + " km/h") : "—";
+    if (dados.excessoKmh != null && dados.excessoKmh > 0) {
+        limiteTxt += " (excedeu em " + dados.excessoKmh + " km/h)";
+    }
+    document.getElementById('txtLimiteVia').textContent = limiteTxt;
     document.getElementById('txtTempoParado').textContent = dados.tempoParado || "00:00:00";
     document.getElementById('txtRua').textContent = dados.rua || "Não localizada";
     document.getElementById('txtBairro').textContent = dados.bairro || "—";
@@ -472,7 +491,10 @@ function atualizarPainelEletrico(dados) {
 
     var badge = document.getElementById('txtStatus');
     badge.textContent = dados.status || "PARADO";
-    badge.className = dados.velocidade > 80 ? "badge badge-perigo" : (dados.velocidade > 2 ? "badge badge-movimento" : "badge badge-parado");
+    // CORREÇÃO: antes o badge de perigo usava um limite fixo de 80 km/h aqui, mas o app
+    // agora calcula o limite por via (30/40/80/100/110...). Usar o "status" que o app já
+    // gravou no ponto é a fonte correta — ele já reflete o limite certo daquela via.
+    badge.className = dados.status === "VELOCIDADE ACIMA DO LIMITE" ? "badge badge-perigo" : ((dados.velocidade || 0) > 2 ? "badge badge-movimento" : "badge badge-parado");
 }
 
 // ===================== NOVO MOTOR DE ENCAIXE INTELIGENTE =====================
