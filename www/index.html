@@ -1124,8 +1124,10 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
         : (vel >= LIMITE_MOVIMENTO_KMH && (!coordenadaParadaFixa || distanciaDoCentroDaParada > RAIO_FALSO_MOVIMENTO_METROS));
 
     // Limite de velocidade da via atual — calculado sempre (parado ou em movimento) pra
-    // poder exibir na telemetria e usar na checagem de excesso logo abaixo.
-    var limiteVelocidadeAtual = (viaState.tipo === 'rodovia') ? LIMITE_VELOCIDADE : (viaState.limiteVelocidade || 30);
+    // poder exibir na telemetria e usar na checagem de excesso logo abaixo. Tanto rodovia
+    // quanto rua agora usam o limite oficial (placa) lido do mapa quando disponível; 80
+    // só entra como padrão de rodovia sem placa marcada, e 30 como padrão de rua sem placa.
+    var limiteVelocidadeAtual = viaState.limiteVelocidade || (viaState.tipo === 'rodovia' ? LIMITE_VELOCIDADE : 30);
     var elLimiteVia = document.getElementById('txtLimiteVia');
     if (elLimiteVia) elLimiteVia.textContent = limiteVelocidadeAtual + " km/h";
 
@@ -1493,7 +1495,8 @@ function aplicarEnderecoNoPonto(lat, lon, rua, bairro, cidade, estado, dadosResp
             var kmFinal = (kmOficial !== null) ? Math.round(kmOficial) : null;
             var fonte = (kmOficial !== null) ? 'oficial' : 'desconhecido';
             viaAnterior = viaState.nome;
-            viaState = { tipo: 'rodovia', nome: rua, kmBase: kmFinal != null ? kmFinal : 0, odometroM: 0, kmSincronizado: kmFinal };
+            var limiteTagRodovia = extrairLimiteVelocidadeTag(dadosResposta && dadosResposta.extratags);
+            viaState = { tipo: 'rodovia', nome: rua, kmBase: kmFinal != null ? kmFinal : 0, odometroM: 0, kmSincronizado: kmFinal, limiteVelocidade: limiteTagRodovia || LIMITE_VELOCIDADE };
             salvarViaState();
             atualizandoKmRodovia = false;
             ultimoRegistroViaTs = tsNoMomento || Date.now();
