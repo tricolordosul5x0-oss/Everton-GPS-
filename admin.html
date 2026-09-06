@@ -5,8 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Painel Admin - Rastreador Everton GPS</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
-<!-- Nova biblioteca adicionada para forçar o contorno de ruas de forma nativa -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet-routing-machine/3.2.12/leaflet-routing-machine.css" />
 <style>
 :root {
   --bg-main: #0a0d12;
@@ -52,9 +50,6 @@ button:hover { opacity: 0.9; }
 .auth-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center; z-index: 10000; }
 .auth-card { background: var(--bg-card); border: 1px solid var(--border); padding: 24px; border-radius: 12px; width: 90%; max-width: 360px; display: flex; flex-direction: column; gap: 16px; }
 .auth-card h3 { margin: 0; color: var(--text); font-size: 1.2em; text-align: center; }
-/* Esconder o painel de instruções de texto que o Leaflet Routing cria por padrão */
-.leaflet-routing-container { display: none !important; }
-
 /* ===================== CHAT ===================== */
 .chat-tab-btn-admin {
   flex: 1; border-radius: 0; background: transparent; color: var(--text-dim);
@@ -169,8 +164,6 @@ button:hover { opacity: 0.9; }
 <div id="map"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<!-- Scripts adicionais para o motor de rotas nativo do mapa -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-routing-machine/3.2.12/leaflet-routing-machine.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
@@ -289,19 +282,16 @@ function desenharMarcadoresTelemetria(pontos) {
     });
 }
 
-// Instanciando o controle de rotas nativo do Leaflet
-var controleRotas = L.Routing.control({
-    waypoints: [],
-    router: L.Routing.osrmv1({
-        serviceUrl: 'https://router.project-osrm.org/route/v1'
-    }),
-    lineOptions: {
-        styles: [{ color: '#00ffa6', weight: 6, opacity: 0.85 }]
-    },
-    createMarker: function() { return null; }, // Não cria balões extras nos pontos do meio da rua
-    addWaypoints: false,
-    fitSelectedRoutes: false
-}).addTo(map);
+// CORREÇÃO: antes, a linha do trajeto era desenhada pedindo pro OSRM (motor de rotas)
+// CALCULAR o caminho mais provável entre os pontos gravados, em vez de simplesmente ligar
+// os pontos reais. Com poucos pontos de amostra, o OSRM às vezes escolhia uma rua
+// alternativa (mais "lógica" do ponto de vista de rota) que não era a rua por onde o
+// veículo passou de verdade — o que criava trechos da linha atravessando ruas nunca
+// percorridas, ou pulando o pedaço realmente andado. Trocado pelo mais simples e mais
+// fiel à realidade: uma linha reta ligando os próprios pontos de GPS gravados, na ordem
+// em que foram gravados. Fica menos "arredondado" nas esquinas, mas nunca mais inventa
+// uma rua que não foi percorrida.
+var linhaTrajetoReal = L.polyline([], { color: '#00ffa6', weight: 5, opacity: 0.85 }).addTo(map);
 
 // CORREÇÃO: o painel lia direto de 'veiculos/{nome}' na raiz do banco — um caminho antigo,
 // de antes do app ter suporte a várias empresas. O app principal (index.html) já não grava
@@ -497,9 +487,13 @@ function atualizarPainelEletrico(dados) {
     badge.className = dados.status === "VELOCIDADE ACIMA DO LIMITE" ? "badge badge-perigo" : ((dados.velocidade || 0) > 2 ? "badge badge-movimento" : "badge badge-parado");
 }
 
-// ===================== NOVO MOTOR DE ENCAIXE INTELIGENTE =====================
+// ===================== LINHA DO TRAJETO REAL (sem adivinhar rota) =====================
+// CORREÇÃO: essa função antes montava uma amostra de até 25 pontos e mandava pro OSRM
+// calcular o caminho entre eles — o que podia "inventar" uma rua não percorrida (ver
+// comentário onde a linha é criada, acima). Agora ela só filtra pontos duplicados
+// consecutivos e desenha a linha ligando TODOS os pontos reais, na ordem gravada — sem
+// limite de amostragem e sem nenhum serviço de rotas envolvido.
 function processarEncaixeNasRuas(historicoCoordenadas) {
-    // 1. Filtrar pontos consecutivos duplicados
     var coordenadasFiltradas = [];
     for (var i = 0; i < historicoCoordenadas.length; i++) {
         if (i === 0) {
@@ -513,30 +507,8 @@ function processarEncaixeNasRuas(historicoCoordenadas) {
         }
     }
 
-    if (coordenadasFiltradas.length < 2) return;
-
-    // 2. Limitar amostragem máxima para não sobrecarregar a máquina de rotas
-    var pontosAmostra = [];
-    var maxPontosAPI = 25; // Reduzido o bloco para garantir precisão absoluta nas curvas
-    if (coordenadasFiltradas.length > maxPontosAPI) {
-        var passo = Math.ceil(coordenadasFiltradas.length / maxPontosAPI);
-        for (var j = 0; j < coordenadasFiltradas.length; j += passo) {
-            pontosAmostra.push(coordenadasFiltradas[j]);
-        }
-        pontosAmostra.push(coordenadasFiltradas[coordenadasFiltradas.length - 1]);
-    } else {
-        pontosAmostra = coordenadasFiltradas;
-    }
-
-    // Convertendo os pontos para o formato do Leaflet Routing Machine (L.latLng)
-    var waypoints = pontosAmostra.map(p => L.latLng(p[0], p[1]));
-
-    // 3. Forçar o recalculo e desenho contornando os quarteirões nativamente
-    try {
-        controleRotas.setWaypoints(waypoints);
-    } catch(e) {
-        console.log("Aguardando estabilização do mapa...");
-    }
+    if (coordenadasFiltradas.length < 2) { linhaTrajetoReal.setLatLngs([]); return; }
+    linhaTrajetoReal.setLatLngs(coordenadasFiltradas);
 }
 
 // ===================== CHAT (mural + conversa direta com um veículo) =====================
