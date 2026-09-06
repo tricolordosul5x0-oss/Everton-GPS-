@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
@@ -5,6 +6,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Painel Admin - Rastreador Everton GPS</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<!-- Nova biblioteca adicionada para forçar o contorno de ruas de forma nativa -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet-routing-machine/3.2.12/leaflet-routing-machine.css" />
 <style>
 :root {
   --bg-main: #0a0d12;
@@ -50,6 +53,9 @@ button:hover { opacity: 0.9; }
 .auth-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center; z-index: 10000; }
 .auth-card { background: var(--bg-card); border: 1px solid var(--border); padding: 24px; border-radius: 12px; width: 90%; max-width: 360px; display: flex; flex-direction: column; gap: 16px; }
 .auth-card h3 { margin: 0; color: var(--text); font-size: 1.2em; text-align: center; }
+/* Esconder o painel de instruções de texto que o Leaflet Routing cria por padrão */
+.leaflet-routing-container { display: none !important; }
+
 /* ===================== CHAT ===================== */
 .chat-tab-btn-admin {
   flex: 1; border-radius: 0; background: transparent; color: var(--text-dim);
@@ -134,7 +140,6 @@ button:hover { opacity: 0.9; }
       <div class="box-title">📊 Dados do Ponto Selecionado</div>
       <div class="telemetry-row"><span>Situação</span><span id="txtStatus" class="badge badge-parado">—</span></div>
       <div class="telemetry-row"><span>Velocidade</span><b id="txtVelocidade">0 km/h</b></div>
-      <div class="telemetry-row"><span>Limite da Via</span><b id="txtLimiteVia">—</b></div>
       <div class="telemetry-row"><span>Tempo Parado</span><b id="txtTempoParado">00:00:00</b></div>
       <div class="telemetry-row"><span>Rua</span><b id="txtRua">—</b></div>
       <div class="telemetry-row"><span>Bairro</span><b id="txtBairro">—</b></div>
@@ -164,6 +169,8 @@ button:hover { opacity: 0.9; }
 <div id="map"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<!-- Scripts adicionais para o motor de rotas nativo do mapa -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-routing-machine/3.2.12/leaflet-routing-machine.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
@@ -244,20 +251,9 @@ function montarPopupPonto(ponto, indice, total) {
     var precisaoTxt = ponto.precisao ? ("±" + ponto.precisao + "m") : "—";
     var bairroTxt = (ponto.bairro && ponto.bairro !== "—") ? (" — " + ponto.bairro) : "";
     var ordemTxt = (indice != null && total != null) ? ("Ponto " + (indice + 1) + " de " + total + "<br>") : "";
-    // Mostra o limite oficial da via junto com o status — sem isso, "VELOCIDADE ACIMA DO
-    // LIMITE" não dizia qual era o limite permitido ali (30/40/80/100/110, varia por via).
-    var limiteTxt = "";
-    if (ponto.limiteVia != null) {
-        limiteTxt = "🚦 Limite da via: " + ponto.limiteVia + " km/h";
-        if (ponto.excessoKmh != null && ponto.excessoKmh > 0) {
-            limiteTxt += " (excedeu em " + ponto.excessoKmh + " km/h)";
-        }
-        limiteTxt += "<br>";
-    }
     return '<div style="font-family: system-ui, sans-serif; font-size: 0.85em; line-height: 1.7; color:#111;">' +
         ordemTxt +
         '<b>' + iconeStatusPonto(ponto.status) + ' ' + (ponto.status || 'PARADO') + '</b><br>' +
-        limiteTxt +
         '📍 ' + (ponto.rua || 'Rua não localizada') + '<br>' +
         '🏙️ ' + (ponto.cidade || '—') + bairroTxt + '<br>' +
         '🕐 ' + (ponto.data || '') + ' ' + (ponto.hora || '') + '<br>' +
@@ -282,16 +278,19 @@ function desenharMarcadoresTelemetria(pontos) {
     });
 }
 
-// CORREÇÃO: antes, a linha do trajeto era desenhada pedindo pro OSRM (motor de rotas)
-// CALCULAR o caminho mais provável entre os pontos gravados, em vez de simplesmente ligar
-// os pontos reais. Com poucos pontos de amostra, o OSRM às vezes escolhia uma rua
-// alternativa (mais "lógica" do ponto de vista de rota) que não era a rua por onde o
-// veículo passou de verdade — o que criava trechos da linha atravessando ruas nunca
-// percorridas, ou pulando o pedaço realmente andado. Trocado pelo mais simples e mais
-// fiel à realidade: uma linha reta ligando os próprios pontos de GPS gravados, na ordem
-// em que foram gravados. Fica menos "arredondado" nas esquinas, mas nunca mais inventa
-// uma rua que não foi percorrida.
-var linhaTrajetoReal = L.polyline([], { color: '#00ffa6', weight: 5, opacity: 0.85 }).addTo(map);
+// Instanciando o controle de rotas nativo do Leaflet
+var controleRotas = L.Routing.control({
+    waypoints: [],
+    router: L.Routing.osrmv1({
+        serviceUrl: 'https://router.project-osrm.org/route/v1'
+    }),
+    lineOptions: {
+        styles: [{ color: '#00ffa6', weight: 6, opacity: 0.85 }]
+    },
+    createMarker: function() { return null; }, // Não cria balões extras nos pontos do meio da rua
+    addWaypoints: false,
+    fitSelectedRoutes: false
+}).addTo(map);
 
 // CORREÇÃO: o painel lia direto de 'veiculos/{nome}' na raiz do banco — um caminho antigo,
 // de antes do app ter suporte a várias empresas. O app principal (index.html) já não grava
@@ -465,13 +464,6 @@ function atualizarPainelEletrico(dados) {
     map.setView(latlng, map.getZoom() < 14 ? 16 : map.getZoom());
 
     document.getElementById('txtVelocidade').textContent = (dados.velocidade || 0) + " km/h";
-    // Limite da via muda conforme a rua/rodovia (30/40/80/100/110 etc), então mostramos o
-    // valor que veio gravado junto com o ponto, e o quanto foi excedido quando houver.
-    var limiteTxt = dados.limiteVia != null ? (dados.limiteVia + " km/h") : "—";
-    if (dados.excessoKmh != null && dados.excessoKmh > 0) {
-        limiteTxt += " (excedeu em " + dados.excessoKmh + " km/h)";
-    }
-    document.getElementById('txtLimiteVia').textContent = limiteTxt;
     document.getElementById('txtTempoParado').textContent = dados.tempoParado || "00:00:00";
     document.getElementById('txtRua').textContent = dados.rua || "Não localizada";
     document.getElementById('txtBairro').textContent = dados.bairro || "—";
@@ -481,19 +473,12 @@ function atualizarPainelEletrico(dados) {
 
     var badge = document.getElementById('txtStatus');
     badge.textContent = dados.status || "PARADO";
-    // CORREÇÃO: antes o badge de perigo usava um limite fixo de 80 km/h aqui, mas o app
-    // agora calcula o limite por via (30/40/80/100/110...). Usar o "status" que o app já
-    // gravou no ponto é a fonte correta — ele já reflete o limite certo daquela via.
-    badge.className = dados.status === "VELOCIDADE ACIMA DO LIMITE" ? "badge badge-perigo" : ((dados.velocidade || 0) > 2 ? "badge badge-movimento" : "badge badge-parado");
+    badge.className = dados.velocidade > 80 ? "badge badge-perigo" : (dados.velocidade > 2 ? "badge badge-movimento" : "badge badge-parado");
 }
 
-// ===================== LINHA DO TRAJETO REAL (sem adivinhar rota) =====================
-// CORREÇÃO: essa função antes montava uma amostra de até 25 pontos e mandava pro OSRM
-// calcular o caminho entre eles — o que podia "inventar" uma rua não percorrida (ver
-// comentário onde a linha é criada, acima). Agora ela só filtra pontos duplicados
-// consecutivos e desenha a linha ligando TODOS os pontos reais, na ordem gravada — sem
-// limite de amostragem e sem nenhum serviço de rotas envolvido.
+// ===================== NOVO MOTOR DE ENCAIXE INTELIGENTE =====================
 function processarEncaixeNasRuas(historicoCoordenadas) {
+    // 1. Filtrar pontos consecutivos duplicados
     var coordenadasFiltradas = [];
     for (var i = 0; i < historicoCoordenadas.length; i++) {
         if (i === 0) {
@@ -507,8 +492,30 @@ function processarEncaixeNasRuas(historicoCoordenadas) {
         }
     }
 
-    if (coordenadasFiltradas.length < 2) { linhaTrajetoReal.setLatLngs([]); return; }
-    linhaTrajetoReal.setLatLngs(coordenadasFiltradas);
+    if (coordenadasFiltradas.length < 2) return;
+
+    // 2. Limitar amostragem máxima para não sobrecarregar a máquina de rotas
+    var pontosAmostra = [];
+    var maxPontosAPI = 25; // Reduzido o bloco para garantir precisão absoluta nas curvas
+    if (coordenadasFiltradas.length > maxPontosAPI) {
+        var passo = Math.ceil(coordenadasFiltradas.length / maxPontosAPI);
+        for (var j = 0; j < coordenadasFiltradas.length; j += passo) {
+            pontosAmostra.push(coordenadasFiltradas[j]);
+        }
+        pontosAmostra.push(coordenadasFiltradas[coordenadasFiltradas.length - 1]);
+    } else {
+        pontosAmostra = coordenadasFiltradas;
+    }
+
+    // Convertendo os pontos para o formato do Leaflet Routing Machine (L.latLng)
+    var waypoints = pontosAmostra.map(p => L.latLng(p[0], p[1]));
+
+    // 3. Forçar o recalculo e desenho contornando os quarteirões nativamente
+    try {
+        controleRotas.setWaypoints(waypoints);
+    } catch(e) {
+        console.log("Aguardando estabilização do mapa...");
+    }
 }
 
 // ===================== CHAT (mural + conversa direta com um veículo) =====================
