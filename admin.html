@@ -96,6 +96,16 @@ button:hover { opacity: 0.9; }
   </div>
 </div>
 
+<div id="avisoSuspensoAdmin" style="display:none; position:fixed; inset:0; z-index:10001; background:var(--bg-main); flex-direction:column; align-items:center; justify-content:center; padding:32px 24px; text-align:center;">
+    <div style="width:88px; height:88px; border-radius:22px; background:linear-gradient(145deg,var(--danger),#a91c3e); display:flex; align-items:center; justify-content:center; font-size:2.4em; box-shadow:0 10px 28px rgba(255,84,112,0.3); margin-bottom:22px;">🛠️</div>
+    <div style="font-size:1.05em; font-weight:700; color:var(--text); letter-spacing:0.8px; margin-bottom:26px;">ADMIN EVERTON GPS</div>
+    <div style="border:1px solid rgba(255,84,112,.35); background:rgba(255,84,112,0.08); border-radius:16px; padding:24px 20px; max-width:340px;">
+        <div style="font-size:1.8em; margin-bottom:10px;">🚫</div>
+        <div style="color:var(--danger); font-weight:700; font-size:1.05em; line-height:1.5;">Acesso suspenso</div>
+        <div id="avisoSuspensoAdminTexto" style="color:var(--text-dim); font-size:0.88em; margin-top:8px; line-height:1.5;">Esta empresa está com o pagamento pendente. Entre em contato com o suporte para regularizar.</div>
+    </div>
+</div>
+
 <div class="sidebar">
   <div class="header">
     <h2>🛠️ Admin Everton GPS</h2>
@@ -191,6 +201,65 @@ var auth = firebase.auth();
 function sanitizarChavePath(valor) {
     return String(valor).replace(/[.#$\[\]\/]/g, "_");
 }
+
+// ===================== BLOQUEIO POR ASSINATURA/TESTE (mesma lógica do app) =====================
+// Igual ao app principal: lê status/trialExpiraEm/assinaturaExpiraEm da empresa carregada
+// e, se estiver suspensa, teste vencido ou assinatura vencida, cobre o painel inteiro com
+// a mesma tela de "Acesso suspenso" — bloqueando o admin de ver dados de uma empresa
+// inadimplente, do mesmo jeito que o app bloqueia o motorista.
+var estadoEmpresaAtualAdmin = { status: null, trialExpiraEm: null, assinaturaExpiraEm: null };
+var painelAdminSuspenso = false;
+var refStatusEmpresaAdmin = null;
+var refTrialEmpresaAdmin = null;
+var refAssinaturaEmpresaAdmin = null;
+
+function avaliarEstadoEmpresaAdmin() {
+    var testeVencido = estadoEmpresaAtualAdmin.status === 'trial' && estadoEmpresaAtualAdmin.trialExpiraEm && new Date(estadoEmpresaAtualAdmin.trialExpiraEm).getTime() < Date.now();
+    var assinaturaVencida = estadoEmpresaAtualAdmin.status === 'ativo' && estadoEmpresaAtualAdmin.assinaturaExpiraEm && new Date(estadoEmpresaAtualAdmin.assinaturaExpiraEm).getTime() < Date.now();
+    var suspenso = estadoEmpresaAtualAdmin.status === 'suspenso' || testeVencido || assinaturaVencida;
+    painelAdminSuspenso = suspenso;
+
+    var overlay = document.getElementById('avisoSuspensoAdmin');
+    var textoOverlay = document.getElementById('avisoSuspensoAdminTexto');
+    if (suspenso) {
+        if (textoOverlay) {
+            textoOverlay.textContent = "A empresa \"" + EMPRESA_ID_ADMIN + "\" está com o pagamento pendente. Entre em contato com o suporte para regularizar.";
+        }
+        overlay.style.display = 'flex';
+    } else {
+        overlay.style.display = 'none';
+    }
+}
+
+function observarStatusEmpresaAdmin() {
+    if (refStatusEmpresaAdmin) refStatusEmpresaAdmin.off();
+    if (refTrialEmpresaAdmin) refTrialEmpresaAdmin.off();
+    if (refAssinaturaEmpresaAdmin) refAssinaturaEmpresaAdmin.off();
+    estadoEmpresaAtualAdmin = { status: null, trialExpiraEm: null, assinaturaExpiraEm: null };
+    if (!EMPRESA_ID_ADMIN) { document.getElementById('avisoSuspensoAdmin').style.display = 'none'; return; }
+
+    refStatusEmpresaAdmin = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/status');
+    refTrialEmpresaAdmin = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/trialExpiraEm');
+    refAssinaturaEmpresaAdmin = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/assinaturaExpiraEm');
+
+    refStatusEmpresaAdmin.on('value', function(snap) {
+        estadoEmpresaAtualAdmin.status = snap.val();
+        avaliarEstadoEmpresaAdmin();
+    }, function(erro) { console.warn(erro); });
+    refTrialEmpresaAdmin.on('value', function(snap) {
+        estadoEmpresaAtualAdmin.trialExpiraEm = snap.val();
+        avaliarEstadoEmpresaAdmin();
+    }, function(erro) { console.warn(erro); });
+    refAssinaturaEmpresaAdmin.on('value', function(snap) {
+        estadoEmpresaAtualAdmin.assinaturaExpiraEm = snap.val();
+        avaliarEstadoEmpresaAdmin();
+    }, function(erro) { console.warn(erro); });
+}
+
+// Reavalia periodicamente (o teste/assinatura pode vencer com o painel já aberto na tela).
+setInterval(function() {
+    if (auth.currentUser && EMPRESA_ID_ADMIN) avaliarEstadoEmpresaAdmin();
+}, 60000);
 
 // ===================== MAPA =====================
 var map = L.map('map', { zoomControl: true }).setView([-29.6133, -52.1919], 13);
@@ -333,6 +402,7 @@ document.getElementById('btnCarregarEmpresa').addEventListener('click', function
     atualizarInfoEmpresaAdmin();
     veiculoSelecionado = "";
     document.getElementById('statusModo').innerHTML = 'Aguardando seleção...';
+    observarStatusEmpresaAdmin();
     if (auth.currentUser) inicializarEscutaBanco();
 });
 
@@ -354,7 +424,7 @@ auth.onAuthStateChanged(function(user) {
     if (user) {
         document.getElementById('authOverlay').style.display = "none";
         document.getElementById('userLogado').textContent = "🟢 Admin: " + user.email;
-        if (EMPRESA_ID_ADMIN) inicializarEscutaBanco();
+        if (EMPRESA_ID_ADMIN) { observarStatusEmpresaAdmin(); inicializarEscutaBanco(); }
     } else {
         document.getElementById('authOverlay').style.display = "flex";
         document.getElementById('selectVeiculo').innerHTML = '<option value="">Aguardando login...</option>';
@@ -633,6 +703,10 @@ document.getElementById('adminChatInput').addEventListener('keydown', function(e
 document.getElementById('btnCarregarEmpresa').addEventListener('click', function() {
     setTimeout(iniciarAdminChatSeNecessario, 300);
 });
+
+// Se já havia uma empresa salva localmente e o admin já estava autenticado ao recarregar
+// a página, garante que o bloqueio por assinatura seja avaliado desde o início.
+if (EMPRESA_ID_ADMIN && auth.currentUser) observarStatusEmpresaAdmin();
 </script>
 </body>
 </html>
