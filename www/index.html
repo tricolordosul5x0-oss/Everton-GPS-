@@ -417,6 +417,22 @@ var refTrialEmpresa = null;
 var refAssinaturaEmpresa = null;
 var estadoEmpresaAtual = { status: null, trialExpiraEm: null, assinaturaExpiraEm: null };
 
+// Converte um total de milissegundos restantes em um texto "X dias, Y horas e Z minutos"
+// (omitindo unidades zeradas à esquerda, mas sempre mostrando os minutos, mesmo que sejam
+// 0) — assim o motorista/empresa vê a contagem regressiva com a mesma precisão que o admin
+// tem no banco, em vez de só "faltam X dias" (que escondia até quase 24h de imprecisão).
+function formatarTempoRestante(msRestante) {
+    var totalMinutos = Math.max(0, Math.floor(msRestante / 60000));
+    var dias = Math.floor(totalMinutos / 1440);
+    var horas = Math.floor((totalMinutos % 1440) / 60);
+    var minutos = totalMinutos % 60;
+    var partes = [];
+    if (dias > 0) partes.push(dias + (dias === 1 ? " dia" : " dias"));
+    if (dias > 0 || horas > 0) partes.push(horas + (horas === 1 ? " hora" : " horas"));
+    partes.push(minutos + (minutos === 1 ? " minuto" : " minutos"));
+    return partes.join(", ");
+}
+
 // Depois que o cliente paga, o admin muda o status da empresa no Firebase de 'trial' pra
 // 'ativo' e grava 'assinaturaExpiraEm' com a data 30 dias à frente (mesmo formato ISO já
 // usado em 'trialExpiraEm'). A partir daí o app conta os dias da assinatura em vez do
@@ -431,15 +447,15 @@ function avaliarEstadoEmpresa() {
 
     var faixaTeste = document.getElementById('avisoTeste');
     if (!suspenso && estadoEmpresaAtual.status === 'trial' && estadoEmpresaAtual.trialExpiraEm) {
-        var diasRestantes = Math.max(0, Math.ceil((new Date(estadoEmpresaAtual.trialExpiraEm).getTime() - Date.now()) / 86400000));
+        var restanteTeste = new Date(estadoEmpresaAtual.trialExpiraEm).getTime() - Date.now();
         faixaTeste.style.display = 'block';
         faixaTeste.style.background = "rgba(45,212,255,.12)"; faixaTeste.style.borderColor = "var(--accent)"; faixaTeste.style.color = "var(--accent)";
-        faixaTeste.textContent = "🎁 Período de teste grátis — " + diasRestantes + (diasRestantes === 1 ? " dia restante" : " dias restantes");
+        faixaTeste.textContent = "🎁 Período de teste grátis — " + formatarTempoRestante(restanteTeste) + " restantes";
     } else if (!suspenso && estadoEmpresaAtual.status === 'ativo' && estadoEmpresaAtual.assinaturaExpiraEm) {
-        var diasRestantesAssinatura = Math.max(0, Math.ceil((new Date(estadoEmpresaAtual.assinaturaExpiraEm).getTime() - Date.now()) / 86400000));
+        var restanteAssinatura = new Date(estadoEmpresaAtual.assinaturaExpiraEm).getTime() - Date.now();
         faixaTeste.style.display = 'block';
         faixaTeste.style.background = "rgba(0,224,168,.12)"; faixaTeste.style.borderColor = "var(--brand)"; faixaTeste.style.color = "var(--brand)";
-        faixaTeste.textContent = "✅ Você tem " + diasRestantesAssinatura + (diasRestantesAssinatura === 1 ? " dia de assinatura" : " dias de assinatura");
+        faixaTeste.textContent = "✅ Você tem " + formatarTempoRestante(restanteAssinatura) + " de assinatura";
     } else {
         faixaTeste.style.display = 'none';
     }
