@@ -119,6 +119,7 @@ button:hover { opacity: 0.9; }
         <button id="btnCarregarEmpresa">Carregar</button>
       </div>
       <div id="empresaAtualInfo" style="font-size: 0.75em; color: var(--text-dim); margin-top: 6px;">Nenhuma empresa carregada ainda.</div>
+      <div id="avisoTempoAssinaturaAdmin" style="display:none; margin-top:8px; padding:8px 10px; border-radius:6px; font-size:0.78em; font-weight:bold; text-align:center;"></div>
     </div>
 
     <div class="box">
@@ -213,6 +214,21 @@ var refStatusEmpresaAdmin = null;
 var refTrialEmpresaAdmin = null;
 var refAssinaturaEmpresaAdmin = null;
 
+// Converte um total de milissegundos restantes em um texto "X dias, Y horas e Z minutos"
+// — mesma lógica usada no app, agora também no painel, pra o admin ver de longe quanto
+// tempo falta de teste/assinatura de cada empresa sem precisar abrir o Firebase.
+function formatarTempoRestanteAdmin(msRestante) {
+    var totalMinutos = Math.max(0, Math.floor(msRestante / 60000));
+    var dias = Math.floor(totalMinutos / 1440);
+    var horas = Math.floor((totalMinutos % 1440) / 60);
+    var minutos = totalMinutos % 60;
+    var partes = [];
+    if (dias > 0) partes.push(dias + (dias === 1 ? " dia" : " dias"));
+    if (dias > 0 || horas > 0) partes.push(horas + (horas === 1 ? " hora" : " horas"));
+    partes.push(minutos + (minutos === 1 ? " minuto" : " minutos"));
+    return partes.join(", ");
+}
+
 function avaliarEstadoEmpresaAdmin() {
     var testeVencido = estadoEmpresaAtualAdmin.status === 'trial' && estadoEmpresaAtualAdmin.trialExpiraEm && new Date(estadoEmpresaAtualAdmin.trialExpiraEm).getTime() < Date.now();
     var assinaturaVencida = estadoEmpresaAtualAdmin.status === 'ativo' && estadoEmpresaAtualAdmin.assinaturaExpiraEm && new Date(estadoEmpresaAtualAdmin.assinaturaExpiraEm).getTime() < Date.now();
@@ -229,6 +245,28 @@ function avaliarEstadoEmpresaAdmin() {
     } else {
         overlay.style.display = 'none';
     }
+
+    // Mesma contagem regressiva que o app mostra pro motorista — aqui pro admin acompanhar.
+    var faixaTempo = document.getElementById('avisoTempoAssinaturaAdmin');
+    if (faixaTempo) {
+        if (!suspenso && estadoEmpresaAtualAdmin.status === 'trial' && estadoEmpresaAtualAdmin.trialExpiraEm) {
+            var restanteTeste = new Date(estadoEmpresaAtualAdmin.trialExpiraEm).getTime() - Date.now();
+            faixaTempo.style.display = 'block';
+            faixaTempo.style.background = "rgba(45,212,255,.12)";
+            faixaTempo.style.color = "var(--telemetry)";
+            faixaTempo.style.border = "1px solid rgba(45,212,255,.35)";
+            faixaTempo.textContent = "🎁 Teste grátis — " + formatarTempoRestanteAdmin(restanteTeste) + " restantes";
+        } else if (!suspenso && estadoEmpresaAtualAdmin.status === 'ativo' && estadoEmpresaAtualAdmin.assinaturaExpiraEm) {
+            var restanteAssinatura = new Date(estadoEmpresaAtualAdmin.assinaturaExpiraEm).getTime() - Date.now();
+            faixaTempo.style.display = 'block';
+            faixaTempo.style.background = "rgba(0,255,166,.12)";
+            faixaTempo.style.color = "var(--signal-on)";
+            faixaTempo.style.border = "1px solid rgba(0,255,166,.35)";
+            faixaTempo.textContent = "✅ Assinatura — " + formatarTempoRestanteAdmin(restanteAssinatura) + " restantes";
+        } else {
+            faixaTempo.style.display = 'none';
+        }
+    }
 }
 
 function observarStatusEmpresaAdmin() {
@@ -236,7 +274,12 @@ function observarStatusEmpresaAdmin() {
     if (refTrialEmpresaAdmin) refTrialEmpresaAdmin.off();
     if (refAssinaturaEmpresaAdmin) refAssinaturaEmpresaAdmin.off();
     estadoEmpresaAtualAdmin = { status: null, trialExpiraEm: null, assinaturaExpiraEm: null };
-    if (!EMPRESA_ID_ADMIN) { document.getElementById('avisoSuspensoAdmin').style.display = 'none'; return; }
+    if (!EMPRESA_ID_ADMIN) {
+        document.getElementById('avisoSuspensoAdmin').style.display = 'none';
+        var faixaTempoVazia = document.getElementById('avisoTempoAssinaturaAdmin');
+        if (faixaTempoVazia) faixaTempoVazia.style.display = 'none';
+        return;
+    }
 
     refStatusEmpresaAdmin = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/status');
     refTrialEmpresaAdmin = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/trialExpiraEm');
