@@ -142,24 +142,6 @@
         .gps-warning { background: rgba(255,77,109,0.1); border: 1px solid rgba(255,77,109,.35); color: var(--danger); padding: 11px 13px; border-radius: var(--radius-sm); font-size: 0.83em; display: none; }
         .fila-info { font-size: 0.73em; color: var(--text-faint); text-align: center; }
 
-        /* ===================== CHAT (fala do veículo com a empresa) ===================== */
-        .chat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 0; overflow: hidden; }
-        .chat-card-titulo { font-size: 0.72em; text-transform: uppercase; letter-spacing: .5px; color: var(--text-dim); font-weight: 600; font-family: var(--font-display); padding: 14px 14px 0; }
-        .chat-remetente-row { padding: 10px 14px 0; }
-        .chat-remetente-row select { width: 100%; background: var(--bg-input); border: 1px solid var(--border); padding: 10px 12px; border-radius: var(--radius-sm); color: var(--text); font-size: 0.88em; font-family: var(--font-body); }
-        .chat-tabs { display: flex; border-bottom: 1px solid var(--border); margin-top: 10px; }
-        .chat-tab-btn { flex: 1; border-radius: 0; background: transparent; color: var(--text-dim); padding: 10px; font-size: 0.8em; box-shadow: none; border: none; cursor: pointer; font-family: var(--font-display); font-weight: 600; }
-        .chat-tab-btn.ativa { background: var(--bg-input); color: var(--accent); }
-        .chat-aviso-vazio { display:none; padding:10px 14px; font-size:0.8em; color: var(--warn); }
-        .chat-lista { height: 220px; overflow-y: auto; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
-        .msg-bolha { max-width: 82%; padding: 8px 12px; border-radius: 12px; font-size: 0.85em; line-height: 1.4; word-break: break-word; align-self: flex-start; background: var(--bg-input); border: 1px solid var(--border); color: var(--text); }
-        .msg-bolha.minha { align-self: flex-end; background: rgba(0,224,168,.14); border-color: rgba(0,224,168,.3); }
-        .msg-bolha .msg-remetente { font-size: 0.72em; font-weight: 700; color: var(--accent); margin-bottom: 2px; font-family: var(--font-display); }
-        .msg-bolha .msg-hora { font-size: 0.68em; color: var(--text-dim); margin-top: 3px; text-align: right; }
-        .chat-input-row { display: flex; gap: 8px; padding: 10px 14px 14px; border-top: 1px solid var(--border); }
-        .chat-input-row input { margin: 0; }
-        .chat-input-row button { width: auto; padding: 10px 16px; margin: 0; }
-
         .auth-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(4,6,10,0.92); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 10000; display: none; }
         .auth-card {
             background: var(--bg-panel); border: 1px solid var(--border-strong); padding: 28px 24px; border-radius: 18px;
@@ -255,6 +237,7 @@
 
 <div class="container">
     <div id="avisoGps" class="gps-warning"></div>
+    <div id="ultimoErroSync" style="display:none; background: rgba(255,77,109,0.1); border: 1px solid rgba(255,77,109,.35); color: var(--danger); padding: 11px 13px; border-radius: 8px; font-size: 0.78em; white-space:pre-wrap; word-break:break-word;"></div>
     <div id="avisoTeste" style="display:none; background: rgba(45,212,255,.12); border: 1px solid var(--accent); color: var(--accent); padding: 10px 12px; border-radius: 6px; font-size: .85em; text-align: center; font-weight: bold;"></div>
 
     <div class="input-box">
@@ -278,23 +261,6 @@
     <div class="frota-container">
         <div style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold;">Veículos Monitorados Neste Aparelho</div>
         <div class="frota-lista" id="listaFrotaLocal"></div>
-    </div>
-
-    <div class="chat-card">
-        <div class="chat-card-titulo">💬 Chat com a empresa</div>
-        <div class="chat-remetente-row" id="chatRemetenteRow" style="display:none;">
-            <select id="chatVeiculoRemetente"></select>
-        </div>
-        <div class="chat-tabs">
-            <button id="chatTabMural" class="chat-tab-btn ativa">📢 Mural (todos)</button>
-            <button id="chatTabDireta" class="chat-tab-btn">💬 Direto com a empresa</button>
-        </div>
-        <div id="chatAvisoSemVeiculo" class="chat-aviso-vazio">Configure a empresa e adicione um veículo acima para conversar.</div>
-        <div id="chatLista" class="chat-lista"></div>
-        <div class="chat-input-row">
-            <input type="text" id="chatInput" placeholder="Mensagem para a empresa...">
-            <button id="chatBtnEnviar">Enviar</button>
-        </div>
     </div>
 
     <div id="statusConexao" class="status-bar status-offline">MODO OFFLINE</div>
@@ -323,6 +289,17 @@
         <div class="telemetry-row"><span>Data</span><b id="txtData">—</b></div>
         <div class="telemetry-row"><span>Horário do último ponto</span><span id="txtHora" style="color:var(--accent)">—</span></div>
         <div class="telemetry-row"><span>🌡️ Temperatura no local</span><b id="txtTemperatura">—</b></div>
+    </div>
+
+    <div class="telemetry-card">
+        <div style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 8px; font-weight: bold;">🔍 Diagnóstico (números brutos)</div>
+        <div class="telemetry-row"><span>Vel. bruta do GPS (Doppler)</span><b id="diagVelRaw">—</b></div>
+        <div class="telemetry-row"><span>Vel. calc. por distância</span><b id="diagVelDistancia">—</b></div>
+        <div class="telemetry-row"><span>Vel. final usada</span><b id="diagVelFinal">—</b></div>
+        <div class="telemetry-row"><span>Considerado em movimento?</span><b id="diagEstaEmMovimento">—</b></div>
+        <div class="telemetry-row"><span>Distância até centro da parada</span><b id="diagDistCentroParada">—</b></div>
+        <div class="telemetry-row"><span>Leitura descartada (glitch)?</span><b id="diagGlitch">—</b></div>
+        <div class="telemetry-row"><span>Última posição de GPS há</span><b id="diagUltimaPosicaoHa">—</b></div>
     </div>
 </div>
 
@@ -440,22 +417,6 @@ var refTrialEmpresa = null;
 var refAssinaturaEmpresa = null;
 var estadoEmpresaAtual = { status: null, trialExpiraEm: null, assinaturaExpiraEm: null };
 
-// Converte um total de milissegundos restantes em um texto "X dias, Y horas e Z minutos"
-// (omitindo unidades zeradas à esquerda, mas sempre mostrando os minutos, mesmo que sejam
-// 0) — assim o motorista/empresa vê a contagem regressiva com a mesma precisão que o admin
-// tem no banco, em vez de só "faltam X dias" (que escondia até quase 24h de imprecisão).
-function formatarTempoRestante(msRestante) {
-    var totalMinutos = Math.max(0, Math.floor(msRestante / 60000));
-    var dias = Math.floor(totalMinutos / 1440);
-    var horas = Math.floor((totalMinutos % 1440) / 60);
-    var minutos = totalMinutos % 60;
-    var partes = [];
-    if (dias > 0) partes.push(dias + (dias === 1 ? " dia" : " dias"));
-    if (dias > 0 || horas > 0) partes.push(horas + (horas === 1 ? " hora" : " horas"));
-    partes.push(minutos + (minutos === 1 ? " minuto" : " minutos"));
-    return partes.join(", ");
-}
-
 // Depois que o cliente paga, o admin muda o status da empresa no Firebase de 'trial' pra
 // 'ativo' e grava 'assinaturaExpiraEm' com a data 30 dias à frente (mesmo formato ISO já
 // usado em 'trialExpiraEm'). A partir daí o app conta os dias da assinatura em vez do
@@ -470,15 +431,15 @@ function avaliarEstadoEmpresa() {
 
     var faixaTeste = document.getElementById('avisoTeste');
     if (!suspenso && estadoEmpresaAtual.status === 'trial' && estadoEmpresaAtual.trialExpiraEm) {
-        var restanteTeste = new Date(estadoEmpresaAtual.trialExpiraEm).getTime() - Date.now();
+        var diasRestantes = Math.max(0, Math.ceil((new Date(estadoEmpresaAtual.trialExpiraEm).getTime() - Date.now()) / 86400000));
         faixaTeste.style.display = 'block';
         faixaTeste.style.background = "rgba(45,212,255,.12)"; faixaTeste.style.borderColor = "var(--accent)"; faixaTeste.style.color = "var(--accent)";
-        faixaTeste.textContent = "🎁 Período de teste grátis — " + formatarTempoRestante(restanteTeste) + " restantes";
+        faixaTeste.textContent = "🎁 Período de teste grátis — " + diasRestantes + (diasRestantes === 1 ? " dia restante" : " dias restantes");
     } else if (!suspenso && estadoEmpresaAtual.status === 'ativo' && estadoEmpresaAtual.assinaturaExpiraEm) {
-        var restanteAssinatura = new Date(estadoEmpresaAtual.assinaturaExpiraEm).getTime() - Date.now();
+        var diasRestantesAssinatura = Math.max(0, Math.ceil((new Date(estadoEmpresaAtual.assinaturaExpiraEm).getTime() - Date.now()) / 86400000));
         faixaTeste.style.display = 'block';
         faixaTeste.style.background = "rgba(0,224,168,.12)"; faixaTeste.style.borderColor = "var(--brand)"; faixaTeste.style.color = "var(--brand)";
-        faixaTeste.textContent = "✅ Você tem " + formatarTempoRestante(restanteAssinatura) + " de assinatura";
+        faixaTeste.textContent = "✅ Você tem " + diasRestantesAssinatura + (diasRestantesAssinatura === 1 ? " dia de assinatura" : " dias de assinatura");
     } else {
         faixaTeste.style.display = 'none';
     }
@@ -553,7 +514,6 @@ document.getElementById('btnSalvarEmpresa').addEventListener('click', function()
     if (algumRealinhado) salvarTudo();
     atualizarInfoEmpresaSalva();
     observarStatusEmpresa();
-    reiniciarChatApp();
     alert("Empresa salva com sucesso!");
 });
 
@@ -650,10 +610,15 @@ function esconderAvisoGps() { document.getElementById('avisoGps').style.display 
 // ler), esta fica na tela até você tocar nela pra fechar — assim dá tempo de ler e me
 // mandar o texto certinho.
 function mostrarErroSyncPersistente(msg) {
-    // O alerta vermelho de "Firebase recusou..." foi tirado da tela do motorista — o erro
-    // continua registrado no console pra dar suporte técnico quando precisar investigar.
-    console.warn("Erro de sincronização (Firebase):", msg);
+    var box = document.getElementById('ultimoErroSync');
+    var agora = new Date().toLocaleTimeString('pt-BR');
+    box.textContent = "🔴 [" + agora + "] " + msg + "  (toque aqui pra fechar)";
+    box.style.display = "block";
 }
+document.getElementById('ultimoErroSync').addEventListener('click', function() {
+    this.style.display = "none";
+});
+
 // ===================== MAPA (fixo — não gira mais) =====================
 var map = L.map('map', { zoomControl: false }).setView([-29.6133, -52.1919], 13);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
@@ -941,7 +906,6 @@ function renderizarFrotaLocal() {
         tag.innerHTML = `🚗 <b>${nome}</b> <button class="btn-remover" onclick="removerVeiculoExigindoSenha(${index})">×</button>`;
         container.appendChild(tag);
     });
-    atualizarSelectChatVeiculo();
 }
 document.getElementById('btnAdicionar').addEventListener('click', function() {
     var nome = document.getElementById('veiculoInput').value.trim().toUpperCase();
@@ -958,157 +922,6 @@ window.removerVeiculoExigindoSenha = function(index) {
         if (confirm(`Remover veículo?`)) { listaVeiculos.splice(index, 1); salvarTudo(); renderizarFrotaLocal(); atualizarInterfaceEstado(); }
     });
 };
-
-// ===================== CHAT (o veículo fala com a empresa/admin) =====================
-// Espelha o mesmo caminho do Firebase que o painel admin já usa
-// (empresas/{empresaId}/mensagens), só que aqui quem manda é o próprio veículo — por isso
-// precisa saber COMO QUAL veículo a mensagem está sendo enviada quando o aparelho tem mais
-// de um cadastrado. Com um só veículo, isso já vem selecionado sozinho, sem exigir nada
-// extra do motorista.
-var refMensagensChatApp = null;
-var chatAbaApp = 'mural';
-var veiculoChatSelecionado = localStorage.getItem('chat_veiculo_selecionado') || "";
-
-function atualizarSelectChatVeiculo() {
-    var linha = document.getElementById('chatRemetenteRow');
-    var select = document.getElementById('chatVeiculoRemetente');
-    if (!linha || !select) return;
-
-    if (!veiculoChatSelecionado || !listaVeiculos.includes(veiculoChatSelecionado)) {
-        veiculoChatSelecionado = listaVeiculos.length > 0 ? listaVeiculos[0] : "";
-        localStorage.setItem('chat_veiculo_selecionado', veiculoChatSelecionado);
-    }
-
-    if (listaVeiculos.length > 1) {
-        linha.style.display = 'block';
-        select.innerHTML = '';
-        listaVeiculos.forEach(function(nome) {
-            var opt = document.createElement('option');
-            opt.value = nome; opt.textContent = "Enviando como: " + nome;
-            select.appendChild(opt);
-        });
-        select.value = veiculoChatSelecionado;
-    } else {
-        linha.style.display = 'none';
-    }
-    atualizarEstadoChatApp();
-}
-document.getElementById('chatVeiculoRemetente').addEventListener('change', function(e) {
-    veiculoChatSelecionado = e.target.value;
-    localStorage.setItem('chat_veiculo_selecionado', veiculoChatSelecionado);
-    atualizarEstadoChatApp();
-});
-
-function iniciarChatAppSeNecessario() {
-    if (refMensagensChatApp || !EMPRESA_ID) return;
-    refMensagensChatApp = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID) + '/mensagens').limitToLast(200);
-    refMensagensChatApp.on('value', function(snapshot) {
-        var todas = [];
-        snapshot.forEach(function(child) { todas.push(Object.assign({ id: child.key }, child.val())); });
-        renderizarChatApp(todas);
-    }, function(erro) { console.warn("Erro ao ler mensagens do chat:", erro); });
-}
-
-// Chamado quando a empresa configurada no aparelho muda — sem isso, o chat continuaria
-// escutando mensagens da empresa antiga.
-function reiniciarChatApp() {
-    if (refMensagensChatApp) { refMensagensChatApp.off(); refMensagensChatApp = null; }
-    document.getElementById('chatLista').innerHTML = '';
-    iniciarChatAppSeNecessario();
-    atualizarEstadoChatApp();
-}
-
-function renderizarChatApp(todasMensagens) {
-    var lista = document.getElementById('chatLista');
-    var relevantes = todasMensagens.filter(function(msg) {
-        if (chatAbaApp === 'mural') return msg.destinatario === 'todos';
-        if (!veiculoChatSelecionado) return false;
-        return (msg.remetente === veiculoChatSelecionado && msg.destinatario === 'Admin') ||
-               (msg.remetente === 'Admin' && msg.destinatario === veiculoChatSelecionado);
-    }).sort(function(a, b) { return (a.ts || 0) - (b.ts || 0); });
-
-    lista.innerHTML = '';
-    if (relevantes.length === 0) {
-        lista.innerHTML = '<div style="text-align:center;color:var(--text-dim);font-size:0.82em;padding:16px 0;">Nenhuma mensagem ainda.</div>';
-        return;
-    }
-    relevantes.forEach(function(msg) {
-        var ehMinha = msg.remetente === veiculoChatSelecionado;
-        var bolha = document.createElement('div');
-        bolha.className = 'msg-bolha' + (ehMinha ? ' minha' : '');
-        var nomeExibido = ehMinha ? 'Você (' + msg.remetente + ')' : msg.remetente;
-        bolha.innerHTML = '<div class="msg-remetente">' + nomeExibido + '</div>' +
-            '<div class="msg-texto"></div>' +
-            '<div class="msg-hora">' + (msg.hora || '') + '</div>';
-        bolha.querySelector('.msg-texto').textContent = msg.texto || '';
-        lista.appendChild(bolha);
-    });
-    lista.scrollTop = lista.scrollHeight;
-}
-
-// Mostra/esconde o aviso de "configure a empresa e um veículo" e reconsulta as mensagens
-// já carregadas pra re-filtrar quando o motorista troca de aba ou de veículo remetente.
-function atualizarEstadoChatApp() {
-    var aviso = document.getElementById('chatAvisoSemVeiculo');
-    var lista = document.getElementById('chatLista');
-    var input = document.getElementById('chatInput');
-    var btn = document.getElementById('chatBtnEnviar');
-    var pronto = !!(EMPRESA_ID && veiculoChatSelecionado);
-
-    if (aviso) aviso.style.display = pronto ? 'none' : 'block';
-    if (lista) lista.style.display = pronto ? 'flex' : 'none';
-    if (input) input.disabled = !pronto;
-    if (btn) btn.disabled = !pronto;
-
-    if (pronto && refMensagensChatApp) {
-        refMensagensChatApp.once('value', function(s) {
-            var todas = []; s.forEach(function(c) { todas.push(Object.assign({ id: c.key }, c.val())); });
-            renderizarChatApp(todas);
-        });
-    } else if (pronto) {
-        iniciarChatAppSeNecessario();
-    }
-}
-
-document.getElementById('chatTabMural').addEventListener('click', function() {
-    chatAbaApp = 'mural';
-    document.getElementById('chatTabMural').classList.add('ativa');
-    document.getElementById('chatTabDireta').classList.remove('ativa');
-    atualizarEstadoChatApp();
-});
-document.getElementById('chatTabDireta').addEventListener('click', function() {
-    chatAbaApp = 'direta';
-    document.getElementById('chatTabDireta').classList.add('ativa');
-    document.getElementById('chatTabMural').classList.remove('ativa');
-    atualizarEstadoChatApp();
-});
-
-function enviarMensagemChatApp() {
-    var input = document.getElementById('chatInput');
-    var texto = input.value.trim();
-    if (!texto) return;
-    if (!EMPRESA_ID) { alert("Configure a empresa deste aparelho primeiro."); return; }
-    if (!veiculoChatSelecionado) { alert("Adicione um veículo à frota deste aparelho primeiro."); return; }
-    var agora = new Date();
-    var novaMensagem = {
-        remetente: veiculoChatSelecionado,
-        destinatario: chatAbaApp === 'mural' ? 'todos' : 'Admin',
-        texto: texto,
-        ts: firebase.database.ServerValue.TIMESTAMP,
-        hora: agora.toLocaleTimeString('pt-BR'),
-        data: agora.toLocaleDateString('pt-BR')
-    };
-    db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID) + '/mensagens').push(novaMensagem).then(function() {
-        input.value = '';
-    }).catch(function(e) { console.warn("Falha ao enviar mensagem:", e); alert("Não foi possível enviar a mensagem agora."); });
-}
-document.getElementById('chatBtnEnviar').addEventListener('click', enviarMensagemChatApp);
-document.getElementById('chatInput').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') { e.preventDefault(); enviarMensagemChatApp(); }
-});
-
-// Se o aparelho já tinha empresa configurada ao carregar a página, inicia o chat direto.
-if (EMPRESA_ID) iniciarChatAppSeNecessario();
 
 var inicioParadaTs = localStorage.getItem('inicio_parada_ts') ? parseInt(localStorage.getItem('inicio_parada_ts'), 10) : null;
 var tempoParadoSegundos = 0;
