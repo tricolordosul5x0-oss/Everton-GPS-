@@ -51,6 +51,7 @@ jobs:
               '    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />\n'
               '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n'
               '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />\n'
+              '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n'
           )
           if "ACCESS_BACKGROUND_LOCATION" not in content:
               content = content.replace("<application", perms + "\n    <application", 1)
