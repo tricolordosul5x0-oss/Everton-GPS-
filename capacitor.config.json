@@ -4,8 +4,7 @@
   "webDir": "www",
   "bundledWebRuntime": false,
   "android": {
-    "allowMixedContent": false,
-    "useLegacyBridge": true
+    "allowMixedContent": false
   },
   "plugins": {
     "BackgroundGeolocation": {
