@@ -263,6 +263,32 @@
         <div class="frota-lista" id="listaFrotaLocal"></div>
     </div>
 
+    <div class="input-box" id="destinoBox">
+        <label>🧭 Destino do Motorista</label>
+        <div class="row">
+            <input type="text" id="destinoInput" placeholder="Digite o endereço de destino">
+            <button id="btnTracarRota">Traçar</button>
+        </div>
+        <div id="destinoErro" style="display:none;color:var(--danger);font-size:.78em;margin-top:8px;"></div>
+    </div>
+
+    <div class="telemetry-card" id="navCard" style="display:none;">
+        <div style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 8px; font-weight: bold; display:flex; justify-content:space-between; align-items:center;">
+            <span>🧭 Navegação até o destino</span>
+            <button id="btnCancelarRota" style="background:var(--bg-input); color:var(--danger); border:1px solid var(--border); padding:4px 10px; font-size:.85em; border-radius:6px; font-weight:600;">Cancelar</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:12px; padding: 8px 0;">
+            <div id="navSeta" style="font-size:2em; width:44px; text-align:center; flex-shrink:0;">➡️</div>
+            <div style="flex:1; min-width:0;">
+                <div id="navInstrucao" style="font-weight:700; font-size:1.02em; line-height:1.3;">—</div>
+                <div id="navDistanciaProxima" style="font-size:.8em; color:var(--text-dim); margin-top:2px;">—</div>
+            </div>
+        </div>
+        <div class="telemetry-row"><span>Destino</span><b id="navDestinoTexto" style="text-align:right; max-width:60%; font-family:var(--font-body); font-weight:600; overflow-wrap:anywhere;">—</b></div>
+        <div class="telemetry-row"><span>Distância restante</span><b id="navDistanciaRestante">—</b></div>
+        <div class="telemetry-row"><span>Tempo estimado</span><b id="navTempoRestante">—</b></div>
+    </div>
+
     <div id="statusConexao" class="status-bar status-offline">MODO OFFLINE</div>
     <div id="statusBackground" class="status-bar status-bg" style="display:none;"></div>
     <div class="fila-info" id="filaInfo"></div>
@@ -692,6 +718,250 @@ var marcador = L.marker([-29.6133, -52.1919], { icon: criarIconeVeiculo(0) }).ad
 var circuloPrecisao = L.circle([-29.6133, -52.1919], { radius: 0, color: '#2dd4ff', fillOpacity: 0.1, weight: 1 }).addTo(map);
 var polilinhaRota = L.polyline([], {color: '#00ffa6', weight: 5}).addTo(map);
 
+// ===================== NAVEGAÇÃO ATÉ UM DESTINO (rota + instruções) =====================
+// Usa o Nominatim (mesmo serviço já usado pro endereço da telemetria) pra transformar o
+// endereço digitado em coordenadas, e o OSRM público (gratuito, sem chave) pra calcular a
+// rota e os passos de manobra. Tudo isso é só orientação visual pro motorista — não
+// interfere em nada do rastreio/telemetria que já existe.
+var URL_NOMINATIM_BUSCA = "https://nominatim.openstreetmap.org/search";
+var URL_OSRM_ROTA = "https://router.project-osrm.org/route/v1/driving/";
+
+var destinoAtivo = (function() {
+    var raw = localStorage.getItem('destino_ativo');
+    try { return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+})();
+var rotaAtual = null; // { coords:[[lat,lon]...], steps:[{lat,lon,tipo,modificador,nomeVia,...}], distanciaTotalM, duracaoTotalS }
+var passoAtualIndex = 0;
+var calculandoRota = false;
+var ultimoCalculoRotaTs = 0;
+
+var linhaRota = L.polyline([], { color: '#34b3ff', weight: 6, opacity: 0.85, dashArray: '2,10' }).addTo(map);
+var marcadorDestino = null;
+var iconeDestino = L.divIcon({
+    className: 'icone-destino-rastreador',
+    html: '<div style="font-size:26px; filter:drop-shadow(0 2px 4px rgba(0,0,0,.6));">🏁</div>',
+    iconSize: [26, 26], iconAnchor: [13, 24]
+});
+
+function geocodificarEndereco(endereco) {
+    var url = URL_NOMINATIM_BUSCA + "?format=jsonv2&q=" + encodeURIComponent(endereco) + "&limit=1&addressdetails=1";
+    return fetchComTimeout(url, { headers: { "Accept-Language": "pt-BR" } }, 10000)
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            if (!data || data.length === 0) return null;
+            var r = data[0];
+            return { lat: parseFloat(r.lat), lon: parseFloat(r.lon), nome: r.display_name };
+        });
+}
+
+function calcularRotaOsrm(origemLat, origemLon, destLat, destLon) {
+    var url = URL_OSRM_ROTA + origemLon + "," + origemLat + ";" + destLon + "," + destLat +
+        "?overview=full&geometries=geojson&steps=true";
+    return fetchComTimeout(url, {}, 12000)
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            if (!data || data.code !== "Ok" || !data.routes || data.routes.length === 0) return null;
+            var rota = data.routes[0];
+            var coordsLatLon = rota.geometry.coordinates.map(function(c) { return [c[1], c[0]]; });
+            var passos = [];
+            (rota.legs[0].steps || []).forEach(function(step) {
+                passos.push({
+                    lat: step.maneuver.location[1], lon: step.maneuver.location[0],
+                    tipo: step.maneuver.type, modificador: step.maneuver.modifier,
+                    nomeVia: step.name || null, saidaRotatoria: step.maneuver.exit || null,
+                    distanciaM: step.distance, duracaoS: step.duration
+                });
+            });
+            return { coords: coordsLatLon, steps: passos, distanciaTotalM: rota.distance, duracaoTotalS: rota.duration };
+        });
+}
+
+// Monta a instrução em português a partir do tipo/modificador de manobra que o OSRM
+// devolve (ele não traduz o texto — só dá a estrutura: tipo de manobra + nome da via).
+function textoInstrucaoPasso(passo) {
+    var via = passo.nomeVia ? (" em " + passo.nomeVia) : "";
+    var viaContinuar = passo.nomeVia ? (" por " + passo.nomeVia) : "";
+    switch (passo.tipo) {
+        case "depart": return "Siga" + viaContinuar;
+        case "arrive": return "Você chegou ao destino";
+        case "roundabout":
+        case "rotary":
+            return "Entre na rotatória" + (passo.saidaRotatoria ? " e saia na " + passo.saidaRotatoria + "ª saída" : "");
+        case "exit roundabout":
+        case "exit rotary":
+            return "Saia da rotatória" + via;
+        case "merge": return "Entre na via" + via;
+        case "fork":
+            if (passo.modificador && passo.modificador.indexOf("left") !== -1) return "Mantenha-se à esquerda" + via;
+            return "Mantenha-se à direita" + via;
+        case "end of road":
+            if (passo.modificador && passo.modificador.indexOf("left") !== -1) return "No fim da via, vire à esquerda" + via;
+            return "No fim da via, vire à direita" + via;
+        case "on ramp": return "Entre na rampa de acesso" + via;
+        case "off ramp": return "Saia pela rampa" + via;
+        case "continue":
+        case "new name":
+            return "Continue" + viaContinuar;
+        case "turn":
+        default:
+            var mod = passo.modificador || "";
+            if (mod === "uturn") return "Faça o retorno" + via;
+            if (mod === "sharp left") return "Vire acentuadamente à esquerda" + via;
+            if (mod === "left") return "Vire à esquerda" + via;
+            if (mod === "slight left") return "Mantenha-se levemente à esquerda" + via;
+            if (mod === "straight") return "Siga em frente" + via;
+            if (mod === "slight right") return "Mantenha-se levemente à direita" + via;
+            if (mod === "right") return "Vire à direita" + via;
+            if (mod === "sharp right") return "Vire acentuadamente à direita" + via;
+            return "Siga" + viaContinuar;
+    }
+}
+
+function setaParaPasso(passo) {
+    if (passo.tipo === "arrive") return "🏁";
+    if (passo.tipo === "depart") return "🚦";
+    if (passo.tipo === "roundabout" || passo.tipo === "rotary") return "🔃";
+    var mod = passo.modificador || "";
+    if (mod === "uturn") return "🔄";
+    if (mod === "sharp left") return "↙️";
+    if (mod === "left") return "⬅️";
+    if (mod === "slight left") return "↖️";
+    if (mod === "sharp right") return "↘️";
+    if (mod === "right") return "➡️";
+    if (mod === "slight right") return "↗️";
+    return "⬆️";
+}
+
+function formatarDistanciaNav(m) {
+    if (m < 1000) return Math.round(m) + " m";
+    return (m / 1000).toFixed(1) + " km";
+}
+function formatarDuracaoNav(s) {
+    var min = Math.round(s / 60);
+    if (min < 60) return min + " min";
+    var h = Math.floor(min / 60); var restoMin = min % 60;
+    return h + "h" + (restoMin > 0 ? (restoMin + "min") : "");
+}
+
+function limparRotaDoMapa() {
+    linhaRota.setLatLngs([]);
+    if (marcadorDestino) { map.removeLayer(marcadorDestino); marcadorDestino = null; }
+}
+
+// Manda o destino escolhido (ou a remoção dele) pro mesmo caminho que o painel admin já
+// escuta, junto de cada veículo deste aparelho — assim o admin vê pra onde o motorista
+// está indo, do mesmo jeito que já vê por onde ele passou.
+function sincronizarDestinoParaFirebase(destino) {
+    if (!EMPRESA_ID || listaVeiculos.length === 0) return;
+    var updates = {};
+    listaVeiculos.forEach(function(vNome) {
+        var base = 'empresas/' + sanitizarChavePath(EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(vNome) + '/destino';
+        if (destino) {
+            updates[base + '/lat'] = destino.lat;
+            updates[base + '/lon'] = destino.lon;
+            updates[base + '/endereco'] = destino.endereco;
+            updates[base + '/definidoEm'] = new Date().toISOString();
+        } else {
+            updates[base] = null;
+        }
+    });
+    enviarAtualizacoesFirebase(updates).catch(function(e) { console.warn("Falha ao sincronizar destino com o painel admin:", e); });
+}
+
+function cancelarNavegacao() {
+    destinoAtivo = null; rotaAtual = null; passoAtualIndex = 0;
+    localStorage.removeItem('destino_ativo');
+    limparRotaDoMapa();
+    document.getElementById('navCard').style.display = 'none';
+    document.getElementById('destinoBox').style.display = 'block';
+    document.getElementById('destinoInput').value = '';
+    document.getElementById('destinoErro').style.display = 'none';
+    sincronizarDestinoParaFirebase(null);
+}
+
+function iniciarNavegacaoAte(lat, lon, nomeDestino) {
+    destinoAtivo = { lat: lat, lon: lon, endereco: nomeDestino };
+    localStorage.setItem('destino_ativo', JSON.stringify(destinoAtivo));
+    document.getElementById('navDestinoTexto').textContent = nomeDestino;
+    document.getElementById('navCard').style.display = 'block';
+    document.getElementById('destinoBox').style.display = 'none';
+    if (marcadorDestino) map.removeLayer(marcadorDestino);
+    marcadorDestino = L.marker([lat, lon], { icon: iconeDestino }).addTo(map);
+    recalcularRotaAgora();
+    sincronizarDestinoParaFirebase(destinoAtivo);
+}
+
+function recalcularRotaAgora() {
+    if (!destinoAtivo || calculandoRota) return;
+    var origem = ultimoPontoBruto || (marcador ? [marcador.getLatLng().lat, marcador.getLatLng().lng] : null);
+    if (!origem) return;
+    calculandoRota = true;
+    ultimoCalculoRotaTs = Date.now();
+    calcularRotaOsrm(origem[0], origem[1], destinoAtivo.lat, destinoAtivo.lon).then(function(rota) {
+        calculandoRota = false;
+        if (!rota) {
+            var elErroNav = document.getElementById('destinoErro');
+            elErroNav.style.display = 'block';
+            elErroNav.textContent = "⚠️ Não foi possível calcular a rota até esse destino no momento.";
+            return;
+        }
+        rotaAtual = rota; passoAtualIndex = 0;
+        linhaRota.setLatLngs(rota.coords);
+        atualizarPainelNavegacao(origem[0], origem[1]);
+    }).catch(function(e) {
+        calculandoRota = false;
+        console.warn("Falha ao calcular rota:", e);
+    });
+}
+
+function atualizarPainelNavegacao(latAtual, lonAtual) {
+    if (!rotaAtual || !destinoAtivo) return;
+    // Avança o passo atual conforme o veículo se aproxima/ultrapassa o ponto de manobra.
+    while (passoAtualIndex < rotaAtual.steps.length - 1) {
+        var passo = rotaAtual.steps[passoAtualIndex];
+        var d = calcularDistanciaMetros(latAtual, lonAtual, passo.lat, passo.lon);
+        if (d < 35) { passoAtualIndex++; } else { break; }
+    }
+    var passoAtual = rotaAtual.steps[passoAtualIndex];
+    var distanciaChegada = calcularDistanciaMetros(latAtual, lonAtual, destinoAtivo.lat, destinoAtivo.lon);
+
+    if (distanciaChegada < 40) {
+        document.getElementById('navInstrucao').textContent = "Você chegou ao destino";
+        document.getElementById('navSeta').textContent = "🏁";
+        document.getElementById('navDistanciaProxima').textContent = "—";
+        document.getElementById('navDistanciaRestante').textContent = "0 m";
+        document.getElementById('navTempoRestante').textContent = "—";
+        return;
+    }
+    if (passoAtual) {
+        document.getElementById('navInstrucao').textContent = textoInstrucaoPasso(passoAtual);
+        document.getElementById('navSeta').textContent = setaParaPasso(passoAtual);
+        var distProximaManobra = calcularDistanciaMetros(latAtual, lonAtual, passoAtual.lat, passoAtual.lon);
+        document.getElementById('navDistanciaProxima').textContent = "em " + formatarDistanciaNav(distProximaManobra);
+    }
+    document.getElementById('navDistanciaRestante').textContent = formatarDistanciaNav(distanciaChegada);
+    var proporcaoRestante = rotaAtual.distanciaTotalM > 0 ? (distanciaChegada / rotaAtual.distanciaTotalM) : 0;
+    document.getElementById('navTempoRestante').textContent = formatarDuracaoNav(rotaAtual.duracaoTotalS * proporcaoRestante);
+}
+
+// Recalcula a rota se o veículo se afastar demais do traçado (ex: perdeu uma saída) ou
+// periodicamente pra manter a estimativa de tempo/distância atualizada.
+function checarDesvioRota(latAtual, lonAtual) {
+    if (!rotaAtual || !destinoAtivo) return;
+    var menorDist = Infinity;
+    for (var i = 0; i < rotaAtual.coords.length; i += 3) {
+        var c = rotaAtual.coords[i];
+        var d = calcularDistanciaMetros(latAtual, lonAtual, c[0], c[1]);
+        if (d < menorDist) menorDist = d;
+        if (menorDist < 80) break;
+    }
+    var agora = Date.now();
+    var faz30sQueNaoRecalcula = (agora - ultimoCalculoRotaTs) > 30000;
+    if ((menorDist > 80 && faz30sQueNaoRecalcula) || (agora - ultimoCalculoRotaTs) > 180000) {
+        recalcularRotaAgora();
+    }
+}
+
 var coordenadaParadaFixa = (function() {
     var raw = localStorage.getItem('coordenada_parada_fixa');
     try { return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
@@ -932,6 +1202,7 @@ document.getElementById('btnAdicionar').addEventListener('click', function() {
         listaVeiculos.push(nome); salvarTudo();
         document.getElementById('veiculoInput').value = ""; renderizarFrotaLocal();
         atualizarInterfaceEstado();
+        if (destinoAtivo) sincronizarDestinoParaFirebase(destinoAtivo);
     });
 });
 window.removerVeiculoExigindoSenha = function(index) {
@@ -939,6 +1210,41 @@ window.removerVeiculoExigindoSenha = function(index) {
         if (confirm(`Remover veículo?`)) { listaVeiculos.splice(index, 1); salvarTudo(); renderizarFrotaLocal(); atualizarInterfaceEstado(); }
     });
 };
+
+// O app já exige login pra ser usado (o overlay de login aparece assim que abre sem
+// usuário logado — ver auth.onAuthStateChanged), então definir/cancelar o destino não
+// precisa pedir login de novo aqui, igual já não se pede de novo pra ver a telemetria.
+document.getElementById('btnTracarRota').addEventListener('click', function() {
+    var endereco = document.getElementById('destinoInput').value.trim();
+    var elErro = document.getElementById('destinoErro');
+    elErro.style.display = 'none';
+    if (!endereco) { elErro.style.display = 'block'; elErro.textContent = "Digite um endereço."; return; }
+    var botao = this;
+    botao.disabled = true; botao.textContent = "Buscando...";
+    geocodificarEndereco(endereco).then(function(resultado) {
+        if (!resultado) {
+            elErro.style.display = 'block'; elErro.textContent = "⚠️ Endereço não encontrado. Tente ser mais específico.";
+            return;
+        }
+        iniciarNavegacaoAte(resultado.lat, resultado.lon, resultado.nome);
+    }).catch(function(e) {
+        elErro.style.display = 'block'; elErro.textContent = "⚠️ Erro ao buscar endereço: " + (e && e.message ? e.message : e);
+    }).finally(function() {
+        botao.disabled = false; botao.textContent = "Traçar";
+    });
+});
+document.getElementById('btnCancelarRota').addEventListener('click', function() {
+    cancelarNavegacao();
+});
+
+// Restaura a navegação em andamento se o app for fechado e reaberto com um destino
+// ainda ativo.
+if (destinoAtivo) {
+    document.getElementById('navDestinoTexto').textContent = destinoAtivo.endereco;
+    document.getElementById('navCard').style.display = 'block';
+    document.getElementById('destinoBox').style.display = 'none';
+    marcadorDestino = L.marker([destinoAtivo.lat, destinoAtivo.lon], { icon: iconeDestino }).addTo(map);
+}
 
 var inicioParadaTs = localStorage.getItem('inicio_parada_ts') ? parseInt(localStorage.getItem('inicio_parada_ts'), 10) : null;
 var tempoParadoSegundos = 0;
