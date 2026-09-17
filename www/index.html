@@ -1253,6 +1253,19 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     // que evita a próxima leitura parecer "um salto" cada vez maior.
     ultimoPontoBruto = [lat, lon];
 
+    // ===================== NAVEGAÇÃO ATÉ O DESTINO =====================
+    // Sempre que existe um destino ativo, mantém o painel de instruções e a distância/tempo
+    // restantes atualizados a cada posição nova, e recalcula a rota se o motorista se
+    // desviar do trajeto sugerido.
+    if (destinoAtivo) {
+        if (rotaAtual) {
+            atualizarPainelNavegacao(lat, lon);
+            checarDesvioRota(lat, lon);
+        } else if (!calculandoRota) {
+            recalcularRotaAgora();
+        }
+    }
+
     if (iniciouParadaAgora) {
         (function(latP, lonP, situacaoP, velP, precisaoP, agoraP, inicioParadaTsNoMomento) {
             setTimeout(function() {
