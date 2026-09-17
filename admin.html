@@ -146,6 +146,14 @@ button:hover { opacity: 0.9; }
       Aguardando seleção...
     </div>
 
+    <div class="box" id="boxDestinoAdmin" style="display:none; border-color: var(--telemetry);">
+      <div class="box-title">🧭 Rota definida pelo motorista</div>
+      <div class="telemetry-row"><span>Destino</span><b id="admDestinoTexto" style="overflow-wrap:anywhere;">—</b></div>
+      <div class="telemetry-row"><span>Definido em</span><b id="admDestinoDefinidoEm">—</b></div>
+      <div class="telemetry-row"><span>Distância restante</span><b id="admDestinoDistancia">—</b></div>
+      <div class="telemetry-row"><span>Tempo estimado</span><b id="admDestinoTempo">—</b></div>
+    </div>
+
     <div class="box">
       <div class="box-title">📊 Dados do Ponto Selecionado</div>
       <div class="telemetry-row"><span>Situação</span><span id="txtStatus" class="badge badge-parado">—</span></div>
@@ -415,6 +423,101 @@ var controleRotas = L.Routing.control({
     fitSelectedRoutes: false
 }).addTo(map);
 
+// ===================== ROTA/DESTINO DEFINIDO PELO MOTORISTA =====================
+// O app do motorista grava o destino que ele escolheu em
+// empresas/{empresaId}/veiculos/{veiculo}/destino — aqui a gente só escuta esse mesmo
+// caminho, desenha o destino no mapa e recalcula (via o mesmo OSRM público que o app usa)
+// a rota da posição atual do veículo até lá, com uma linha diferente do trajeto já
+// percorrido (que continua sendo o do controleRotas/verde acima).
+var URL_OSRM_ROTA_ADMIN = "https://router.project-osrm.org/route/v1/driving/";
+var linhaDestinoAdmin = L.polyline([], { color: '#34b3ff', weight: 6, opacity: 0.85, dashArray: '2,10' }).addTo(map);
+var marcadorDestinoAdmin = null;
+var iconeDestinoAdmin = L.divIcon({
+    className: 'icone-destino-admin',
+    html: '<div style="font-size:26px; filter:drop-shadow(0 2px 4px rgba(0,0,0,.6));">🏁</div>',
+    iconSize: [26, 26], iconAnchor: [13, 24]
+});
+var refDestinoVeiculo = null;
+var destinoAtualVeiculo = null;
+var ultimoCalculoRotaDestinoTs = 0;
+var calculandoRotaDestinoAdmin = false;
+
+function formatarDistanciaAdmin(m) {
+    if (m < 1000) return Math.round(m) + " m";
+    return (m / 1000).toFixed(1) + " km";
+}
+function formatarDuracaoAdmin(s) {
+    var min = Math.round(s / 60);
+    if (min < 60) return min + " min";
+    var h = Math.floor(min / 60); var restoMin = min % 60;
+    return h + "h" + (restoMin > 0 ? (restoMin + "min") : "");
+}
+
+function limparRotaDestinoAdmin() {
+    linhaDestinoAdmin.setLatLngs([]);
+    if (marcadorDestinoAdmin) { map.removeLayer(marcadorDestinoAdmin); marcadorDestinoAdmin = null; }
+    document.getElementById('boxDestinoAdmin').style.display = 'none';
+    destinoAtualVeiculo = null;
+}
+
+function calcularRotaOsrmAdmin(origemLat, origemLon, destLat, destLon) {
+    var url = URL_OSRM_ROTA_ADMIN + origemLon + "," + origemLat + ";" + destLon + "," + destLat + "?overview=full&geometries=geojson";
+    return fetch(url).then(function(res) { return res.json(); }).then(function(data) {
+        if (!data || data.code !== "Ok" || !data.routes || data.routes.length === 0) return null;
+        var rota = data.routes[0];
+        return {
+            coords: rota.geometry.coordinates.map(function(c) { return [c[1], c[0]]; }),
+            distanciaM: rota.distance, duracaoS: rota.duration
+        };
+    }).catch(function() { return null; });
+}
+
+// Recalcula com um intervalo mínimo entre chamadas — evita bater no OSRM público a cada
+// atualização de posição (que chega a cada poucos segundos).
+function atualizarRotaDestinoAdmin(latAtual, lonAtual, forcar) {
+    if (!destinoAtualVeiculo || calculandoRotaDestinoAdmin) return;
+    var agora = Date.now();
+    if (!forcar && (agora - ultimoCalculoRotaDestinoTs < 20000)) return;
+    calculandoRotaDestinoAdmin = true;
+    ultimoCalculoRotaDestinoTs = agora;
+    calcularRotaOsrmAdmin(latAtual, lonAtual, destinoAtualVeiculo.lat, destinoAtualVeiculo.lon).then(function(rota) {
+        calculandoRotaDestinoAdmin = false;
+        if (!rota) return;
+        linhaDestinoAdmin.setLatLngs(rota.coords);
+        document.getElementById('admDestinoDistancia').textContent = formatarDistanciaAdmin(rota.distanciaM);
+        document.getElementById('admDestinoTempo').textContent = formatarDuracaoAdmin(rota.duracaoS);
+    });
+}
+
+function formatarDataHoraDestinoAdmin(isoString) {
+    if (!isoString) return "—";
+    try { return new Date(isoString).toLocaleString('pt-BR'); } catch (e) { return isoString; }
+}
+
+// Passa a escutar o destino do veículo selecionado (chamado ao trocar de veículo ou de
+// empresa). Cada troca desliga o listener anterior e limpa o que estava desenhado.
+function observarDestinoVeiculo() {
+    if (refDestinoVeiculo) refDestinoVeiculo.off();
+    limparRotaDestinoAdmin();
+    if (!EMPRESA_ID_ADMIN || !veiculoSelecionado) return;
+    refDestinoVeiculo = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/veiculos/' + sanitizarChavePath(veiculoSelecionado) + '/destino');
+    refDestinoVeiculo.on('value', function(snap) {
+        var destino = snap.val();
+        if (!destino || destino.lat == null || destino.lon == null) {
+            limparRotaDestinoAdmin();
+            return;
+        }
+        destinoAtualVeiculo = destino;
+        document.getElementById('boxDestinoAdmin').style.display = 'block';
+        document.getElementById('admDestinoTexto').textContent = destino.endereco || (destino.lat.toFixed(5) + ", " + destino.lon.toFixed(5));
+        document.getElementById('admDestinoDefinidoEm').textContent = formatarDataHoraDestinoAdmin(destino.definidoEm);
+        if (marcadorDestinoAdmin) map.removeLayer(marcadorDestinoAdmin);
+        marcadorDestinoAdmin = L.marker([destino.lat, destino.lon], { icon: iconeDestinoAdmin }).addTo(map);
+        var posAtual = marcadorVeiculo.getLatLng();
+        atualizarRotaDestinoAdmin(posAtual.lat, posAtual.lng, true);
+    }, function(erro) { console.warn("Erro ao observar destino do veículo:", erro); });
+}
+
 // CORREÇÃO: o painel lia direto de 'veiculos/{nome}' na raiz do banco — um caminho antigo,
 // de antes do app ter suporte a várias empresas. O app principal (index.html) já não grava
 // mais ali há tempos; ele grava em 'empresas/{empresaId}/veiculos/{nome}'. Por isso o painel
@@ -446,6 +549,7 @@ document.getElementById('btnCarregarEmpresa').addEventListener('click', function
     veiculoSelecionado = "";
     document.getElementById('statusModo').innerHTML = 'Aguardando seleção...';
     observarStatusEmpresaAdmin();
+    observarDestinoVeiculo();
     if (auth.currentUser) inicializarEscutaBanco();
 });
 
@@ -475,6 +579,8 @@ auth.onAuthStateChanged(function(user) {
         if (listenerTempoReal && veiculoSelecionado && EMPRESA_ID_ADMIN) {
             db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/veiculos/' + sanitizarChavePath(veiculoSelecionado) + '/atual').off('value', listenerTempoReal);
         }
+        if (refDestinoVeiculo) { refDestinoVeiculo.off(); refDestinoVeiculo = null; }
+        limparRotaDestinoAdmin();
     }
 });
 
@@ -506,6 +612,7 @@ function inicializarEscutaBanco() {
 document.getElementById('selectVeiculo').addEventListener('change', function(e) {
     veiculoSelecionado = e.target.value;
     if(veiculoSelecionado) verificarEAtivarTempoReal();
+    observarDestinoVeiculo();
     if (typeof atualizarAbaAdminChat === 'function') atualizarAbaAdminChat();
 });
 
@@ -518,8 +625,10 @@ function verificarEAtivarTempoReal() {
 
     listenerTempoReal = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/veiculos/' + sanitizarChavePath(veiculoSelecionado) + '/atual').on('value', function(snapshot) {
         if(!snapshot.exists()) return;
-        atualizarPainelEletrico(snapshot.val());
+        var dados = snapshot.val();
+        atualizarPainelEletrico(dados);
         desenharLinhaDoTempoReal();
+        atualizarRotaDestinoAdmin(dados.lat, dados.lon, false);
     });
 }
 
