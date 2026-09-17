@@ -378,6 +378,23 @@ function atualizarViaRestApi(updates) {
     });
 }
 
+// CORREÇÃO (segundo plano): a REST acima ficava definida mas nunca era chamada de verdade
+// — todo o envio (posição ao vivo e fila de histórico) continuava indo só pelo SDK do
+// Firebase (db.ref().update), que é exatamente o caminho que trava quando o Android
+// suspende a rede da WebView em segundo plano. Esta função central decide o caminho:
+// no app nativo, tenta primeiro a via REST (rede nativa, via CapacitorHttp) e só cai pro
+// SDK do Firebase se a REST falhar; no navegador comum (sem Capacitor), usa direto o SDK.
+// Assim os pontos continuam sendo gravados mesmo com a tela apagada/app em 2º plano.
+function enviarAtualizacoesFirebase(updates) {
+    if (isNative && auth.currentUser) {
+        return atualizarViaRestApi(updates).catch(function(erroRest) {
+            console.warn("Envio via REST nativo falhou, tentando pelo SDK do Firebase:", erroRest);
+            return db.ref().update(updates);
+        });
+    }
+    return db.ref().update(updates);
+}
+
 var firebaseOnlineConfirmado = false;
 
 db.ref(".info/connected").on("value", function(snap) {
@@ -1191,7 +1208,7 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
                     patchFinalParada[pathParada + 'tempoParado'] = formatarTempoParado(duracaoFinalSegundos);
                     patchFinalParada[pathParada + 'horaFinalParada'] = agora.toLocaleTimeString('pt-BR');
                 });
-                db.ref().update(patchFinalParada).catch(function(e) { console.warn(e); });
+                enviarAtualizacoesFirebase(patchFinalParada).catch(function(e) { console.warn(e); });
             }
         } catch (erroFechamentoParada) {
             console.warn("Falha ao fechar registro de parada (não afeta o rastreio):", erroFechamentoParada);
@@ -1348,7 +1365,7 @@ function sincronizarTempoRealImediato() {
         updates[basePath + 'cidade'] = document.getElementById('txtCidade').textContent;
         updates[basePath + 'estado'] = document.getElementById('txtEstado').textContent;
     });
-    comLimiteDeTempo(db.ref().update(updates), 18000).then(() => {
+    comLimiteDeTempo(enviarAtualizacoesFirebase(updates), 18000).then(() => {
         if(!firebaseOnlineConfirmado) { firebaseOnlineConfirmado = true; atualizarInterfaceEstado(); }
     }).catch(e => {
         console.warn(e);
@@ -1377,7 +1394,7 @@ setInterval(function() {
             patchHistorico[path + 'horaFinalParada'] = agoraStr;
         });
 
-        db.ref().update(patchHistorico).catch(e => console.warn(e));
+        enviarAtualizacoesFirebase(patchHistorico).catch(e => console.warn(e));
     }
 }, 30000);
 
@@ -1607,7 +1624,7 @@ function enviarDadosFila() {
             var basePath = 'empresas/' + sanitizarChavePath(item.empresaId || EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(item.vID) + '/historico/' + item.id;
             updates[basePath] = item;
         });
-        comLimiteDeTempo(db.ref().update(updates), 18000).then(() => {
+        comLimiteDeTempo(enviarAtualizacoesFirebase(updates), 18000).then(() => {
             filaPendentes.splice(0, lote.length); falhasConsecutivasLote = 0; firebaseOnlineConfirmado = true; salvarTudo();
         }).catch(e => {
             falhasConsecutivasLote++; if (falhasConsecutivasLote >= 20) { filaPendentes.shift(); falhasConsecutivasLote = 0; salvarTudo(); }
