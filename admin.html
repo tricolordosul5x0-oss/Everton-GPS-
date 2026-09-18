@@ -503,6 +503,9 @@ auth.onAuthStateChanged(function(user) {
             erroDiv.style.display = 'block';
         });
     } else {
+        if (refStatusEmpresaAdmin) refStatusEmpresaAdmin.off();
+        if (refTrialEmpresaAdmin) refTrialEmpresaAdmin.off();
+        if (refAssinaturaEmpresaAdmin) refAssinaturaEmpresaAdmin.off();
         EMPRESA_ID_ADMIN = null;
         document.getElementById('authOverlay').style.display = "flex";
         document.getElementById('selectVeiculo').innerHTML = '<option value="">Aguardando login...</option>';
@@ -533,14 +536,37 @@ function formatarContagemRegressiva(ms) {
 
 var estadoEmpresaAdmin = { status: null, trialExpiraEm: null, assinaturaExpiraEm: null };
 
+var refStatusEmpresaAdmin = null;
+var refTrialEmpresaAdmin = null;
+var refAssinaturaEmpresaAdmin = null;
+
+// CORREÇÃO: esta função lia o nó 'empresas/{id}' inteiro de uma vez só. O app do motorista
+// (index.html) sempre leu em três caminhos SEPARADOS ('.../status', '.../trialExpiraEm',
+// '.../assinaturaExpiraEm') — muito provavelmente porque as regras de segurança do Firebase
+// liberam leitura só nesses campos específicos, não no nó inteiro. Ler o nó inteiro nessas
+// condições é recusado (PERMISSION_DENIED) e, como não havia callback de erro, falhava em
+// silêncio — o painel nunca recebia o status. Agora lê nos mesmos três caminhos que já
+// funcionam no app do motorista, com callback de erro pra nunca mais falhar calado.
 function inicializarStatusAssinatura() {
-    db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN)).on('value', function(snap) {
-        var dados = snap.val() || {};
-        estadoEmpresaAdmin.status = dados.status || null;
-        estadoEmpresaAdmin.trialExpiraEm = dados.trialExpiraEm || null;
-        estadoEmpresaAdmin.assinaturaExpiraEm = dados.assinaturaExpiraEm || null;
+    refStatusEmpresaAdmin = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/status');
+    refTrialEmpresaAdmin = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/trialExpiraEm');
+    refAssinaturaEmpresaAdmin = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/assinaturaExpiraEm');
+
+    refStatusEmpresaAdmin.on('value', function(snap) {
+        estadoEmpresaAdmin.status = snap.val();
         atualizarPainelStatusAssinatura();
-    });
+    }, function(erro) { console.warn("Falha ao ler status da empresa (verifique as regras do Firebase):", erro); });
+
+    refTrialEmpresaAdmin.on('value', function(snap) {
+        estadoEmpresaAdmin.trialExpiraEm = snap.val();
+        atualizarPainelStatusAssinatura();
+    }, function(erro) { console.warn("Falha ao ler trialExpiraEm:", erro); });
+
+    refAssinaturaEmpresaAdmin.on('value', function(snap) {
+        estadoEmpresaAdmin.assinaturaExpiraEm = snap.val();
+        atualizarPainelStatusAssinatura();
+    }, function(erro) { console.warn("Falha ao ler assinaturaExpiraEm:", erro); });
+
     setInterval(atualizarPainelStatusAssinatura, 20000);
 }
 
