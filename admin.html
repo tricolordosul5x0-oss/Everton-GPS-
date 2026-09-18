@@ -58,6 +58,9 @@ button:hover { opacity: 0.9; }
 .popup-rota-vel { color: var(--telemetry); font-family: ui-monospace, monospace; }
 .popup-rota-linha { font-size: 0.82em; color: var(--text-dim); margin-top: 3px; }
 .popup-rota-hora { color: var(--text-dim); font-size: 0.8em; margin-top: 6px; }
+.linha-passo-rota { display:flex; align-items:center; gap:10px; padding:10px 12px; border-bottom:1px solid var(--border); }
+.linha-passo-rota:last-child { border-bottom: none; }
+.linha-passo-rota.ativo { background: rgba(0,224,168,0.1); border-left: 3px solid var(--signal-on); }
 
 @media (max-width: 768px) {
     body { flex-direction: column-reverse; }
@@ -129,6 +132,17 @@ button:hover { opacity: 0.9; }
             <div class="telemetry-row"><span>Distância</span><b id="txtDistanciaPlanejada">—</b></div>
             <div class="telemetry-row"><span>Tempo estimado</span><b id="txtDuracaoPlanejada">—</b></div>
             <div class="telemetry-row"><span>Traçada em</span><b id="txtCriadaEmPlanejada">—</b></div>
+
+            <div id="boxProximaManobraAdmin" style="display:none; align-items:center; gap:10px; background:var(--bg-input); border:1px solid var(--border); border-radius:6px; padding:12px; margin-top:10px;">
+                <span id="iconeProximaManobraAdmin" style="font-size:1.8em; line-height:1;">🚦</span>
+                <div style="flex:1; min-width:0;">
+                    <div id="textoProximaManobraAdmin" style="color:var(--text); font-weight:700; font-size:0.95em;">—</div>
+                    <div id="distanciaProximaManobraAdmin" style="color:var(--telemetry); font-family:ui-monospace,monospace; font-size:0.82em; margin-top:2px;">—</div>
+                </div>
+            </div>
+
+            <button id="btnAlternarPassoAPassoAdmin" type="button" style="display:none; background:var(--bg-input); color:var(--text); border:1px solid var(--border); font-size:0.8em; padding:10px; margin-top:8px;">Ver passo a passo completo ▾</button>
+            <div id="listaPassosRotaAdmin" style="display:none; max-height:220px; overflow-y:auto; margin-top:8px; border:1px solid var(--border); border-radius:6px;"></div>
         </div>
 
         <div class="box">
@@ -178,11 +192,36 @@ var marcadorVeiculo = L.marker([-29.6133, -52.1919]).addTo(map);
 // diferenciar visualmente do trajeto real percorrido (linhas sólidas coloridas por status).
 var polilinhaRotaPlanejadaAdmin = L.polyline([], {color: '#34b3ff', weight: 5, opacity: 0.85, dashArray: '8,8'}).addTo(map);
 
+function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
+    var R = 6371000;
+    var dLat = (lat2 - lat1) * Math.PI / 180;
+    var dLon = (lon2 - lon1) * Math.PI / 180;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+function formatarDistanciaCurtaAdmin(metros) {
+    if (metros == null) return "—";
+    if (metros >= 1000) return (metros / 1000).toFixed(1) + " km";
+    return Math.round(metros) + " m";
+}
+
+// Mostra a mesma rota (com destino, distância e tempo) e o mesmo passo a passo tipo Waze
+// que o app do motorista calcula — os "passos" e o "indiceProximaManobra" já vêm prontos
+// no objeto sincronizado do Firebase, então o admin só precisa exibir, sem recalcular nada.
+// A manobra "atual" e sua distância acompanham a posição mais recente do veículo no mapa.
 function atualizarRotaPlanejadaNoPainel(rota) {
     var caixa = document.getElementById('boxRotaPlanejada');
+    var btnAlternar = document.getElementById('btnAlternarPassoAPassoAdmin');
+    var listaEl = document.getElementById('listaPassosRotaAdmin');
+    var boxManobra = document.getElementById('boxProximaManobraAdmin');
+
     if (!rota || !rota.geometria || rota.geometria.length < 2) {
         caixa.style.display = 'none';
         polilinhaRotaPlanejadaAdmin.setLatLngs([]);
+        btnAlternar.style.display = 'none';
+        listaEl.style.display = 'none';
+        boxManobra.style.display = 'none';
+        rotaPlanejadaAtualAdmin = null;
         return;
     }
     caixa.style.display = 'block';
@@ -191,7 +230,72 @@ function atualizarRotaPlanejadaNoPainel(rota) {
     document.getElementById('txtDuracaoPlanejada').textContent = Math.round(rota.duracaoSegundos / 60) + " min";
     document.getElementById('txtCriadaEmPlanejada').textContent = rota.criadoEm ? new Date(rota.criadoEm).toLocaleString('pt-BR') : "—";
     polilinhaRotaPlanejadaAdmin.setLatLngs(rota.geometria);
+
+    rotaPlanejadaAtualAdmin = rota;
+
+    if (rota.passos && rota.passos.length) {
+        btnAlternar.style.display = 'block';
+        boxManobra.style.display = 'flex';
+        renderizarListaPassosAdmin();
+        atualizarBannerProximaManobraAdmin();
+    } else {
+        btnAlternar.style.display = 'none';
+        listaEl.style.display = 'none';
+        boxManobra.style.display = 'none';
+    }
 }
+
+var rotaPlanejadaAtualAdmin = null;
+
+function atualizarBannerProximaManobraAdmin() {
+    var elIcone = document.getElementById('iconeProximaManobraAdmin');
+    var elTexto = document.getElementById('textoProximaManobraAdmin');
+    var elDistancia = document.getElementById('distanciaProximaManobraAdmin');
+    if (!rotaPlanejadaAtualAdmin || !rotaPlanejadaAtualAdmin.passos || !rotaPlanejadaAtualAdmin.passos.length) return;
+    var passos = rotaPlanejadaAtualAdmin.passos;
+    var indice = rotaPlanejadaAtualAdmin.indiceProximaManobra != null ? rotaPlanejadaAtualAdmin.indiceProximaManobra : 1;
+
+    if (indice >= passos.length) {
+        elIcone.textContent = '🏁';
+        elTexto.textContent = 'O veículo chegou ao destino!';
+        elDistancia.textContent = '';
+        return;
+    }
+    var passo = passos[indice];
+    elIcone.textContent = passo.icone;
+    elTexto.textContent = passo.instrucao;
+    var posAtual = marcadorVeiculo.getLatLng();
+    elDistancia.textContent = posAtual
+        ? ('em ' + formatarDistanciaCurtaAdmin(calcularDistanciaMetros(posAtual.lat, posAtual.lng, passo.localizacao[0], passo.localizacao[1])))
+        : '—';
+}
+
+function renderizarListaPassosAdmin() {
+    var container = document.getElementById('listaPassosRotaAdmin');
+    if (!rotaPlanejadaAtualAdmin || !rotaPlanejadaAtualAdmin.passos) { container.innerHTML = ''; return; }
+    var indiceAtivo = rotaPlanejadaAtualAdmin.indiceProximaManobra;
+    var html = '';
+    rotaPlanejadaAtualAdmin.passos.forEach(function(passo, i) {
+        html += '<div class="linha-passo-rota' + (i === indiceAtivo ? ' ativo' : '') + '" id="passo-admin-row-' + i + '">' +
+            '<span style="font-size:1.3em;">' + passo.icone + '</span>' +
+            '<div style="flex:1; min-width:0;">' +
+            '<div style="color:var(--text); font-size:0.9em;">' + passo.instrucao + '</div>' +
+            (passo.distanciaMetros > 0 ? '<div style="color:var(--text-dim); font-size:0.76em;">' + formatarDistanciaCurtaAdmin(passo.distanciaMetros) + '</div>' : '') +
+            '</div></div>';
+    });
+    container.innerHTML = html;
+}
+
+document.getElementById('btnAlternarPassoAPassoAdmin').addEventListener('click', function() {
+    var lista = document.getElementById('listaPassosRotaAdmin');
+    var estaAberta = lista.style.display !== 'none';
+    lista.style.display = estaAberta ? 'none' : 'block';
+    this.textContent = estaAberta ? 'Ver passo a passo completo ▾' : 'Ocultar passo a passo ▴';
+    if (!estaAberta) {
+        var ativo = document.getElementById('passo-admin-row-' + (rotaPlanejadaAtualAdmin ? rotaPlanejadaAtualAdmin.indiceProximaManobra : -1));
+        if (ativo) { try { ativo.scrollIntoView({ block: 'nearest' }); } catch(e) {} }
+    }
+});
 
 // ===================== ROTA TOCÁVEL, ENCAIXADA NAS RUAS =====================
 // A rota é desenhada com os PRÓPRIOS pontos gravados (não com nenhuma bolinha/marcador
@@ -586,6 +690,8 @@ function atualizarPainelEletrico(dados) {
     var badge = document.getElementById('txtStatus');
     badge.textContent = dados.status || "PARADO";
     badge.className = dados.velocidade > 80 ? "badge badge-perigo" : (dados.velocidade > 2 ? "badge badge-movimento" : "badge badge-parado");
+
+    if (rotaPlanejadaAtualAdmin) atualizarBannerProximaManobraAdmin();
 }
 </script>
 </body>
