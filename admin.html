@@ -56,7 +56,8 @@ button:hover { opacity: 0.9; }
 .leaflet-popup-tip { background: var(--bg-card); }
 .popup-rota-rua { font-weight: bold; font-size: 0.95em; margin-bottom: 4px; }
 .popup-rota-vel { color: var(--telemetry); font-family: ui-monospace, monospace; }
-.popup-rota-hora { color: var(--text-dim); font-size: 0.8em; margin-top: 2px; }
+.popup-rota-linha { font-size: 0.82em; color: var(--text-dim); margin-top: 3px; }
+.popup-rota-hora { color: var(--text-dim); font-size: 0.8em; margin-top: 6px; }
 
 @media (max-width: 768px) {
     body { flex-direction: column-reverse; }
@@ -95,6 +96,10 @@ button:hover { opacity: 0.9; }
             <select id="selectVeiculo">
                 <option value="">Aguardando login...</option>
             </select>
+        </div>
+
+        <div class="box" id="boxStatusAssinatura" style="display:none; text-align:center;">
+            <span id="txtStatusAssinatura">—</span>
         </div>
 
         <div class="box">
@@ -188,15 +193,18 @@ function atualizarRotaPlanejadaNoPainel(rota) {
     polilinhaRotaPlanejadaAdmin.setLatLngs(rota.geometria);
 }
 
-// ===================== ROTA TOCÁVEL (sem bolinhas — toca na linha) =====================
-// Antes a rota usava o Leaflet Routing Machine (linha "encaixada" nas ruas via OSRM), mas
-// isso gerava uma geometria recalculada pelo serviço de rotas — sem ligação direta com os
-// pontos reais gravados (rua/velocidade/hora), então não dava pra abrir informação nenhuma
-// ao tocar nela. Agora a rota é desenhada com os PRÓPRIOS pontos gravados: cada trecho
-// entre dois pontos consecutivos vira um segmento clicável, e tocar nele abre o painel
-// "Dados do Ponto Selecionado" (o mesmo painel da lateral) com a rua e velocidade daquele
-// trecho, sem precisar de nenhuma bolinha/marcador separado no mapa.
+// ===================== ROTA TOCÁVEL, ENCAIXADA NAS RUAS =====================
+// A rota é desenhada com os PRÓPRIOS pontos gravados (não com nenhuma bolinha/marcador
+// separado), mas o traçado entre cada par de pontos consecutivos agora é pedido pro OSRM
+// (serviço de rotas gratuito) numa ÚNICA requisição com "steps=true" — os "steps" de cada
+// trecho (leg) dão a geometria encaixada nas ruas especificamente ENTRE aqueles dois
+// pontos, então cada trecho desenhado continua correspondendo a um ponto real gravado (dá
+// pra tocar nele) só que agora a linha segue as ruas de verdade em vez de cortar reto por
+// cima dos quarteirões.
 var camadaRotaAtual = L.layerGroup().addTo(map);
+var idDesenhoRotaAtual = 0;
+var MAX_PONTOS_ROTEAMENTO = 80;
+var URL_OSRM_ROTA_ADMIN = "https://router.project-osrm.org/route/v1/driving/";
 
 function limparRotaAtual() {
     camadaRotaAtual.clearLayers();
@@ -208,29 +216,86 @@ function corPorStatusPonto(ponto) {
     return getComputedStyle(document.documentElement).getPropertyValue('--signal-off').trim() || '#ffb020';
 }
 
-// Desenha a rota como uma sequência de segmentos tocáveis. "pontos" é o array de pontos
-// completos (com lat/lon/rua/velocidade/status/hora/etc.), na ordem em que foram gravados.
+function desenharTrechoClicavel(coordsLatLng, cor, pontoDoTrecho) {
+    // Área de toque mais larga e invisível por baixo — facilita tocar numa tela pequena de
+    // celular sem precisar acertar o pixel exato da linha fina.
+    var areaDeToque = L.polyline(coordsLatLng, { color: '#000000', opacity: 0, weight: 24 }).addTo(camadaRotaAtual);
+    var linhaVisivel = L.polyline(coordsLatLng, { color: cor, weight: 6, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(camadaRotaAtual);
+    areaDeToque.on('click', function() { mostrarInfoDoPonto(pontoDoTrecho); });
+    linhaVisivel.on('click', function() { mostrarInfoDoPonto(pontoDoTrecho); });
+}
+
+// Reduz a quantidade de pontos mandados pro serviço de rotas — um histórico de um dia
+// inteiro pode ter centenas/milhares de pontos, o que não cabe (nem precisa) numa única
+// requisição. Sempre mantém o primeiro e o último ponto.
+function amostrarPontosParaRota(pontos, maxPontos) {
+    if (pontos.length <= maxPontos) return pontos;
+    var passo = pontos.length / maxPontos;
+    var resultado = [];
+    for (var i = 0; i < maxPontos; i++) resultado.push(pontos[Math.floor(i * passo)]);
+    resultado.push(pontos[pontos.length - 1]);
+    return resultado;
+}
+
+function fetchComTimeoutAdmin(url, timeoutMs) {
+    var controller = new AbortController();
+    var id = setTimeout(function() { controller.abort(); }, timeoutMs);
+    return fetch(url, { signal: controller.signal }).finally(function() { clearTimeout(id); });
+}
+
+// Desenha em linha reta entre cada par de pontos — usado como reserva se o serviço de rotas
+// falhar (sem internet, fora do ar, endereço isolado sem via mapeada etc.), pra a rota nunca
+// simplesmente sumir do mapa.
+function desenharSegmentosRetos(pontos) {
+    for (var i = 0; i < pontos.length - 1; i++) {
+        var p1 = pontos[i], p2 = pontos[i + 1];
+        desenharTrechoClicavel([[p1.lat, p1.lon], [p2.lat, p2.lon]], corPorStatusPonto(p2), p2);
+    }
+}
+
+function desenharRotaEncaixadaNasRuas(pontos, meuIdDesenho) {
+    var coordsStr = pontos.map(function(p) { return p.lon + "," + p.lat; }).join(";");
+    var url = URL_OSRM_ROTA_ADMIN + coordsStr + "?geometries=geojson&overview=false&steps=true";
+
+    fetchComTimeoutAdmin(url, 12000).then(function(res) { return res.json(); }).then(function(data) {
+        if (meuIdDesenho !== idDesenhoRotaAtual) return; // já existe um desenho mais novo em andamento — descarta esta resposta atrasada
+
+        if (!data || data.code !== "Ok" || !data.routes || !data.routes[0] || !data.routes[0].legs || data.routes[0].legs.length !== pontos.length - 1) {
+            desenharSegmentosRetos(pontos);
+            return;
+        }
+
+        var legs = data.routes[0].legs;
+        for (var i = 0; i < legs.length; i++) {
+            var coordsLatLng = [];
+            (legs[i].steps || []).forEach(function(step) {
+                if (step.geometry && step.geometry.coordinates) {
+                    step.geometry.coordinates.forEach(function(c) { coordsLatLng.push([c[1], c[0]]); });
+                }
+            });
+            var p2 = pontos[i + 1];
+            if (coordsLatLng.length < 2) {
+                coordsLatLng = [[pontos[i].lat, pontos[i].lon], [p2.lat, p2.lon]];
+            }
+            desenharTrechoClicavel(coordsLatLng, corPorStatusPonto(p2), p2);
+        }
+    }).catch(function(e) {
+        if (meuIdDesenho !== idDesenhoRotaAtual) return;
+        console.warn("Falha ao encaixar rota nas ruas, desenhando linha reta:", e);
+        desenharSegmentosRetos(pontos);
+    });
+}
+
+// Desenha a rota a partir dos pontos gravados. "pontos" é o array completo (com
+// lat/lon/rua/velocidade/status/hora/etc.), na ordem em que foram gravados.
 function desenharRotaClicavel(pontos) {
+    idDesenhoRotaAtual++;
+    var meuIdDesenho = idDesenhoRotaAtual;
     limparRotaAtual();
     if (!pontos || pontos.length === 0) return;
 
     var pontosValidos = pontos.filter(function(p) { return p && p.lat != null && p.lon != null; });
     if (pontosValidos.length === 0) return;
-
-    for (var i = 0; i < pontosValidos.length - 1; i++) {
-        (function(p1, p2) {
-            var coords = [[p1.lat, p1.lon], [p2.lat, p2.lon]];
-            var cor = corPorStatusPonto(p2);
-
-            // Área de toque mais larga e invisível por baixo — facilita tocar numa tela
-            // pequena de celular sem precisar acertar o pixel exato da linha fina.
-            var areaDeToque = L.polyline(coords, { color: '#000000', opacity: 0, weight: 24 }).addTo(camadaRotaAtual);
-            var linhaVisivel = L.polyline(coords, { color: cor, weight: 6, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(camadaRotaAtual);
-
-            areaDeToque.on('click', function() { mostrarInfoDoPonto(p2); });
-            linhaVisivel.on('click', function() { mostrarInfoDoPonto(p2); });
-        })(pontosValidos[i], pontosValidos[i + 1]);
-    }
 
     if (pontosValidos.length === 1) {
         // Só um ponto — nada pra desenhar como linha, mas ainda dá pra centralizar o mapa nele.
@@ -242,22 +307,35 @@ function desenharRotaClicavel(pontos) {
     try {
         map.fitBounds(L.polyline(todasCoords).getBounds(), { padding: [30, 30], maxZoom: 17 });
     } catch (e) { /* se o fitBounds falhar (ex: bounds inválido), o mapa só não recentraliza */ }
+
+    var pontosParaRotear = amostrarPontosParaRota(pontosValidos, MAX_PONTOS_ROTEAMENTO);
+    desenharRotaEncaixadaNasRuas(pontosParaRotear, meuIdDesenho);
 }
 
-// Ao tocar num trecho da rota: abre um popup rápido com rua + velocidade no ponto tocado,
-// e também preenche o painel "Dados do Ponto Selecionado" na lateral com TODAS as
-// informações daquele ponto (bairro, cidade/UF, data/hora, coordenadas, tempo parado).
+// Ao tocar num trecho da rota: abre um popup no próprio mapa já com TODAS as informações
+// do ponto (rua, bairro, cidade/UF, situação, velocidade, tempo parado, data/hora) — antes
+// só vinha rua + velocidade no popup, e o resto só aparecia rolando até o painel lateral,
+// o que é ruim no celular porque o popup fica em cima do mapa e o painel fica escondido.
+// Continua preenchendo o painel lateral também, junto com o popup.
 function mostrarInfoDoPonto(ponto) {
     atualizarPainelEletrico(ponto);
 
     var velocidadeTxt = (ponto.velocidade != null ? ponto.velocidade : 0) + " km/h";
     var horaTxt = (ponto.data ? ponto.data + " " : "") + (ponto.hora || "");
+    var situacaoTxt = ponto.status || "—";
+    var bairroTxt = ponto.bairro || "—";
+    var cidadeEstadoTxt = (ponto.cidade || "—") + " / " + (ponto.estado || "—");
+    var tempoParadoTxt = ponto.tempoParado || null;
+
     var conteudoPopup =
         '<div class="popup-rota-rua">' + (ponto.rua || "Rua não localizada") + '</div>' +
-        '<div class="popup-rota-vel">' + velocidadeTxt + '</div>' +
+        '<div class="popup-rota-vel">' + velocidadeTxt + ' · ' + situacaoTxt + '</div>' +
+        '<div class="popup-rota-linha">🏘️ ' + bairroTxt + '</div>' +
+        '<div class="popup-rota-linha">🏙️ ' + cidadeEstadoTxt + '</div>' +
+        (tempoParadoTxt ? '<div class="popup-rota-linha">⏱️ Parado há ' + tempoParadoTxt + '</div>' : '') +
         '<div class="popup-rota-hora">' + horaTxt + '</div>';
 
-    L.popup({ closeButton: true, maxWidth: 240 })
+    L.popup({ closeButton: true, maxWidth: 260 })
         .setLatLng([ponto.lat, ponto.lon])
         .setContent(conteudoPopup)
         .openOn(map);
@@ -333,7 +411,68 @@ document.getElementById('btnSair').addEventListener('click', function() {
     auth.signOut();
 });
 
+// ===================== STATUS DA ASSINATURA/TESTE (dias, horas e minutos restantes) =====================
+// Mesmo formato do app do motorista: some com as partes zeradas do início (com menos de 1
+// dia mostra só "Xh Xmin", com menos de 1 hora só "Xmin").
+function formatarContagemRegressiva(ms) {
+    ms = Math.max(0, ms);
+    var totalMinutos = Math.floor(ms / 60000);
+    var dias = Math.floor(totalMinutos / 1440);
+    var horas = Math.floor((totalMinutos % 1440) / 60);
+    var minutos = totalMinutos % 60;
+    var partes = [];
+    if (dias > 0) partes.push(dias + "d");
+    if (dias > 0 || horas > 0) partes.push(horas + "h");
+    partes.push(minutos + "min");
+    return partes.join(" ");
+}
+
+var estadoEmpresaAdmin = { status: null, trialExpiraEm: null, assinaturaExpiraEm: null };
+
+function inicializarStatusAssinatura() {
+    db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN)).on('value', function(snap) {
+        var dados = snap.val() || {};
+        estadoEmpresaAdmin.status = dados.status || null;
+        estadoEmpresaAdmin.trialExpiraEm = dados.trialExpiraEm || null;
+        estadoEmpresaAdmin.assinaturaExpiraEm = dados.assinaturaExpiraEm || null;
+        atualizarPainelStatusAssinatura();
+    });
+    setInterval(atualizarPainelStatusAssinatura, 20000);
+}
+
+function atualizarPainelStatusAssinatura() {
+    var caixa = document.getElementById('boxStatusAssinatura');
+    var texto = document.getElementById('txtStatusAssinatura');
+    if (!EMPRESA_ID_ADMIN) { caixa.style.display = 'none'; return; }
+
+    if (estadoEmpresaAdmin.status === 'suspenso') {
+        caixa.style.display = 'block';
+        caixa.style.borderColor = 'var(--danger)';
+        texto.style.color = 'var(--danger)';
+        texto.textContent = "🚫 Conta suspensa";
+    } else if (estadoEmpresaAdmin.status === 'trial' && estadoEmpresaAdmin.trialExpiraEm) {
+        var restanteTeste = new Date(estadoEmpresaAdmin.trialExpiraEm).getTime() - Date.now();
+        caixa.style.display = 'block';
+        caixa.style.borderColor = 'var(--telemetry)';
+        texto.style.color = restanteTeste <= 0 ? 'var(--danger)' : 'var(--telemetry)';
+        texto.textContent = restanteTeste <= 0
+            ? "🚫 Período de teste encerrado"
+            : "🎁 Teste grátis — " + formatarContagemRegressiva(restanteTeste) + " restantes";
+    } else if (estadoEmpresaAdmin.status === 'ativo' && estadoEmpresaAdmin.assinaturaExpiraEm) {
+        var restanteAssinatura = new Date(estadoEmpresaAdmin.assinaturaExpiraEm).getTime() - Date.now();
+        caixa.style.display = 'block';
+        caixa.style.borderColor = 'var(--signal-on)';
+        texto.style.color = restanteAssinatura <= 0 ? 'var(--danger)' : 'var(--signal-on)';
+        texto.textContent = restanteAssinatura <= 0
+            ? "🚫 Assinatura vencida"
+            : "✅ Faltam " + formatarContagemRegressiva(restanteAssinatura) + " de assinatura";
+    } else {
+        caixa.style.display = 'none';
+    }
+}
+
 function inicializarEscutaBanco() {
+    inicializarStatusAssinatura();
     db.ref(caminhoVeiculos()).on('value', function(snapshot) {
         var select = document.getElementById('selectVeiculo');
         select.innerHTML = '<option value="">-- Escolha um Veículo --</option>';
