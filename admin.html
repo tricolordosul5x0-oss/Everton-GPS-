@@ -5,27 +5,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Painel Admin - Rastreador Everton GPS</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<!-- Nova biblioteca adicionada para forçar o contorno de ruas de forma nativa -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet-routing-machine/3.2.12/leaflet-routing-machine.css" />
 <style>
 :root {
-    --bg-main: #0a0d12;
-    --bg-card: #131820;
-    --border: rgba(255,255,255,.08);
-    --signal-on: #00ffa6;
-    --signal-off: #ffb020;
-    --danger: #ff5470;
-    --telemetry: #2dd4ff;
-    --text: #eef2f6;
-    --text-dim: #74808f;
+  --bg-main: #0a0d12;
+  --bg-card: #131820;
+  --border: rgba(255,255,255,.08);
+  --signal-on: #00ffa6;
+  --signal-off: #ffb020;
+  --danger: #ff5470;
+  --telemetry: #2dd4ff;
+  --text: #eef2f6;
+  --text-dim: #74808f;
 }
 body {
-    margin: 0; padding: 0; font-family: system-ui, sans-serif;
-    background: var(--bg-main); color: var(--text);
-    display: flex; height: 100vh; overflow: hidden;
+  margin: 0; padding: 0; font-family: system-ui, sans-serif;
+  background: var(--bg-main); color: var(--text);
+  display: flex; height: 100vh; overflow: hidden;
 }
 .sidebar {
-    width: 380px; background: var(--bg-card);
-    border-right: 1px solid var(--border);
-    display: flex; flex-direction: column; height: 100%;
+  width: 380px; background: var(--bg-card);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; height: 100%;
 }
 #map { flex: 1; height: 100%; background: #000; }
 .header { padding: 16px; border-bottom: 1px solid var(--border); text-align: center; }
@@ -34,8 +36,8 @@ body {
 .box { background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 12px; border-radius: 8px; }
 .box-title { font-size: 0.75em; text-transform: uppercase; color: var(--text-dim); font-weight: bold; margin-bottom: 8px; }
 select, input, button {
-    width: 100%; background: #1a212b; border: 1px solid var(--border);
-    padding: 10px; border-radius: 6px; color: white; font-size: 0.95em; box-sizing: border-box;
+  width: 100%; background: #1a212b; border: 1px solid var(--border);
+  padding: 10px; border-radius: 6px; color: white; font-size: 0.95em; box-sizing: border-box;
 }
 button { background: var(--telemetry); color: #000; font-weight: bold; cursor: pointer; margin-top: 8px; border: none;}
 button:hover { opacity: 0.9; }
@@ -50,122 +52,145 @@ button:hover { opacity: 0.9; }
 .auth-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center; z-index: 10000; }
 .auth-card { background: var(--bg-card); border: 1px solid var(--border); padding: 24px; border-radius: 12px; width: 90%; max-width: 360px; display: flex; flex-direction: column; gap: 16px; }
 .auth-card h3 { margin: 0; color: var(--text); font-size: 1.2em; text-align: center; }
+/* Esconder o painel de instruções de texto que o Leaflet Routing cria por padrão */
+.leaflet-routing-container { display: none !important; }
 
-/* Popup de toque na rota — mantém o visual escuro do resto do painel */
-.leaflet-popup-content-wrapper { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); border-radius: 8px; }
-.leaflet-popup-tip { background: var(--bg-card); }
-.popup-rota-rua { font-weight: bold; font-size: 0.95em; margin-bottom: 4px; }
-.popup-rota-vel { color: var(--telemetry); font-family: ui-monospace, monospace; }
-.popup-rota-linha { font-size: 0.82em; color: var(--text-dim); margin-top: 3px; }
-.popup-rota-hora { color: var(--text-dim); font-size: 0.8em; margin-top: 6px; }
+/* ===================== CHAT ===================== */
+.chat-tab-btn-admin {
+  flex: 1; border-radius: 0; background: transparent; color: var(--text-dim);
+  padding: 10px; font-size: 0.82em; box-shadow: none; border: none; cursor: pointer;
+}
+.chat-tab-btn-admin.ativa { background: #1a212b; color: var(--telemetry); }
+.chat-lista-admin { height: 220px; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.msg-bolha-admin {
+  max-width: 82%; padding: 8px 12px; border-radius: 12px; font-size: 0.85em; line-height: 1.4;
+  word-break: break-word; align-self: flex-start; background: #1a212b; border: 1px solid var(--border); color: var(--text);
+}
+.msg-bolha-admin.minha { align-self: flex-end; background: rgba(45,212,255,.14); border-color: rgba(45,212,255,.3); }
+.msg-bolha-admin .msg-remetente-admin { font-size: 0.72em; font-weight: 700; color: var(--telemetry); margin-bottom: 2px; }
+.msg-bolha-admin .msg-hora-admin { font-size: 0.68em; color: var(--text-dim); margin-top: 3px; text-align: right; }
 
 @media (max-width: 768px) {
-    body { flex-direction: column-reverse; }
-    .sidebar { width: 100%; height: 50vh; }
-    #map { height: 50vh; }
+  body { flex-direction: column-reverse; }
+  .sidebar { width: 100%; height: 50vh; }
+  #map { height: 50vh; }
 }
 </style>
 </head>
 <body>
 
 <div id="authOverlay" class="auth-overlay">
-    <div class="auth-card">
-        <h3>🔐 Painel Admin Protegido</h3>
-        <p style="font-size: 0.85em; color: var(--text-dim); text-align: center; margin: 0;">Insira as credenciais de administrador do sistema.</p>
-        <div>
-            <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">E-mail</label>
-            <input type="email" id="authEmail" placeholder="seu-email@gmail.com">
-        </div>
-        <div>
-            <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">Senha</label>
-            <input type="password" id="authSenha" placeholder="******">
-        </div>
-        <button id="btnEntrarPainel">Entrar no Painel</button>
-        <div id="erroLogin" style="color: var(--danger); font-size: 0.85em; text-align: center; display: none;"></div>
+  <div class="auth-card">
+    <h3>🔐 Painel Admin Protegido</h3>
+    <p style="font-size: 0.85em; color: var(--text-dim); text-align: center; margin: 0;">Insira as credenciais de administrador do sistema.</p>
+    <div>
+      <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">E-mail</label>
+      <input type="email" id="authEmail" placeholder="seu-email@gmail.com">
     </div>
+    <div>
+      <label style="font-size: 0.75em; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px;">Senha</label>
+      <input type="password" id="authSenha" placeholder="******">
+    </div>
+    <button id="btnEntrarPainel">Entrar no Painel</button>
+    <div id="erroLogin" style="color: var(--danger); font-size: 0.85em; text-align: center; display: none;"></div>
+  </div>
 </div>
 
 <div class="sidebar">
-    <div class="header">
-        <h2>🛠️ Admin Everton GPS</h2>
-        <span id="userLogado" style="font-size: 0.8em; color: var(--signal-on)">Sessão Protegida</span>
+  <div class="header">
+    <h2>🛠️ Admin Everton GPS</h2>
+    <span id="userLogado" style="font-size: 0.8em; color: var(--signal-on)">Sessão Protegida</span>
+  </div>
+  <div class="content">
+    <div class="box">
+      <div class="box-title">🏢 Empresa</div>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <input type="text" id="empresaIdInput" placeholder="ID da empresa (ex: transportadora_geromel)">
+        <button id="btnCarregarEmpresa">Carregar</button>
+      </div>
+      <div id="empresaAtualInfo" style="font-size: 0.75em; color: var(--text-dim); margin-top: 6px;">Nenhuma empresa carregada ainda.</div>
     </div>
-    <div class="content">
-        <div class="box">
-            <div class="box-title">🚗 Selecionar Veículo</div>
-            <select id="selectVeiculo">
-                <option value="">Aguardando login...</option>
-            </select>
-        </div>
 
-        <div class="box" id="boxStatusAssinatura" style="display:none; text-align:center;">
-            <span id="txtStatusAssinatura">—</span>
-        </div>
-
-        <div class="box">
-            <div class="box-title">📅 Filtrar Histórico Passado</div>
-            <div style="display: flex; flex-direction: column; gap: 6px;">
-                <input type="date" id="filtroData">
-                <div style="display: flex; gap: 6px;">
-                    <input type="time" id="filtroHoraInicio" value="00:00">
-                    <input type="time" id="filtroHoraFim" value="23:59">
-                </div>
-                <button id="btnBuscarHistorico">🔍 Buscar Histórico</button>
-                <button id="btnVoltarTempoReal" style="background: var(--signal-on); display: none;">🟢 Voltar ao Tempo Real</button>
-            </div>
-        </div>
-
-        <div id="statusModo" class="box" style="border-color: var(--signal-off); text-align: center; font-weight: bold; font-size: 0.9em; color: var(--signal-off);">
-            Aguardando seleção...
-        </div>
-
-        <div class="box" style="text-align:center; font-size:0.78em; color: var(--text-dim);">
-            👆 Toque em qualquer trecho da rota no mapa pra abrir os dados daquele ponto aqui embaixo.
-        </div>
-
-        <div class="box" id="boxRotaPlanejada" style="display:none; border-color: var(--telemetry);">
-            <div class="box-title">🧭 Rota Planejada pelo Motorista</div>
-            <div class="telemetry-row"><span>Destino</span><b id="txtDestinoPlanejado">—</b></div>
-            <div class="telemetry-row"><span>Distância</span><b id="txtDistanciaPlanejada">—</b></div>
-            <div class="telemetry-row"><span>Tempo estimado</span><b id="txtDuracaoPlanejada">—</b></div>
-            <div class="telemetry-row"><span>Traçada em</span><b id="txtCriadaEmPlanejada">—</b></div>
-        </div>
-
-        <div class="box">
-            <div class="box-title">📊 Dados do Ponto Selecionado</div>
-            <div class="telemetry-row"><span>Situação</span><span id="txtStatus" class="badge badge-parado">—</span></div>
-            <div class="telemetry-row"><span>Velocidade</span><b id="txtVelocidade">0 km/h</b></div>
-            <div class="telemetry-row"><span>Tempo Parado</span><b id="txtTempoParado">00:00:00</b></div>
-            <div class="telemetry-row"><span>Rua</span><b id="txtRua">—</b></div>
-            <div class="telemetry-row"><span>Bairro</span><b id="txtBairro">—</b></div>
-            <div class="telemetry-row"><span>Cidade/UF</span><b id="txtCidadeEstado">—</b></div>
-            <div class="telemetry-row"><span>Data/Hora</span><b id="txtDataHora">—</b></div>
-            <div class="telemetry-row"><span>Coordenadas</span><b id="txtCoords">—</b></div>
-        </div>
-
-        <button id="btnSair" style="background: #1a212b; color: var(--danger); border: 1px solid var(--border);">❌ Desconectar</button>
+    <div class="box">
+      <div class="box-title">🚗 Selecionar Veículo</div>
+      <select id="selectVeiculo">
+        <option value="">Carregue uma empresa primeiro...</option>
+      </select>
     </div>
+
+    <div class="box">
+      <div class="box-title">📅 Filtrar Histórico Passado</div>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <input type="date" id="filtroData">
+        <div style="display: flex; gap: 6px;">
+          <input type="time" id="filtroHoraInicio" value="00:00">
+          <input type="time" id="filtroHoraFim" value="23:59">
+        </div>
+        <button id="btnBuscarHistorico">🔍 Buscar Histórico</button>
+        <button id="btnVoltarTempoReal" style="background: var(--signal-on); display: none;">🟢 Voltar ao Tempo Real</button>
+      </div>
+    </div>
+
+    <div id="statusModo" class="box" style="border-color: var(--signal-off); text-align: center; font-weight: bold; font-size: 0.9em; color: var(--signal-off);">
+      Aguardando seleção...
+    </div>
+
+    <div class="box">
+      <div class="box-title">📊 Dados do Ponto Selecionado</div>
+      <div class="telemetry-row"><span>Situação</span><span id="txtStatus" class="badge badge-parado">—</span></div>
+      <div class="telemetry-row"><span>Velocidade</span><b id="txtVelocidade">0 km/h</b></div>
+      <div class="telemetry-row"><span>Limite da Via</span><b id="txtLimiteVia">—</b></div>
+      <div class="telemetry-row"><span>Tempo Parado</span><b id="txtTempoParado">00:00:00</b></div>
+      <div class="telemetry-row"><span>Rua</span><b id="txtRua">—</b></div>
+      <div class="telemetry-row"><span>Bairro</span><b id="txtBairro">—</b></div>
+      <div class="telemetry-row"><span>Cidade/UF</span><b id="txtCidadeEstado">—</b></div>
+      <div class="telemetry-row"><span>Data/Hora</span><b id="txtDataHora">—</b></div>
+      <div class="telemetry-row"><span>Coordenadas</span><b id="txtCoords">—</b></div>
+    </div>
+
+    <div class="box" style="padding:0; overflow:hidden;">
+      <div class="box-title" style="padding:12px 12px 0;">💬 Chat com a frota</div>
+      <div style="display:flex; border-bottom:1px solid var(--border); margin-top:8px;">
+        <button id="adminChatTabMural" class="chat-tab-btn-admin ativa">📢 Mural (todos)</button>
+        <button id="adminChatTabDireta" class="chat-tab-btn-admin">💬 Direto p/ veículo</button>
+      </div>
+      <div id="adminChatAvisoSelecioneVeiculo" style="display:none; padding:10px 12px; font-size:0.82em; color: var(--signal-off);">Selecione um veículo lá em cima pra conversar direto com ele.</div>
+      <div id="adminChatLista" class="chat-lista-admin"></div>
+      <div style="display:flex; gap:8px; padding:10px 12px; border-top:1px solid var(--border);">
+        <input type="text" id="adminChatInput" placeholder="Mensagem para a frota...">
+        <button id="adminChatBtnEnviar" style="width:auto; padding:10px 14px;">Enviar</button>
+      </div>
+    </div>
+
+    <button id="btnSair" style="background: #1a212b; color: var(--danger); border: 1px solid var(--border);">❌ Desconectar</button>
+  </div>
 </div>
 
 <div id="map"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<!-- Scripts adicionais para o motor de rotas nativo do mapa -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-routing-machine/3.2.12/leaflet-routing-machine.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script>
 var firebaseConfig = {
-    apiKey: "AIzaSyDwKIS8wL3D7OuaysVFV_xyAsFsKo2eXzY",
-    authDomain: "everton-gps.firebaseapp.com",
-    databaseURL: "https://everton-gps-default-rtdb.firebaseio.com",
-    projectId: "everton-gps",
-    storageBucket: "everton-gps.firebasestorage.app",
-    messagingSenderId: "688936933095",
-    appId: "1:688936933095:web:790b2407334e8b148e3442"
+  apiKey: "AIzaSyDwKIS8wL3D7OuaysVFV_xyAsFsKo2eXzY",
+  authDomain: "everton-gps.firebaseapp.com",
+  databaseURL: "https://everton-gps-default-rtdb.firebaseio.com",
+  projectId: "everton-gps",
+  storageBucket: "everton-gps.firebasestorage.app",
+  messagingSenderId: "688936933095",
+  appId: "1:688936933095:web:790b2407334e8b148e3442"
 };
 firebase.initializeApp(firebaseConfig);
 var db = firebase.database();
 var auth = firebase.auth();
+
+function sanitizarChavePath(valor) {
+    return String(valor).replace(/[.#$\[\]\/]/g, "_");
+}
 
 // ===================== MAPA =====================
 var map = L.map('map', { zoomControl: true }).setView([-29.6133, -52.1919], 13);
@@ -174,189 +199,240 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 var marcadorVeiculo = L.marker([-29.6133, -52.1919]).addTo(map);
-// Linha tracejada da rota que o MOTORISTA planejou/digitou no app dele (destino), pra
-// diferenciar visualmente do trajeto real percorrido (linhas sólidas coloridas por status).
-var polilinhaRotaPlanejadaAdmin = L.polyline([], {color: '#34b3ff', weight: 5, opacity: 0.85, dashArray: '8,8'}).addTo(map);
 
-function atualizarRotaPlanejadaNoPainel(rota) {
-    var caixa = document.getElementById('boxRotaPlanejada');
-    if (!rota || !rota.geometria || rota.geometria.length < 2) {
-        caixa.style.display = 'none';
-        polilinhaRotaPlanejadaAdmin.setLatLngs([]);
-        return;
-    }
-    caixa.style.display = 'block';
-    document.getElementById('txtDestinoPlanejado').textContent = rota.destino || "—";
-    document.getElementById('txtDistanciaPlanejada').textContent = (rota.distanciaMetros / 1000).toFixed(1) + " km";
-    document.getElementById('txtDuracaoPlanejada').textContent = Math.round(rota.duracaoSegundos / 60) + " min";
-    document.getElementById('txtCriadaEmPlanejada').textContent = rota.criadoEm ? new Date(rota.criadoEm).toLocaleString('pt-BR') : "—";
-    polilinhaRotaPlanejadaAdmin.setLatLngs(rota.geometria);
-}
-
-// ===================== ROTA TOCÁVEL, ENCAIXADA NAS RUAS =====================
-// A rota é desenhada com os PRÓPRIOS pontos gravados (não com nenhuma bolinha/marcador
-// separado), mas o traçado entre cada par de pontos consecutivos agora é pedido pro OSRM
-// (serviço de rotas gratuito) numa ÚNICA requisição com "steps=true" — os "steps" de cada
-// trecho (leg) dão a geometria encaixada nas ruas especificamente ENTRE aqueles dois
-// pontos, então cada trecho desenhado continua correspondendo a um ponto real gravado (dá
-// pra tocar nele) só que agora a linha segue as ruas de verdade em vez de cortar reto por
-// cima dos quarteirões.
-var camadaRotaAtual = L.layerGroup().addTo(map);
-var idDesenhoRotaAtual = 0;
-var MAX_PONTOS_ROTEAMENTO = 80;
+// ===================== ROTA TRAÇADA PELO MOTORISTA (destino) =====================
+// O app do motorista, quando ele define um destino, grava esse destino em
+// 'empresas/{id}/veiculos/{veiculo}/destino' (lat/lon/endereco) — o mesmo caminho que o
+// próprio app usa pra desenhar a rota azul tracejada até lá. Aqui o painel escuta esse
+// caminho e desenha a mesma rota (calculada pelo mesmo serviço, OSRM), pra o admin ver pra
+// onde o motorista está indo, igual ele vê no próprio celular.
 var URL_OSRM_ROTA_ADMIN = "https://router.project-osrm.org/route/v1/driving/";
+var linhaRotaAdmin = L.polyline([], { color: '#34b3ff', weight: 6, opacity: 0.85, dashArray: '2,10' }).addTo(map);
+var marcadorDestinoAdmin = null;
+var iconeDestinoAdmin = L.divIcon({
+    className: 'icone-destino-admin',
+    html: '<div style="font-size:26px; filter:drop-shadow(0 2px 4px rgba(0,0,0,.6));">🏁</div>',
+    iconSize: [26, 26], iconAnchor: [13, 24]
+});
+var refDestinoVeiculo = null;
+var destinoAtualDados = null;
+var ultimaBuscaRotaAdminTs = 0;
 
-function limparRotaAtual() {
-    camadaRotaAtual.clearLayers();
-}
-
-function corPorStatusPonto(ponto) {
-    if (ponto.status === "VELOCIDADE ACIMA DO LIMITE") return getComputedStyle(document.documentElement).getPropertyValue('--danger').trim() || '#ff5470';
-    if (ponto.status === "EM MOVIMENTO" || (ponto.velocidade || 0) > 2) return getComputedStyle(document.documentElement).getPropertyValue('--signal-on').trim() || '#00ffa6';
-    return getComputedStyle(document.documentElement).getPropertyValue('--signal-off').trim() || '#ffb020';
-}
-
-function desenharTrechoClicavel(coordsLatLng, cor, pontoDoTrecho) {
-    // Área de toque mais larga e invisível por baixo — facilita tocar numa tela pequena de
-    // celular sem precisar acertar o pixel exato da linha fina.
-    var areaDeToque = L.polyline(coordsLatLng, { color: '#000000', opacity: 0, weight: 24 }).addTo(camadaRotaAtual);
-    var linhaVisivel = L.polyline(coordsLatLng, { color: cor, weight: 6, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(camadaRotaAtual);
-    areaDeToque.on('click', function() { mostrarInfoDoPonto(pontoDoTrecho); });
-    linhaVisivel.on('click', function() { mostrarInfoDoPonto(pontoDoTrecho); });
-}
-
-// Reduz a quantidade de pontos mandados pro serviço de rotas — um histórico de um dia
-// inteiro pode ter centenas/milhares de pontos, o que não cabe (nem precisa) numa única
-// requisição. Sempre mantém o primeiro e o último ponto.
-function amostrarPontosParaRota(pontos, maxPontos) {
-    if (pontos.length <= maxPontos) return pontos;
-    var passo = pontos.length / maxPontos;
-    var resultado = [];
-    for (var i = 0; i < maxPontos; i++) resultado.push(pontos[Math.floor(i * passo)]);
-    resultado.push(pontos[pontos.length - 1]);
-    return resultado;
-}
-
-function fetchComTimeoutAdmin(url, timeoutMs) {
+function fetchComTimeoutAdmin(url, opcoes, timeoutMs) {
     var controller = new AbortController();
     var id = setTimeout(function() { controller.abort(); }, timeoutMs);
-    return fetch(url, { signal: controller.signal }).finally(function() { clearTimeout(id); });
+    return fetch(url, Object.assign({}, opcoes, { signal: controller.signal })).finally(function() { clearTimeout(id); });
 }
 
-// Desenha em linha reta entre cada par de pontos — usado como reserva se o serviço de rotas
-// falhar (sem internet, fora do ar, endereço isolado sem via mapeada etc.), pra a rota nunca
-// simplesmente sumir do mapa.
-function desenharSegmentosRetos(pontos) {
-    for (var i = 0; i < pontos.length - 1; i++) {
-        var p1 = pontos[i], p2 = pontos[i + 1];
-        desenharTrechoClicavel([[p1.lat, p1.lon], [p2.lat, p2.lon]], corPorStatusPonto(p2), p2);
-    }
+function limparRotaAdmin() {
+    linhaRotaAdmin.setLatLngs([]);
+    if (marcadorDestinoAdmin) { map.removeLayer(marcadorDestinoAdmin); marcadorDestinoAdmin = null; }
+    destinoAtualDados = null;
 }
 
-function desenharRotaEncaixadaNasRuas(pontos, meuIdDesenho) {
-    var coordsStr = pontos.map(function(p) { return p.lon + "," + p.lat; }).join(";");
-    var url = URL_OSRM_ROTA_ADMIN + coordsStr + "?geometries=geojson&overview=false&steps=true";
+// Busca a rota via OSRM (mesmo serviço público e gratuito que o app do motorista usa) e
+// desenha a linha. Tem uma folga mínima entre pedidos (15s) pra não estourar o serviço
+// gratuito com pedidos repetidos toda vez que a posição do veículo é atualizada.
+function buscarRotaAdmin(origLat, origLon, destLat, destLon) {
+    var agora = Date.now();
+    if (agora - ultimaBuscaRotaAdminTs < 15000) return;
+    ultimaBuscaRotaAdminTs = agora;
+    var url = URL_OSRM_ROTA_ADMIN + origLon + "," + origLat + ";" + destLon + "," + destLat + "?overview=full&geometries=geojson";
+    fetchComTimeoutAdmin(url, {}, 12000).then(function(res) { return res.json(); }).then(function(data) {
+        if (!data || data.code !== "Ok" || !data.routes || data.routes.length === 0) return;
+        var coords = data.routes[0].geometry.coordinates.map(function(c) { return [c[1], c[0]]; });
+        linhaRotaAdmin.setLatLngs(coords);
+    }).catch(function(e) { console.warn("Falha ao calcular a rota do destino no painel:", e); });
+}
 
-    fetchComTimeoutAdmin(url, 12000).then(function(res) { return res.json(); }).then(function(data) {
-        if (meuIdDesenho !== idDesenhoRotaAtual) return; // já existe um desenho mais novo em andamento — descarta esta resposta atrasada
+// Liga/desliga a escuta do destino do veículo atualmente selecionado. Chamada sempre que
+// troca de veículo ou volta pro modo tempo real (no modo histórico a rota some, já que
+// "destino" é uma informação do momento presente, não do passado).
+function ativarEscutaDestino() {
+    if (refDestinoVeiculo) refDestinoVeiculo.off('value');
+    limparRotaAdmin();
+    if (!EMPRESA_ID_ADMIN || !veiculoSelecionado) return;
+    refDestinoVeiculo = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/veiculos/' + sanitizarChavePath(veiculoSelecionado) + '/destino');
+    refDestinoVeiculo.on('value', function(snapshot) {
+        if (!snapshot.exists()) { limparRotaAdmin(); return; }
+        destinoAtualDados = snapshot.val();
+        if (marcadorDestinoAdmin) map.removeLayer(marcadorDestinoAdmin);
+        marcadorDestinoAdmin = L.marker([destinoAtualDados.lat, destinoAtualDados.lon], { icon: iconeDestinoAdmin })
+            .bindPopup('🏁 Destino do motorista<br>' + (destinoAtualDados.endereco || ''))
+            .addTo(map);
+        ultimaBuscaRotaAdminTs = 0; // destino mudou — força recalcular já, ignorando a folga de 15s
+        var posAtual = marcadorVeiculo.getLatLng();
+        buscarRotaAdmin(posAtual.lat, posAtual.lng, destinoAtualDados.lat, destinoAtualDados.lon);
+    }, function(erro) { console.warn("Erro ao escutar destino do veículo:", erro); });
+}
 
-        if (!data || data.code !== "Ok" || !data.routes || !data.routes[0] || !data.routes[0].legs || data.routes[0].legs.length !== pontos.length - 1) {
-            desenharSegmentosRetos(pontos);
-            return;
-        }
+// Setas ao longo do trajeto, na ordem real em que os pontos foram gravados — isso é o que
+// Cada ponto real ganha sua própria seta, girada na direção real de deslocamento
+// (calculada a partir do ponto seguinte). A seta é o próprio marcador clicável, com o
+// popup de dados grudado nela — não é mais uma linha de setas separada por cima do
+// traçado, e sim uma seta exatamente sobre cada ponto gravado. Quando o veículo passa
+// duas vezes pela mesma rua (ida e volta), cada passagem tem suas próprias setas, com
+// ângulo e dados independentes.
+function calcularRumoGrausAdmin(lat1, lon1, lat2, lon2) {
+    var toRad = function(g) { return g * Math.PI / 180; };
+    var toDeg = function(r) { return r * 180 / Math.PI; };
+    var dLon = toRad(lon2 - lon1);
+    var y = Math.sin(dLon) * Math.cos(toRad(lat2));
+    var x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) - Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLon);
+    var rumo = toDeg(Math.atan2(y, x));
+    return (rumo + 360) % 360;
+}
 
-        var legs = data.routes[0].legs;
-        for (var i = 0; i < legs.length; i++) {
-            var coordsLatLng = [];
-            (legs[i].steps || []).forEach(function(step) {
-                if (step.geometry && step.geometry.coordinates) {
-                    step.geometry.coordinates.forEach(function(c) { coordsLatLng.push([c[1], c[0]]); });
-                }
-            });
-            var p2 = pontos[i + 1];
-            if (coordsLatLng.length < 2) {
-                coordsLatLng = [[pontos[i].lat, pontos[i].lon], [p2.lat, p2.lon]];
-            }
-            desenharTrechoClicavel(coordsLatLng, corPorStatusPonto(p2), p2);
-        }
-    }).catch(function(e) {
-        if (meuIdDesenho !== idDesenhoRotaAtual) return;
-        console.warn("Falha ao encaixar rota nas ruas, desenhando linha reta:", e);
-        desenharSegmentosRetos(pontos);
+function criarIconeSetaPonto(anguloGraus, cor) {
+    return L.divIcon({
+        className: 'seta-ponto-admin',
+        html: '<div style="width:22px;height:22px;transform:rotate(' + anguloGraus + 'deg);transform-origin:50% 50%;filter:drop-shadow(0 1px 3px rgba(0,0,0,.6));">' +
+              '<svg viewBox="0 0 24 24" width="22" height="22">' +
+              '<path d="M12 1.5 L21 21 L12 16.5 L3 21 Z" fill="' + cor + '" stroke="#04120e" stroke-width="1.2" stroke-linejoin="round"/>' +
+              '</svg></div>',
+        iconSize: [22, 22],
+        iconAnchor: [11, 11]
     });
 }
 
-// Desenha a rota a partir dos pontos gravados. "pontos" é o array completo (com
-// lat/lon/rua/velocidade/status/hora/etc.), na ordem em que foram gravados.
-function desenharRotaClicavel(pontos) {
-    idDesenhoRotaAtual++;
-    var meuIdDesenho = idDesenhoRotaAtual;
-    limparRotaAtual();
-    if (!pontos || pontos.length === 0) return;
+// Antes esses pontos viravam bolinhas clicáveis no mapa — pra acertar era preciso tocar
+// bem em cima de cada uma. Agora eles só ficam guardados aqui: a linha do trajeto inteira
+// vira clicável (ver desenharLinhaClicavel), e ao tocar em qualquer trecho dela o app
+// acha, nessa lista, o ponto real mais próximo do toque e mostra os dados dele.
+var ultimosPontosCarregados = [];
+function desenharMarcadoresTelemetria(pontos) {
+    ultimosPontosCarregados = pontos.filter(function(p) { return p && p.lat && p.lon; });
+}
 
-    var pontosValidos = pontos.filter(function(p) { return p && p.lat != null && p.lon != null; });
-    if (pontosValidos.length === 0) return;
+function iconeStatusPonto(status) {
+    if (status === 'VELOCIDADE ACIMA DO LIMITE') return '⚠️';
+    if (status === 'PARADO') return '🅿️';
+    return '🚗';
+}
 
-    if (pontosValidos.length === 1) {
-        // Só um ponto — nada pra desenhar como linha, mas ainda dá pra centralizar o mapa nele.
-        map.setView([pontosValidos[0].lat, pontosValidos[0].lon], Math.max(map.getZoom(), 15));
-        return;
+function corPontoPorStatus(status) {
+    if (status === 'VELOCIDADE ACIMA DO LIMITE') return '#ff5470';
+    if (status === 'PARADO') return '#ffb020';
+    return '#00ffa6';
+}
+
+function montarPopupPonto(ponto, indice, total) {
+    var precisaoTxt = ponto.precisao ? ("±" + ponto.precisao + "m") : "—";
+    var bairroTxt = (ponto.bairro && ponto.bairro !== "—") ? (" — " + ponto.bairro) : "";
+    var ordemTxt = (indice != null && total != null) ? ("Ponto " + (indice + 1) + " de " + total + "<br>") : "";
+    // Mostra o limite oficial da via junto com o status — sem isso, "VELOCIDADE ACIMA DO
+    // LIMITE" não dizia qual era o limite permitido ali (30/40/80/100/110, varia por via).
+    var limiteTxt = "";
+    if (ponto.limiteVia != null) {
+        limiteTxt = "🚦 Limite da via: " + ponto.limiteVia + " km/h";
+        if (ponto.excessoKmh != null && ponto.excessoKmh > 0) {
+            limiteTxt += " (excedeu em " + ponto.excessoKmh + " km/h)";
+        }
+        limiteTxt += "<br>";
     }
-
-    var todasCoords = pontosValidos.map(function(p) { return [p.lat, p.lon]; });
-    try {
-        map.fitBounds(L.polyline(todasCoords).getBounds(), { padding: [30, 30], maxZoom: 17 });
-    } catch (e) { /* se o fitBounds falhar (ex: bounds inválido), o mapa só não recentraliza */ }
-
-    var pontosParaRotear = amostrarPontosParaRota(pontosValidos, MAX_PONTOS_ROTEAMENTO);
-    desenharRotaEncaixadaNasRuas(pontosParaRotear, meuIdDesenho);
+    return '<div style="font-family: system-ui, sans-serif; font-size: 0.85em; line-height: 1.7; color:#111;">' +
+        ordemTxt +
+        '<b>' + iconeStatusPonto(ponto.status) + ' ' + (ponto.status || 'PARADO') + '</b><br>' +
+        limiteTxt +
+        '📍 ' + (ponto.rua || 'Rua não localizada') + '<br>' +
+        '🏙️ ' + (ponto.cidade || '—') + bairroTxt + '<br>' +
+        '🕐 ' + (ponto.data || '') + ' ' + (ponto.hora || '') + '<br>' +
+        '⚡ ' + (ponto.velocidade != null ? ponto.velocidade : 0) + ' km/h<br>' +
+        '🎯 Precisão GPS: ' + precisaoTxt +
+        '</div>';
 }
 
-// Ao tocar num trecho da rota: abre um popup no próprio mapa já com TODAS as informações
-// do ponto (rua, bairro, cidade/UF, situação, velocidade, tempo parado, data/hora) — antes
-// só vinha rua + velocidade no popup, e o resto só aparecia rolando até o painel lateral,
-// o que é ruim no celular porque o popup fica em cima do mapa e o painel fica escondido.
-// Continua preenchendo o painel lateral também, junto com o popup.
-function mostrarInfoDoPonto(ponto) {
-    atualizarPainelEletrico(ponto);
+// Instanciando o controle de rotas nativo do Leaflet
+var controleRotas = L.Routing.control({
+    waypoints: [],
+    router: L.Routing.osrmv1({
+        serviceUrl: 'https://router.project-osrm.org/route/v1'
+    }),
+    lineOptions: {
+        styles: [{ color: '#00ffa6', weight: 6, opacity: 0.85 }]
+    },
+    createMarker: function() { return null; }, // Não cria balões extras nos pontos do meio da rua
+    addWaypoints: false,
+    fitSelectedRoutes: false
+}).addTo(map);
 
-    var velocidadeTxt = (ponto.velocidade != null ? ponto.velocidade : 0) + " km/h";
-    var horaTxt = (ponto.data ? ponto.data + " " : "") + (ponto.hora || "");
-    var situacaoTxt = ponto.status || "—";
-    var bairroTxt = ponto.bairro || "—";
-    var cidadeEstadoTxt = (ponto.cidade || "—") + " / " + (ponto.estado || "—");
-    var tempoParadoTxt = ponto.tempoParado || null;
+// ===================== LINHA DO TRAJETO CLICÁVEL =====================
+// Antes só as bolinhas de cada ponto eram clicáveis — precisava acertar um alvo pequeno.
+// Agora, sempre que o motor de rotas termina de desenhar o trajeto (evento 'routesfound'),
+// desenhamos por cima uma segunda linha, invisível e bem mais grossa (fácil de tocar), que
+// segue exatamente o mesmo caminho. Ao tocar em qualquer trecho dela, achamos — entre os
+// pontos REAIS gravados pelo GPS (ultimosPontosCarregados) — o mais próximo de onde foi
+// tocado, e mostramos os dados desse ponto (rua, velocidade, status etc) num popup ali.
+var camadaLinhaClicavel = L.layerGroup().addTo(map);
 
-    var conteudoPopup =
-        '<div class="popup-rota-rua">' + (ponto.rua || "Rua não localizada") + '</div>' +
-        '<div class="popup-rota-vel">' + velocidadeTxt + ' · ' + situacaoTxt + '</div>' +
-        '<div class="popup-rota-linha">🏘️ ' + bairroTxt + '</div>' +
-        '<div class="popup-rota-linha">🏙️ ' + cidadeEstadoTxt + '</div>' +
-        (tempoParadoTxt ? '<div class="popup-rota-linha">⏱️ Parado há ' + tempoParadoTxt + '</div>' : '') +
-        '<div class="popup-rota-hora">' + horaTxt + '</div>';
-
-    L.popup({ closeButton: true, maxWidth: 260 })
-        .setLatLng([ponto.lat, ponto.lon])
-        .setContent(conteudoPopup)
-        .openOn(map);
+function calcularDistanciaMetrosAdmin(lat1, lon1, lat2, lon2) {
+    var R = 6371000;
+    var dLat = (lat2 - lat1) * Math.PI / 180;
+    var dLon = (lon2 - lon1) * Math.PI / 180;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
+
+function encontrarPontoMaisProximo(latlngClicado) {
+    var melhor = null, menorDist = Infinity;
+    ultimosPontosCarregados.forEach(function(ponto) {
+        var d = calcularDistanciaMetrosAdmin(latlngClicado.lat, latlngClicado.lng, ponto.lat, ponto.lon);
+        if (d < menorDist) { menorDist = d; melhor = ponto; }
+    });
+    return melhor;
+}
+
+function desenharLinhaClicavel(coordenadas) {
+    camadaLinhaClicavel.clearLayers();
+    var linha = L.polyline(coordenadas, { opacity: 0, weight: 26 }).addTo(camadaLinhaClicavel);
+    linha.on('click', function(e) {
+        var pontoProximo = encontrarPontoMaisProximo(e.latlng);
+        if (!pontoProximo) return;
+        L.popup()
+            .setLatLng(e.latlng)
+            .setContent(montarPopupPonto(pontoProximo, null, null))
+            .openOn(map);
+    });
+}
+
+controleRotas.on('routesfound', function(e) {
+    if (e.routes && e.routes[0] && e.routes[0].coordinates) {
+        desenharLinhaClicavel(e.routes[0].coordinates);
+    }
+});
+
+// CORREÇÃO: o painel lia direto de 'veiculos/{nome}' na raiz do banco — um caminho antigo,
+// de antes do app ter suporte a várias empresas. O app principal (index.html) já não grava
+// mais ali há tempos; ele grava em 'empresas/{empresaId}/veiculos/{nome}'. Por isso o painel
+// mostrava dados congelados, de rua e horário desatualizados — nunca eram os dados novos.
+// Agora o painel exige escolher a empresa primeiro, e lê do caminho certo.
+var EMPRESA_ID_ADMIN = localStorage.getItem('admin_empresa_id') || "";
+document.getElementById('empresaIdInput').value = EMPRESA_ID_ADMIN;
 
 var veiculoSelecionado = "";
 var listenerTempoReal = null;
-var listenerRotaPlanejada = null;
+var refListaVeiculos = null;
 var dadosHistoricoCarregados = [];
-var EMPRESA_ID_ADMIN = null;
-
-function sanitizarChavePath(valor) {
-    return String(valor).replace(/[.#$\[\]\/]/g, "_");
-}
-// Tudo que o app do motorista grava fica dentro de 'empresas/{empresaId}/veiculos/...' —
-// então o admin precisa saber a empresa deste usuário antes de ler qualquer coisa.
-function caminhoVeiculos() {
-    return 'empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/veiculos';
-}
 
 document.getElementById('filtroData').value = new Date().toISOString().slice(0, 10);
+
+function atualizarInfoEmpresaAdmin() {
+    document.getElementById('empresaAtualInfo').textContent = EMPRESA_ID_ADMIN
+        ? "Monitorando empresa: " + EMPRESA_ID_ADMIN
+        : "⚠️ Nenhuma empresa carregada — digite o ID acima e toque em Carregar.";
+}
+atualizarInfoEmpresaAdmin();
+
+document.getElementById('btnCarregarEmpresa').addEventListener('click', function() {
+    var novo = document.getElementById('empresaIdInput').value.trim();
+    if (!novo) return alert("Digite o ID da empresa.");
+    EMPRESA_ID_ADMIN = novo;
+    localStorage.setItem('admin_empresa_id', novo);
+    atualizarInfoEmpresaAdmin();
+    veiculoSelecionado = "";
+    document.getElementById('statusModo').innerHTML = 'Aguardando seleção...';
+    if (auth.currentUser) inicializarEscutaBanco();
+});
 
 // ===================== AUTENTICAÇÃO =====================
 document.getElementById('btnEntrarPainel').addEventListener('click', function() {
@@ -376,34 +452,16 @@ auth.onAuthStateChanged(function(user) {
     if (user) {
         document.getElementById('authOverlay').style.display = "none";
         document.getElementById('userLogado').textContent = "🟢 Admin: " + user.email;
-        // CORREÇÃO IMPORTANTE: este painel lia os veículos de 'veiculos/...' na raiz do
-        // banco, mas o app do motorista grava tudo dentro de 'empresas/{empresaId}/veiculos/...'
-        // — ou seja, com os dois caminhos diferentes, o admin nunca chegava a ver nenhum
-        // veículo de verdade. Ao logar, primeiro descobrimos a empresa vinculada a este
-        // usuário (o mesmo mapeamento que o cadastro no app do motorista já grava em
-        // 'mapaUsuarioEmpresa/{uid}') e só então passamos a ler de dentro dela.
-        db.ref('mapaUsuarioEmpresa/' + user.uid).once('value').then(function(snap) {
-            EMPRESA_ID_ADMIN = snap.val();
-            if (!EMPRESA_ID_ADMIN) {
-                var erroDiv = document.getElementById('erroLogin');
-                erroDiv.textContent = "Este usuário não está vinculado a nenhuma empresa.";
-                erroDiv.style.display = 'block';
-                auth.signOut();
-                return;
-            }
-            inicializarEscutaBanco();
-        }).catch(function(e) {
-            console.warn(e);
-            var erroDiv = document.getElementById('erroLogin');
-            erroDiv.textContent = "Falha ao identificar a empresa deste usuário.";
-            erroDiv.style.display = 'block';
-        });
+        if (EMPRESA_ID_ADMIN) inicializarEscutaBanco();
     } else {
-        EMPRESA_ID_ADMIN = null;
         document.getElementById('authOverlay').style.display = "flex";
         document.getElementById('selectVeiculo').innerHTML = '<option value="">Aguardando login...</option>';
-        if (listenerTempoReal && veiculoSelecionado) db.ref(caminhoVeiculos() + '/' + veiculoSelecionado + '/atual').off('value', listenerTempoReal);
-        if (listenerRotaPlanejada && veiculoSelecionado) db.ref(caminhoVeiculos() + '/' + veiculoSelecionado + '/rotaPlanejada').off('value', listenerRotaPlanejada);
+        if (refListaVeiculos) refListaVeiculos.off('value');
+        if (refDestinoVeiculo) { refDestinoVeiculo.off('value'); refDestinoVeiculo = null; }
+        limparRotaAdmin();
+        if (listenerTempoReal && veiculoSelecionado && EMPRESA_ID_ADMIN) {
+            db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/veiculos/' + sanitizarChavePath(veiculoSelecionado) + '/atual').off('value', listenerTempoReal);
+        }
     }
 });
 
@@ -411,69 +469,10 @@ document.getElementById('btnSair').addEventListener('click', function() {
     auth.signOut();
 });
 
-// ===================== STATUS DA ASSINATURA/TESTE (dias, horas e minutos restantes) =====================
-// Mesmo formato do app do motorista: some com as partes zeradas do início (com menos de 1
-// dia mostra só "Xh Xmin", com menos de 1 hora só "Xmin").
-function formatarContagemRegressiva(ms) {
-    ms = Math.max(0, ms);
-    var totalMinutos = Math.floor(ms / 60000);
-    var dias = Math.floor(totalMinutos / 1440);
-    var horas = Math.floor((totalMinutos % 1440) / 60);
-    var minutos = totalMinutos % 60;
-    var partes = [];
-    if (dias > 0) partes.push(dias + "d");
-    if (dias > 0 || horas > 0) partes.push(horas + "h");
-    partes.push(minutos + "min");
-    return partes.join(" ");
-}
-
-var estadoEmpresaAdmin = { status: null, trialExpiraEm: null, assinaturaExpiraEm: null };
-
-function inicializarStatusAssinatura() {
-    db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN)).on('value', function(snap) {
-        var dados = snap.val() || {};
-        estadoEmpresaAdmin.status = dados.status || null;
-        estadoEmpresaAdmin.trialExpiraEm = dados.trialExpiraEm || null;
-        estadoEmpresaAdmin.assinaturaExpiraEm = dados.assinaturaExpiraEm || null;
-        atualizarPainelStatusAssinatura();
-    });
-    setInterval(atualizarPainelStatusAssinatura, 20000);
-}
-
-function atualizarPainelStatusAssinatura() {
-    var caixa = document.getElementById('boxStatusAssinatura');
-    var texto = document.getElementById('txtStatusAssinatura');
-    if (!EMPRESA_ID_ADMIN) { caixa.style.display = 'none'; return; }
-
-    if (estadoEmpresaAdmin.status === 'suspenso') {
-        caixa.style.display = 'block';
-        caixa.style.borderColor = 'var(--danger)';
-        texto.style.color = 'var(--danger)';
-        texto.textContent = "🚫 Conta suspensa";
-    } else if (estadoEmpresaAdmin.status === 'trial' && estadoEmpresaAdmin.trialExpiraEm) {
-        var restanteTeste = new Date(estadoEmpresaAdmin.trialExpiraEm).getTime() - Date.now();
-        caixa.style.display = 'block';
-        caixa.style.borderColor = 'var(--telemetry)';
-        texto.style.color = restanteTeste <= 0 ? 'var(--danger)' : 'var(--telemetry)';
-        texto.textContent = restanteTeste <= 0
-            ? "🚫 Período de teste encerrado"
-            : "🎁 Teste grátis — " + formatarContagemRegressiva(restanteTeste) + " restantes";
-    } else if (estadoEmpresaAdmin.status === 'ativo' && estadoEmpresaAdmin.assinaturaExpiraEm) {
-        var restanteAssinatura = new Date(estadoEmpresaAdmin.assinaturaExpiraEm).getTime() - Date.now();
-        caixa.style.display = 'block';
-        caixa.style.borderColor = 'var(--signal-on)';
-        texto.style.color = restanteAssinatura <= 0 ? 'var(--danger)' : 'var(--signal-on)';
-        texto.textContent = restanteAssinatura <= 0
-            ? "🚫 Assinatura vencida"
-            : "✅ Faltam " + formatarContagemRegressiva(restanteAssinatura) + " de assinatura";
-    } else {
-        caixa.style.display = 'none';
-    }
-}
-
 function inicializarEscutaBanco() {
-    inicializarStatusAssinatura();
-    db.ref(caminhoVeiculos()).on('value', function(snapshot) {
+    if (refListaVeiculos) refListaVeiculos.off('value');
+    refListaVeiculos = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/veiculos');
+    refListaVeiculos.on('value', function(snapshot) {
         var select = document.getElementById('selectVeiculo');
         select.innerHTML = '<option value="">-- Escolha um Veículo --</option>';
         if(snapshot.exists()) {
@@ -486,7 +485,7 @@ function inicializarEscutaBanco() {
             });
             if(veiculoSelecionado) select.value = veiculoSelecionado;
         } else {
-            select.innerHTML = '<option value="">Nenhum veículo ativo</option>';
+            select.innerHTML = '<option value="">Nenhum veículo ativo nesta empresa</option>';
         }
     });
 }
@@ -494,42 +493,47 @@ function inicializarEscutaBanco() {
 document.getElementById('selectVeiculo').addEventListener('change', function(e) {
     veiculoSelecionado = e.target.value;
     if(veiculoSelecionado) verificarEAtivarTempoReal();
+    if (typeof atualizarAbaAdminChat === 'function') atualizarAbaAdminChat();
 });
 
 function verificarEAtivarTempoReal() {
-    if (listenerTempoReal) db.ref(caminhoVeiculos() + '/' + veiculoSelecionado + '/atual').off('value', listenerTempoReal);
-    if (listenerRotaPlanejada) db.ref(caminhoVeiculos() + '/' + veiculoSelecionado + '/rotaPlanejada').off('value', listenerRotaPlanejada);
+    if (listenerTempoReal) db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/veiculos/' + sanitizarChavePath(veiculoSelecionado) + '/atual').off('value', listenerTempoReal);
     document.getElementById('statusModo').innerHTML = '<span class="live-indicator"></span> MONITORANDO EM TEMPO REAL';
     document.getElementById('statusModo').style.color = "var(--signal-on)";
     document.getElementById('statusModo').style.borderColor = "var(--signal-on)";
     document.getElementById('btnVoltarTempoReal').style.display = "none";
 
-    listenerTempoReal = db.ref(caminhoVeiculos() + '/' + veiculoSelecionado + '/atual').on('value', function(snapshot) {
+    ativarEscutaDestino();
+
+    listenerTempoReal = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/veiculos/' + sanitizarChavePath(veiculoSelecionado) + '/atual').on('value', function(snapshot) {
         if(!snapshot.exists()) return;
         atualizarPainelEletrico(snapshot.val());
         desenharLinhaDoTempoReal();
-    });
-
-    // Escuta a rota que o motorista traçou no app dele (destino digitado) e desenha a
-    // linha tracejada correspondente — atualiza sozinha se ele traçar/cancelar de novo.
-    listenerRotaPlanejada = db.ref(caminhoVeiculos() + '/' + veiculoSelecionado + '/rotaPlanejada').on('value', function(snapshot) {
-        atualizarRotaPlanejadaNoPainel(snapshot.val());
+        // Se o motorista tem um destino ativo, mantém a rota atualizada conforme o
+        // veículo se desloca (buscarRotaAdmin já tem uma folga mínima entre pedidos).
+        if (destinoAtualDados) {
+            var d = snapshot.val();
+            if (d && d.lat && d.lon) buscarRotaAdmin(d.lat, d.lon, destinoAtualDados.lat, destinoAtualDados.lon);
+        }
     });
 }
 
 function desenharLinhaDoTempoReal() {
-    db.ref(caminhoVeiculos() + '/' + veiculoSelecionado + '/historico').limitToLast(30).once('value', function(snapshot) {
+    db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/veiculos/' + sanitizarChavePath(veiculoSelecionado) + '/historico').limitToLast(30).once('value', function(snapshot) {
         var pontos = [];
+        var pontosCompletos = [];
         snapshot.forEach(function(child) {
             var p = child.val();
-            if(p && p.lat && p.lon) pontos.push(p);
+            if(p.lat && p.lon) { pontos.push([p.lat, p.lon]); pontosCompletos.push(p); }
         });
-        desenharRotaClicavel(pontos);
+        desenharMarcadoresTelemetria(pontosCompletos);
+        if(pontos.length >= 2) processarEncaixeNasRuas(pontos);
     });
 }
 
 // ===================== BUSCA DE HISTÓRICO =====================
 document.getElementById('btnBuscarHistorico').addEventListener('click', function() {
+    if (!EMPRESA_ID_ADMIN) return alert("Carregue uma empresa primeiro!");
     if (!veiculoSelecionado) return alert("Selecione um veículo primeiro!");
     var dataFiltro = document.getElementById('filtroData').value;
     var horaInicio = document.getElementById('filtroHoraInicio').value;
@@ -539,19 +543,23 @@ document.getElementById('btnBuscarHistorico').addEventListener('click', function
     var partesData = dataFiltro.split('-');
     var dataFormatadaBr = partesData[2] + "/" + partesData[1] + "/" + partesData[0];
 
-    if (listenerTempoReal) db.ref(caminhoVeiculos() + '/' + veiculoSelecionado + '/atual').off('value', listenerTempoReal);
+    if (listenerTempoReal) db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/veiculos/' + sanitizarChavePath(veiculoSelecionado) + '/atual').off('value', listenerTempoReal);
+    if (refDestinoVeiculo) { refDestinoVeiculo.off('value'); refDestinoVeiculo = null; }
+    limparRotaAdmin();
     document.getElementById('statusModo').innerHTML = '📅 EXIBINDO HISTÓRICO PASSADO';
     document.getElementById('statusModo').style.color = "var(--signal-off)";
     document.getElementById('statusModo').style.borderColor = "var(--signal-off)";
     document.getElementById('btnVoltarTempoReal').style.display = "block";
 
-    db.ref(caminhoVeiculos() + '/' + veiculoSelecionado + '/historico').once('value', function(snapshot) {
+    db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/veiculos/' + sanitizarChavePath(veiculoSelecionado) + '/historico').once('value', function(snapshot) {
         dadosHistoricoCarregados = [];
+        var coordenadasParaLinha = [];
         snapshot.forEach(function(child) {
             var ponto = child.val();
-            if (ponto && ponto.data === dataFormatadaBr) {
+            if (ponto.data === dataFormatadaBr) {
                 if (ponto.hora >= horaInicio && ponto.hora <= horaFim) {
                     dadosHistoricoCarregados.push(ponto);
+                    coordenadasParaLinha.push([ponto.lat, ponto.lon]);
                 }
             }
         });
@@ -563,7 +571,8 @@ document.getElementById('btnBuscarHistorico').addEventListener('click', function
         }
 
         atualizarPainelEletrico(dadosHistoricoCarregados[dadosHistoricoCarregados.length - 1]);
-        desenharRotaClicavel(dadosHistoricoCarregados);
+        desenharMarcadoresTelemetria(dadosHistoricoCarregados);
+        if (coordenadasParaLinha.length >= 2) processarEncaixeNasRuas(coordenadasParaLinha);
     });
 });
 
@@ -576,6 +585,13 @@ function atualizarPainelEletrico(dados) {
     map.setView(latlng, map.getZoom() < 14 ? 16 : map.getZoom());
 
     document.getElementById('txtVelocidade').textContent = (dados.velocidade || 0) + " km/h";
+    // Limite da via muda conforme a rua/rodovia (30/40/80/100/110 etc), então mostramos o
+    // valor que veio gravado junto com o ponto, e o quanto foi excedido quando houver.
+    var limiteTxt = dados.limiteVia != null ? (dados.limiteVia + " km/h") : "—";
+    if (dados.excessoKmh != null && dados.excessoKmh > 0) {
+        limiteTxt += " (excedeu em " + dados.excessoKmh + " km/h)";
+    }
+    document.getElementById('txtLimiteVia').textContent = limiteTxt;
     document.getElementById('txtTempoParado').textContent = dados.tempoParado || "00:00:00";
     document.getElementById('txtRua').textContent = dados.rua || "Não localizada";
     document.getElementById('txtBairro').textContent = dados.bairro || "—";
@@ -585,8 +601,148 @@ function atualizarPainelEletrico(dados) {
 
     var badge = document.getElementById('txtStatus');
     badge.textContent = dados.status || "PARADO";
-    badge.className = dados.velocidade > 80 ? "badge badge-perigo" : (dados.velocidade > 2 ? "badge badge-movimento" : "badge badge-parado");
+    // CORREÇÃO: antes o badge de perigo usava um limite fixo de 80 km/h aqui, mas o app
+    // agora calcula o limite por via (30/40/80/100/110...). Usar o "status" que o app já
+    // gravou no ponto é a fonte correta — ele já reflete o limite certo daquela via.
+    badge.className = dados.status === "VELOCIDADE ACIMA DO LIMITE" ? "badge badge-perigo" : ((dados.velocidade || 0) > 2 ? "badge badge-movimento" : "badge badge-parado");
 }
+
+// ===================== NOVO MOTOR DE ENCAIXE INTELIGENTE =====================
+function processarEncaixeNasRuas(historicoCoordenadas) {
+    // 1. Filtrar pontos consecutivos duplicados
+    var coordenadasFiltradas = [];
+    for (var i = 0; i < historicoCoordenadas.length; i++) {
+        if (i === 0) {
+            coordenadasFiltradas.push(historicoCoordenadas[i]);
+        } else {
+            var anterior = historicoCoordenadas[i - 1];
+            var atual = historicoCoordenadas[i];
+            if (atual[0] !== anterior[0] || atual[1] !== anterior[1]) {
+                coordenadasFiltradas.push(atual);
+            }
+        }
+    }
+
+    if (coordenadasFiltradas.length < 2) return;
+
+    // 2. Limitar amostragem máxima para não sobrecarregar a máquina de rotas
+    var pontosAmostra = [];
+    var maxPontosAPI = 25; // Reduzido o bloco para garantir precisão absoluta nas curvas
+    if (coordenadasFiltradas.length > maxPontosAPI) {
+        var passo = Math.ceil(coordenadasFiltradas.length / maxPontosAPI);
+        for (var j = 0; j < coordenadasFiltradas.length; j += passo) {
+            pontosAmostra.push(coordenadasFiltradas[j]);
+        }
+        pontosAmostra.push(coordenadasFiltradas[coordenadasFiltradas.length - 1]);
+    } else {
+        pontosAmostra = coordenadasFiltradas;
+    }
+
+    // Convertendo os pontos para o formato do Leaflet Routing Machine (L.latLng)
+    var waypoints = pontosAmostra.map(p => L.latLng(p[0], p[1]));
+
+    // 3. Forçar o recalculo e desenho contornando os quarteirões nativamente
+    try {
+        controleRotas.setWaypoints(waypoints);
+    } catch(e) {
+        console.log("Aguardando estabilização do mapa...");
+    }
+}
+
+// ===================== CHAT (mural + conversa direta com um veículo) =====================
+var refMensagensAdminChat = null;
+var adminChatAba = 'mural';
+
+function iniciarAdminChatSeNecessario() {
+    if (refMensagensAdminChat || !EMPRESA_ID_ADMIN) return;
+    refMensagensAdminChat = db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/mensagens').limitToLast(200);
+    refMensagensAdminChat.on('value', function(snapshot) {
+        var todas = [];
+        snapshot.forEach(function(child) { todas.push(Object.assign({ id: child.key }, child.val())); });
+        renderizarAdminChat(todas);
+    }, function(erro) { console.warn("Erro ao ler mensagens do chat:", erro); });
+}
+
+function renderizarAdminChat(todasMensagens) {
+    var lista = document.getElementById('adminChatLista');
+    var relevantes = todasMensagens.filter(function(msg) {
+        if (adminChatAba === 'mural') return msg.destinatario === 'todos';
+        if (!veiculoSelecionado) return false;
+        return (msg.remetente === 'Admin' && msg.destinatario === veiculoSelecionado) ||
+               (msg.remetente === veiculoSelecionado && msg.destinatario === 'Admin');
+    }).sort(function(a, b) { return (a.ts || 0) - (b.ts || 0); });
+
+    lista.innerHTML = '';
+    if (relevantes.length === 0) {
+        lista.innerHTML = '<div style="text-align:center;color:var(--text-dim);font-size:0.82em;padding:16px 0;">Nenhuma mensagem ainda.</div>';
+        return;
+    }
+    relevantes.forEach(function(msg) {
+        var bolha = document.createElement('div');
+        bolha.className = 'msg-bolha-admin' + (msg.remetente === 'Admin' ? ' minha' : '');
+        var nomeExibido = msg.remetente === 'Admin' ? 'Você (Admin)' : msg.remetente;
+        bolha.innerHTML = '<div class="msg-remetente-admin">' + nomeExibido + '</div>' +
+            '<div class="msg-texto-admin"></div>' +
+            '<div class="msg-hora-admin">' + (msg.hora || '') + '</div>';
+        bolha.querySelector('.msg-texto-admin').textContent = msg.texto || '';
+        lista.appendChild(bolha);
+    });
+    lista.scrollTop = lista.scrollHeight;
+}
+
+function atualizarAbaAdminChat() {
+    var avisoSelecione = document.getElementById('adminChatAvisoSelecioneVeiculo');
+    avisoSelecione.style.display = (adminChatAba === 'direta' && !veiculoSelecionado) ? 'block' : 'none';
+    iniciarAdminChatSeNecessario();
+    if (refMensagensAdminChat) {
+        refMensagensAdminChat.once('value', function(s) {
+            var todas = []; s.forEach(function(c) { todas.push(Object.assign({ id: c.key }, c.val())); });
+            renderizarAdminChat(todas);
+        });
+    }
+}
+
+document.getElementById('adminChatTabMural').addEventListener('click', function() {
+    adminChatAba = 'mural';
+    document.getElementById('adminChatTabMural').classList.add('ativa');
+    document.getElementById('adminChatTabDireta').classList.remove('ativa');
+    atualizarAbaAdminChat();
+});
+document.getElementById('adminChatTabDireta').addEventListener('click', function() {
+    adminChatAba = 'direta';
+    document.getElementById('adminChatTabDireta').classList.add('ativa');
+    document.getElementById('adminChatTabMural').classList.remove('ativa');
+    atualizarAbaAdminChat();
+});
+
+function enviarMensagemAdminChat() {
+    var input = document.getElementById('adminChatInput');
+    var texto = input.value.trim();
+    if (!texto) return;
+    if (adminChatAba === 'direta' && !veiculoSelecionado) { alert("Selecione um veículo lá em cima primeiro."); return; }
+    if (!EMPRESA_ID_ADMIN) { alert("Carregue uma empresa primeiro."); return; }
+    var agora = new Date();
+    var novaMensagem = {
+        remetente: 'Admin',
+        destinatario: adminChatAba === 'mural' ? 'todos' : veiculoSelecionado,
+        texto: texto,
+        ts: firebase.database.ServerValue.TIMESTAMP,
+        hora: agora.toLocaleTimeString('pt-BR'),
+        data: agora.toLocaleDateString('pt-BR')
+    };
+    db.ref('empresas/' + sanitizarChavePath(EMPRESA_ID_ADMIN) + '/mensagens').push(novaMensagem).then(function() {
+        input.value = '';
+    }).catch(function(e) { console.warn("Falha ao enviar mensagem:", e); alert("Não foi possível enviar a mensagem agora."); });
+}
+document.getElementById('adminChatBtnEnviar').addEventListener('click', enviarMensagemAdminChat);
+document.getElementById('adminChatInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); enviarMensagemAdminChat(); }
+});
+
+// Inicia o chat assim que uma empresa é carregada (mesmo botão que já carrega os veículos)
+document.getElementById('btnCarregarEmpresa').addEventListener('click', function() {
+    setTimeout(iniciarAdminChatSeNecessario, 300);
+});
 </script>
 </body>
 </html>
