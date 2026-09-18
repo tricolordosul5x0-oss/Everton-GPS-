@@ -392,7 +392,13 @@ function desenharRotaEncaixadaNasRuas(pontos, meuIdDesenho) {
 
 // Desenha a rota a partir dos pontos gravados. "pontos" é o array completo (com
 // lat/lon/rua/velocidade/status/hora/etc.), na ordem em que foram gravados.
-function desenharRotaClicavel(pontos) {
+// "opcoes.manterEnquadramento": quando true, NÃO mexe no zoom/posição da câmera do mapa —
+// usado no modo tempo real pra não reenquadrar o mapa a cada atualização de posição (isso
+// era a causa do mapa "tremendo": antes, toda leitura nova recentralizava e reenquadrava o
+// mapa do zero, mesmo com o veículo parado). Na busca de histórico, sempre reenquadra
+// (comportamento antigo, sem essa opção).
+function desenharRotaClicavel(pontos, opcoes) {
+    opcoes = opcoes || {};
     idDesenhoRotaAtual++;
     var meuIdDesenho = idDesenhoRotaAtual;
     limparRotaAtual();
@@ -403,14 +409,18 @@ function desenharRotaClicavel(pontos) {
 
     if (pontosValidos.length === 1) {
         // Só um ponto — nada pra desenhar como linha, mas ainda dá pra centralizar o mapa nele.
-        map.setView([pontosValidos[0].lat, pontosValidos[0].lon], Math.max(map.getZoom(), 15));
+        if (!opcoes.manterEnquadramento) {
+            map.setView([pontosValidos[0].lat, pontosValidos[0].lon], Math.max(map.getZoom(), 15));
+        }
         return;
     }
 
-    var todasCoords = pontosValidos.map(function(p) { return [p.lat, p.lon]; });
-    try {
-        map.fitBounds(L.polyline(todasCoords).getBounds(), { padding: [30, 30], maxZoom: 17 });
-    } catch (e) { /* se o fitBounds falhar (ex: bounds inválido), o mapa só não recentraliza */ }
+    if (!opcoes.manterEnquadramento) {
+        var todasCoords = pontosValidos.map(function(p) { return [p.lat, p.lon]; });
+        try {
+            map.fitBounds(L.polyline(todasCoords).getBounds(), { padding: [30, 30], maxZoom: 17 });
+        } catch (e) { /* se o fitBounds falhar (ex: bounds inválido), o mapa só não recentraliza */ }
+    }
 
     var pontosParaRotear = amostrarPontosParaRota(pontosValidos, MAX_PONTOS_ROTEAMENTO);
     desenharRotaEncaixadaNasRuas(pontosParaRotear, meuIdDesenho);
@@ -446,6 +456,9 @@ function mostrarInfoDoPonto(ponto) {
 }
 
 var veiculoSelecionado = "";
+// Controla se o mapa já centralizou de verdade no veículo desde que a tela de tempo real
+// foi aberta — ver comentários em atualizarPainelEletrico/desenharRotaClicavel.
+var primeiraCentralizacaoFeita = false;
 var listenerTempoReal = null;
 var listenerRotaPlanejada = null;
 var dadosHistoricoCarregados = [];
@@ -634,9 +647,15 @@ function verificarEAtivarTempoReal() {
     document.getElementById('statusModo').style.borderColor = "var(--signal-on)";
     document.getElementById('btnVoltarTempoReal').style.display = "none";
 
+    // Reseta o controle de "primeira centralização"/"última rota desenhada" — assim, ao
+    // trocar de veículo (ou voltar do histórico), o mapa reenquadra uma vez pra esse
+    // veículo, e depois disso para de ficar se reenquadrando sozinho a cada atualização.
+    primeiraCentralizacaoFeita = false;
+    ultimaAssinaturaRotaTempoReal = null;
+
     listenerTempoReal = db.ref(caminhoVeiculos() + '/' + veiculoSelecionado + '/atual').on('value', function(snapshot) {
         if(!snapshot.exists()) return;
-        atualizarPainelEletrico(snapshot.val());
+        atualizarPainelEletrico(snapshot.val(), { seguindoAoVivo: true });
         desenharLinhaDoTempoReal();
     });
 
@@ -647,6 +666,8 @@ function verificarEAtivarTempoReal() {
     });
 }
 
+var ultimaAssinaturaRotaTempoReal = null;
+
 function desenharLinhaDoTempoReal() {
     db.ref(caminhoVeiculos() + '/' + veiculoSelecionado + '/historico').limitToLast(30).once('value', function(snapshot) {
         var pontos = [];
@@ -654,7 +675,16 @@ function desenharLinhaDoTempoReal() {
             var p = child.val();
             if(p && p.lat && p.lon) pontos.push(p);
         });
-        desenharRotaClicavel(pontos);
+        // CORREÇÃO (mapa tremendo): o '/atual' do veículo é atualizado a cada ~3s mesmo
+        // quando nenhum ponto NOVO foi gravado no histórico (o veículo pode estar parado,
+        // ou só variando a posição por ruído de GPS). Antes, isso redesenhava a rota inteira
+        // do zero a cada vez — limpando as linhas e pedindo o traçado pro OSRM de novo,
+        // fazendo a rota "piscar" (sumir e reaparecer). Agora só redesenha quando o conjunto
+        // de pontos realmente mudou (comparando quantidade + id do último ponto).
+        var assinatura = pontos.length + (pontos.length ? ('|' + pontos[pontos.length - 1].id) : '');
+        if (assinatura === ultimaAssinaturaRotaTempoReal) return;
+        ultimaAssinaturaRotaTempoReal = assinatura;
+        desenharRotaClicavel(pontos, { manterEnquadramento: primeiraCentralizacaoFeita });
     });
 }
 
@@ -699,11 +729,31 @@ document.getElementById('btnBuscarHistorico').addEventListener('click', function
 
 document.getElementById('btnVoltarTempoReal').addEventListener('click', verificarEAtivarTempoReal);
 
-function atualizarPainelEletrico(dados) {
+function atualizarPainelEletrico(dados, opcoes) {
     if(!dados || !dados.lat || !dados.lon) return;
+    opcoes = opcoes || {};
     var latlng = [dados.lat, dados.lon];
     marcadorVeiculo.setLatLng(latlng);
-    map.setView(latlng, map.getZoom() < 14 ? 16 : map.getZoom());
+
+    if (opcoes.seguindoAoVivo) {
+        // CORREÇÃO (mapa tremendo): antes, toda atualização de posição em tempo real (a
+        // cada ~3s) forçava um map.setView, recentralizando o mapa do zero — mesmo com o
+        // veículo praticamente parado (ruído normal de GPS já bastava pra disparar isso a
+        // cada leitura). Agora só centraliza de verdade na primeira vez que a tela abre pra
+        // esse veículo; depois disso, só acompanha com um pan suave se o veículo realmente
+        // sair da área visível — não mexe mais na câmera por causa de deslocamentos
+        // pequenos dentro da tela.
+        if (!primeiraCentralizacaoFeita) {
+            map.setView(latlng, map.getZoom() < 14 ? 16 : map.getZoom());
+            primeiraCentralizacaoFeita = true;
+        } else if (!map.getBounds().pad(-0.15).contains(latlng)) {
+            map.panTo(latlng, { animate: true });
+        }
+    } else {
+        // Chamado ao tocar num ponto da rota ou ao abrir um ponto do histórico — aqui sim
+        // o usuário espera que o mapa centralize de verdade no ponto escolhido.
+        map.setView(latlng, map.getZoom() < 14 ? 16 : map.getZoom());
+    }
 
     document.getElementById('txtVelocidade').textContent = (dados.velocidade || 0) + " km/h";
     document.getElementById('txtTempoParado').textContent = dados.tempoParado || "00:00:00";
