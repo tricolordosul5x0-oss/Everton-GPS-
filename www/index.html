@@ -140,6 +140,9 @@
         .badge-perigo { background: rgba(255, 77, 109, 0.14); color: var(--danger); }
 
         .gps-warning { background: rgba(255,77,109,0.1); border: 1px solid rgba(255,77,109,.35); color: var(--danger); padding: 11px 13px; border-radius: var(--radius-sm); font-size: 0.83em; display: none; }
+        .linha-passo-rota { display:flex; align-items:center; gap:10px; padding:10px 12px; border-bottom:1px solid var(--border); }
+        .linha-passo-rota:last-child { border-bottom: none; }
+        .linha-passo-rota.ativo { background: rgba(0,224,168,0.1); border-left: 3px solid var(--brand); }
         .fila-info { font-size: 0.73em; color: var(--text-faint); text-align: center; }
 
         .auth-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(4,6,10,0.92); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 10000; display: none; }
@@ -271,8 +274,20 @@
         </div>
         <div id="infoRotaPlanejada" style="display:none; margin-top:10px; font-size:0.83em;">
             <div style="color:var(--text); font-weight:600; margin-bottom:4px;" id="txtDestinoRota">—</div>
-            <div style="color:var(--text-dim);" id="txtDistanciaDuracaoRota">—</div>
-            <button id="btnCancelarRota" style="background:var(--bg-input); color:var(--danger); border:1px solid var(--border); margin-top:8px; width:100%;">Cancelar Rota</button>
+            <div style="color:var(--text-dim); margin-bottom:10px;" id="txtDistanciaDuracaoRota">—</div>
+
+            <div id="boxProximaManobra" style="display:flex; align-items:center; gap:10px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px;">
+                <span id="iconeProximaManobra" style="font-size:1.8em; line-height:1;">🚦</span>
+                <div style="flex:1; min-width:0;">
+                    <div id="textoProximaManobra" style="color:var(--text); font-weight:700; font-size:1em;">—</div>
+                    <div id="distanciaProximaManobra" style="color:var(--accent); font-family:var(--font-mono); font-size:0.85em; margin-top:2px;">—</div>
+                </div>
+            </div>
+
+            <button id="btnAlternarPassoAPasso" type="button" style="background:var(--bg-input); color:var(--text); border:1px solid var(--border); font-size:0.8em; padding:10px; margin-top:8px;">Ver passo a passo completo ▾</button>
+            <div id="listaPassosRota" style="display:none; max-height:220px; overflow-y:auto; margin-top:8px; border:1px solid var(--border); border-radius:var(--radius-sm);"></div>
+
+            <button id="btnCancelarRota" style="background:var(--bg-input); color:var(--danger); border:1px solid var(--border); margin-top:10px; width:100%;">Cancelar Rota</button>
         </div>
     </div>
 
@@ -440,6 +455,8 @@ function exibirInfoRotaPlanejadaNaTela() {
     var km = (rotaPlanejadaAtual.distanciaMetros / 1000).toFixed(1);
     var minutos = Math.round(rotaPlanejadaAtual.duracaoSegundos / 60);
     document.getElementById('txtDistanciaDuracaoRota').textContent = km + " km · aprox. " + minutos + " min";
+    renderizarListaPassos();
+    atualizarBannerProximaManobra(ultimaLeituraCompleta ? ultimaLeituraCompleta.lat : null, ultimaLeituraCompleta ? ultimaLeituraCompleta.lon : null);
 }
 
 // Uma rota longa pode vir com milhares de pontos do serviço de rotas — mais do que precisa
@@ -464,14 +481,181 @@ function geocodificarEndereco(endereco) {
     });
 }
 
+// ===================== INSTRUÇÕES PASSO A PASSO (tipo Waze) =====================
+// O OSRM, com steps=true, já devolve cada manobra da rota (virar à direita, entrar na
+// rotatória, seguir em frente etc.) com o tipo/modificador em inglês — aqui a gente
+// traduz isso pra uma frase em português e um ícone de seta.
+function textoModificador(modifier) {
+    switch (modifier) {
+        case 'uturn': return 'faça o retorno';
+        case 'sharp right': return 'vire acentuadamente à direita';
+        case 'right': return 'vire à direita';
+        case 'slight right': return 'mantenha-se à direita';
+        case 'straight': return 'siga em frente';
+        case 'slight left': return 'mantenha-se à esquerda';
+        case 'left': return 'vire à esquerda';
+        case 'sharp left': return 'vire acentuadamente à esquerda';
+        default: return 'continue';
+    }
+}
+function capitalizar(txt) { return txt.charAt(0).toUpperCase() + txt.slice(1); }
+
+function descreverPasso(step) {
+    var m = step.maneuver || {};
+    var sufixoRua = step.name ? (' na ' + step.name) : '';
+    switch (m.type) {
+        case 'depart': return 'Siga' + sufixoRua;
+        case 'arrive': return 'Você chegou ao destino' + (step.name ? ' (' + step.name + ')' : '');
+        case 'roundabout':
+        case 'rotary':
+            var saida = m.exit ? (m.exit + 'ª saída') : 'a saída indicada';
+            return 'Entre na rotatória e pegue ' + saida + sufixoRua;
+        case 'merge':
+        case 'continue':
+        case 'new name':
+            return 'Continue' + sufixoRua;
+        case 'fork':
+        case 'end of road':
+        case 'turn':
+        default:
+            return capitalizar(textoModificador(m.modifier)) + sufixoRua;
+    }
+}
+
+function iconePasso(step) {
+    var m = step.maneuver || {};
+    if (m.type === 'arrive') return '🏁';
+    if (m.type === 'depart') return '🚦';
+    if (m.type === 'roundabout' || m.type === 'rotary') return '🔄';
+    switch (m.modifier) {
+        case 'uturn': return '↩️';
+        case 'sharp right': return '↘️';
+        case 'right': return '➡️';
+        case 'slight right': return '↗️';
+        case 'straight': return '⬆️';
+        case 'slight left': return '↖️';
+        case 'left': return '⬅️';
+        case 'sharp left': return '↙️';
+        default: return '⬆️';
+    }
+}
+
+function formatarDistanciaCurta(metros) {
+    if (metros == null) return "—";
+    if (metros >= 1000) return (metros / 1000).toFixed(1) + " km";
+    return Math.round(metros) + " m";
+}
+
+// Ao chegar perto o suficiente do ponto onde a PRÓXIMA manobra da lista acontece, avança o
+// "ponteiro" pra manobra seguinte — é isso que faz o balão de cima ir trocando sozinho
+// ("vire à direita" → "siga em frente" → ...) conforme o motorista dirige, sem precisar
+// tocar em nada.
+var LIMIAR_AVANCO_MANOBRA_M = 40;
+
+function atualizarProgressoRotaPlanejada(lat, lon) {
+    if (!rotaPlanejadaAtual || !rotaPlanejadaAtual.passos || !rotaPlanejadaAtual.passos.length) return;
+    var passos = rotaPlanejadaAtual.passos;
+    var indice = rotaPlanejadaAtual.indiceProximaManobra != null ? rotaPlanejadaAtual.indiceProximaManobra : 1;
+    var mudou = false;
+
+    while (indice < passos.length) {
+        var alvo = passos[indice].localizacao;
+        if (calcularDistanciaMetros(lat, lon, alvo[0], alvo[1]) <= LIMIAR_AVANCO_MANOBRA_M) {
+            indice++; mudou = true;
+        } else {
+            break;
+        }
+    }
+
+    if (mudou) {
+        rotaPlanejadaAtual.indiceProximaManobra = indice;
+        salvarRotaPlanejadaLocal();
+        destacarPassoAtivoNaLista();
+        sincronizarRotaPlanejadaFirebase();
+    }
+
+    atualizarBannerProximaManobra(lat, lon);
+}
+
+function atualizarBannerProximaManobra(lat, lon) {
+    var elIcone = document.getElementById('iconeProximaManobra');
+    var elTexto = document.getElementById('textoProximaManobra');
+    var elDistancia = document.getElementById('distanciaProximaManobra');
+    if (!elTexto) return;
+    if (!rotaPlanejadaAtual || !rotaPlanejadaAtual.passos || !rotaPlanejadaAtual.passos.length) {
+        elIcone.textContent = '🚦'; elTexto.textContent = '—'; elDistancia.textContent = '—';
+        return;
+    }
+    var passos = rotaPlanejadaAtual.passos;
+    var indice = rotaPlanejadaAtual.indiceProximaManobra != null ? rotaPlanejadaAtual.indiceProximaManobra : 1;
+
+    if (indice >= passos.length) {
+        elIcone.textContent = '🏁';
+        elTexto.textContent = 'Você chegou ao destino!';
+        elDistancia.textContent = '';
+        return;
+    }
+    var passo = passos[indice];
+    elIcone.textContent = passo.icone;
+    elTexto.textContent = passo.instrucao;
+    elDistancia.textContent = (lat != null)
+        ? ('em ' + formatarDistanciaCurta(calcularDistanciaMetros(lat, lon, passo.localizacao[0], passo.localizacao[1])))
+        : '—';
+}
+
+function renderizarListaPassos() {
+    var container = document.getElementById('listaPassosRota');
+    if (!container) return;
+    if (!rotaPlanejadaAtual || !rotaPlanejadaAtual.passos) { container.innerHTML = ''; return; }
+    var html = '';
+    rotaPlanejadaAtual.passos.forEach(function(passo, i) {
+        html += '<div class="linha-passo-rota" id="passo-row-' + i + '">' +
+            '<span style="font-size:1.3em;">' + passo.icone + '</span>' +
+            '<div style="flex:1; min-width:0;">' +
+            '<div style="color:var(--text);">' + passo.instrucao + '</div>' +
+            (passo.distanciaMetros > 0 ? '<div style="color:var(--text-faint); font-size:0.78em;">' + formatarDistanciaCurta(passo.distanciaMetros) + '</div>' : '') +
+            '</div></div>';
+    });
+    container.innerHTML = html;
+    destacarPassoAtivoNaLista();
+}
+
+function destacarPassoAtivoNaLista() {
+    document.querySelectorAll('.linha-passo-rota').forEach(function(el) { el.classList.remove('ativo'); });
+    if (!rotaPlanejadaAtual) return;
+    var indice = rotaPlanejadaAtual.indiceProximaManobra;
+    var ativo = document.getElementById('passo-row-' + indice);
+    if (ativo) { ativo.classList.add('ativo'); try { ativo.scrollIntoView({ block: 'nearest' }); } catch(e) {} }
+}
+
+document.getElementById('btnAlternarPassoAPasso').addEventListener('click', function() {
+    var lista = document.getElementById('listaPassosRota');
+    var estaAberta = lista.style.display !== 'none';
+    lista.style.display = estaAberta ? 'none' : 'block';
+    this.textContent = estaAberta ? 'Ver passo a passo completo ▾' : 'Ocultar passo a passo ▴';
+});
+
 var URL_OSRM_ROTA = "https://router.project-osrm.org/route/v1/driving/";
 function calcularRotaOsrm(origemLat, origemLon, destinoLat, destinoLon) {
-    var url = URL_OSRM_ROTA + origemLon + "," + origemLat + ";" + destinoLon + "," + destinoLat + "?overview=full&geometries=geojson";
+    var url = URL_OSRM_ROTA + origemLon + "," + origemLat + ";" + destinoLon + "," + destinoLat + "?overview=full&geometries=geojson&steps=true";
     return fetchComTimeout(url, {}, 12000).then(function(res) { return res.json(); }).then(function(data) {
         if (!data || data.code !== "Ok" || !data.routes || data.routes.length === 0) return null;
         var rota = data.routes[0];
         var geometriaLatLon = rota.geometry.coordinates.map(function(c) { return [c[1], c[0]]; });
-        return { distanciaMetros: rota.distance, duracaoSegundos: rota.duration, geometria: simplificarGeometriaRota(geometriaLatLon, 150) };
+        var passos = [];
+        if (rota.legs && rota.legs[0] && rota.legs[0].steps) {
+            rota.legs[0].steps.forEach(function(step) {
+                var m = step.maneuver || {};
+                if (!m.location) return;
+                passos.push({
+                    instrucao: descreverPasso(step),
+                    icone: iconePasso(step),
+                    distanciaMetros: step.distance || 0,
+                    localizacao: [m.location[1], m.location[0]]
+                });
+            });
+        }
+        return { distanciaMetros: rota.distance, duracaoSegundos: rota.duration, geometria: simplificarGeometriaRota(geometriaLatLon, 150), passos: passos };
     });
 }
 
@@ -505,13 +689,17 @@ document.getElementById('btnTracarRota').addEventListener('click', function() {
                 destinoLat: destino.lat, destinoLon: destino.lon,
                 origemLat: ultimaLeituraCompleta.lat, origemLon: ultimaLeituraCompleta.lon,
                 distanciaMetros: rota.distanciaMetros, duracaoSegundos: rota.duracaoSegundos,
-                geometria: rota.geometria, criadoEm: new Date().toISOString()
+                geometria: rota.geometria, passos: rota.passos,
+                indiceProximaManobra: (rota.passos && rota.passos.length > 1) ? 1 : 0,
+                criadoEm: new Date().toISOString()
             };
             salvarRotaPlanejadaLocal();
             desenharRotaPlanejadaNoMapa();
             exibirInfoRotaPlanejadaNaTela();
             sincronizarRotaPlanejadaFirebase();
             document.getElementById('destinoInput').value = "";
+            document.getElementById('listaPassosRota').style.display = 'none';
+            document.getElementById('btnAlternarPassoAPasso').textContent = 'Ver passo a passo completo ▾';
         });
     }).catch(function(e) {
         console.warn(e);
@@ -1283,6 +1471,10 @@ function processarNovaPosicao(lat, lon, precisaoRaw, velRaw) {
     historicoCoordenadasLocais.push([lat, lon]);
     if (historicoCoordenadasLocais.length > 2000) historicoCoordenadasLocais.shift();
     polilinhaRota.setLatLngs(historicoCoordenadasLocais);
+
+    // Atualiza o balão "próxima manobra" da rota planejada (tipo Waze) a cada posição nova
+    // — troca de instrução sozinha conforme o motorista se aproxima de cada curva.
+    if (rotaPlanejadaAtual) atualizarProgressoRotaPlanejada(lat, lon);
 
     var distanciaDoCentroDaParada = coordenadaParadaFixa ? calcularDistanciaMetros(coordenadaParadaFixa[0], coordenadaParadaFixa[1], lat, lon) : 0;
     var LIMITE_MOVIMENTO_KMH = 5;
