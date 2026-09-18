@@ -546,6 +546,90 @@ function formatarDistanciaCurta(metros) {
     return Math.round(metros) + " m";
 }
 
+// ===================== RECÁLCULO AUTOMÁTICO (motorista saiu da rota) =====================
+// Se o motorista se afastar demais da linha da rota planejada (ex: perdeu uma saída, pegou
+// outro caminho), o app pede uma rota NOVA pro OSRM a partir da posição atual até o mesmo
+// destino — sem precisar cancelar e traçar de novo na mão, igual Waze/Google Maps.
+var LIMIAR_DESVIO_ROTA_M = 60;
+var CONFIRMACOES_DESVIO_NECESSARIAS = 3; // evita recalcular por causa de 1 leitura de GPS ruim isolada
+var contadorConfirmacaoDesvioRota = 0;
+var recalculandoRotaPlanejada = false;
+
+// Distância aproximada (em metros) de um ponto até o segmento de reta entre A e B. Converte
+// graus em metros localmente (equirretangular) — simples e rápido o bastante pra rodar a
+// cada leitura de GPS sem pesar no celular; não precisa da precisão de trigonometria
+// esférica completa só pra decidir "o motorista está perto ou longe da rota".
+function distanciaAteSegmento(lat, lon, latA, lonA, latB, lonB) {
+    var latMedia = (latA + latB) / 2 * Math.PI / 180;
+    var mPorGrauLat = 111320;
+    var mPorGrauLon = 111320 * Math.cos(latMedia);
+    var px = (lon - lonA) * mPorGrauLon, py = (lat - latA) * mPorGrauLat;
+    var vx = (lonB - lonA) * mPorGrauLon, vy = (latB - latA) * mPorGrauLat;
+    var compQuad = vx * vx + vy * vy;
+    var t = compQuad > 0 ? Math.max(0, Math.min(1, (px * vx + py * vy) / compQuad)) : 0;
+    var dx = px - vx * t, dy = py - vy * t;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+function distanciaAteRotaPlanejada(lat, lon, geometria) {
+    var menorDist = Infinity;
+    for (var i = 0; i < geometria.length - 1; i++) {
+        var d = distanciaAteSegmento(lat, lon, geometria[i][0], geometria[i][1], geometria[i + 1][0], geometria[i + 1][1]);
+        if (d < menorDist) menorDist = d;
+    }
+    return menorDist;
+}
+
+function verificarDesvioRotaPlanejada(lat, lon) {
+    if (!rotaPlanejadaAtual || !rotaPlanejadaAtual.geometria || rotaPlanejadaAtual.geometria.length < 2) return;
+    if (recalculandoRotaPlanejada) return;
+    // Já chegou ao destino — não faz sentido recalcular rota depois de "chegou".
+    if (rotaPlanejadaAtual.passos && rotaPlanejadaAtual.passos.length && rotaPlanejadaAtual.indiceProximaManobra >= rotaPlanejadaAtual.passos.length) return;
+
+    var distanciaDaRota = distanciaAteRotaPlanejada(lat, lon, rotaPlanejadaAtual.geometria);
+    if (distanciaDaRota > LIMIAR_DESVIO_ROTA_M) {
+        contadorConfirmacaoDesvioRota++;
+        if (contadorConfirmacaoDesvioRota >= CONFIRMACOES_DESVIO_NECESSARIAS) {
+            contadorConfirmacaoDesvioRota = 0;
+            recalcularRotaPlanejadaAPartirDaPosicaoAtual(lat, lon);
+        }
+    } else {
+        contadorConfirmacaoDesvioRota = 0;
+    }
+}
+
+function recalcularRotaPlanejadaAPartirDaPosicaoAtual(lat, lon) {
+    if (!rotaPlanejadaAtual || recalculandoRotaPlanejada) return;
+    recalculandoRotaPlanejada = true;
+
+    var elIcone = document.getElementById('iconeProximaManobra');
+    var elTexto = document.getElementById('textoProximaManobra');
+    var elDistancia = document.getElementById('distanciaProximaManobra');
+    if (elTexto) { elIcone.textContent = '🔄'; elTexto.textContent = 'Recalculando rota...'; elDistancia.textContent = ''; }
+
+    var destinoLat = rotaPlanejadaAtual.destinoLat, destinoLon = rotaPlanejadaAtual.destinoLon, nomeDestino = rotaPlanejadaAtual.destino, criadoEmOriginal = rotaPlanejadaAtual.criadoEm;
+
+    calcularRotaOsrm(lat, lon, destinoLat, destinoLon).then(function(rota) {
+        if (!rota) return; // se o OSRM falhar, mantém a rota antiga em vez de apagar tudo
+        rotaPlanejadaAtual = {
+            destino: nomeDestino, destinoLat: destinoLat, destinoLon: destinoLon,
+            origemLat: lat, origemLon: lon,
+            distanciaMetros: rota.distanciaMetros, duracaoSegundos: rota.duracaoSegundos,
+            geometria: rota.geometria, passos: rota.passos,
+            indiceProximaManobra: (rota.passos && rota.passos.length > 1) ? 1 : 0,
+            criadoEm: criadoEmOriginal, recalculadaEm: new Date().toISOString()
+        };
+        salvarRotaPlanejadaLocal();
+        desenharRotaPlanejadaNoMapa();
+        exibirInfoRotaPlanejadaNaTela();
+        sincronizarRotaPlanejadaFirebase();
+    }).catch(function(e) {
+        console.warn("Falha ao recalcular rota após desvio:", e);
+    }).finally(function() {
+        recalculandoRotaPlanejada = false;
+    });
+}
+
 // Ao chegar perto o suficiente do ponto onde a PRÓXIMA manobra da lista acontece, avança o
 // "ponteiro" pra manobra seguinte — é isso que faz o balão de cima ir trocando sozinho
 // ("vire à direita" → "siga em frente" → ...) conforme o motorista dirige, sem precisar
@@ -553,6 +637,7 @@ function formatarDistanciaCurta(metros) {
 var LIMIAR_AVANCO_MANOBRA_M = 40;
 
 function atualizarProgressoRotaPlanejada(lat, lon) {
+    verificarDesvioRotaPlanejada(lat, lon);
     if (!rotaPlanejadaAtual || !rotaPlanejadaAtual.passos || !rotaPlanejadaAtual.passos.length) return;
     var passos = rotaPlanejadaAtual.passos;
     var indice = rotaPlanejadaAtual.indiceProximaManobra != null ? rotaPlanejadaAtual.indiceProximaManobra : 1;
