@@ -51,6 +51,7 @@ jobs:
               '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n'
               '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />\n'
               '    <uses-permission android:name="android.permission.WAKE_LOCK" />\n'
+              '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n'
           )
           if "ACCESS_BACKGROUND_LOCATION" not in content:
               content = content.replace("<application", perms + "\n    <application", 1)
@@ -60,9 +61,62 @@ jobs:
                   '<uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />',
                   1
               )
+          if "android.permission.POST_NOTIFICATIONS" not in content:
+              content = content.replace(
+                  '<uses-permission android:name="android.permission.WAKE_LOCK" />',
+                  '<uses-permission android:name="android.permission.WAKE_LOCK" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
+                  1
+              )
           with open(path, "w") as f:
               f.write(content)
           print("Permissões adicionadas com sucesso.")
+          EOF
+
+      - name: Corrigir tipo de serviço em segundo plano (exigido no Android 14+)
+        run: |
+          python3 - <<'EOF'
+          import glob, re
+
+          # A partir do Android 14, não basta ter a permissão de localização em segundo
+          # plano — o próprio <service> que roda o rastreio (declarado dentro do plugin
+          # de background-geolocation, não no seu app) precisa declarar
+          # android:foregroundServiceType="location". Sem isso, o Android recusa ou
+          # derruba o serviço silenciosamente, mesmo com todas as permissões certas.
+          # Esse manifest vive dentro do node_modules do plugin, então a correção
+          # precisa ser feita aqui, antes da compilação.
+          candidatos = glob.glob(
+              "node_modules/**/background-geolocation/**/AndroidManifest.xml",
+              recursive=True
+          )
+
+          if not candidatos:
+              print("AVISO: não encontrei o AndroidManifest.xml do plugin de rastreio em segundo plano.")
+              print("Verifique se o nome do pacote em package.json ainda é @capacitor-community/background-geolocation.")
+          else:
+              def adicionar_tipo(m):
+                  tag = m.group(0)
+                  if "android:foregroundServiceType" in tag:
+                      return tag
+                  if tag.endswith("/>"):
+                      return tag[:-2].rstrip() + ' android:foregroundServiceType="location" />'
+                  return tag[:-1].rstrip() + ' android:foregroundServiceType="location">'
+
+              for caminho in candidatos:
+                  with open(caminho) as f:
+                      conteudo = f.read()
+                  original = conteudo
+                  conteudo = re.sub(r'<service\b[^>]*/?>', adicionar_tipo, conteudo)
+
+                  if "<service" not in original:
+                      print("Nenhuma tag <service> em: " + caminho + " (arquivo ignorado)")
+                      continue
+
+                  if conteudo != original:
+                      with open(caminho, "w") as f:
+                          f.write(conteudo)
+                      print("CORRIGIDO: " + caminho)
+                  else:
+                      print("Já estava correto: " + caminho)
           EOF
 
       - name: Sincronizar Capacitor com o projeto Android
@@ -77,4 +131,3 @@ jobs:
         with:
           name: rastreador-everton-gps-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
-          
