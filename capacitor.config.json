@@ -3,10 +3,9 @@
   "appName": "Rastreador Everton GPS",
   "webDir": "www",
   "bundledWebRuntime": false,
-  "android": {
-    "allowMixedContent": false
-  },
+  "android": { "allowMixedContent": false },
   "plugins": {
+    "CapacitorHttp": { "enabled": true },
     "BackgroundGeolocation": {
       "backgroundMessage": "Rastreador Everton GPS está registrando a localização do veículo.",
       "backgroundTitle": "Rastreador ativo"
