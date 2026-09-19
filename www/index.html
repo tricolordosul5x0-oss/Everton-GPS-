@@ -2044,6 +2044,13 @@ function processarFilaGeocodificacao() {
 var enviando = false; var falhasConsecutivasLote = 0;
 var ultimoAvisoErroEnvioTs = 0;
 var MAX_FILA_PENDENTES = 300;
+// CORREÇÃO (segundo plano travando a fila pra sempre): se o fetch/SDK do Firebase ficar
+// "pendurado" (nunca chama nem sucesso nem erro — algo que pode acontecer quando o Android
+// suspende a rede da WebView com a tela apagada), a trava "enviando" ficava true pra
+// sempre, e TODA a fila parava de ser enviada — mesmo depois da tela voltar a ligar,
+// porque nada nunca chamava o .finally() que destrava. Este relógio guarda quando o envio
+// atual começou, pra o vigia abaixo poder destravar à força se isso acontecer.
+var ultimaVezQueComecouEnvio = null;
 function enviarDadosFila() {
     if (appSuspenso) return;
     if (!EMPRESA_ID) return;
@@ -2052,7 +2059,7 @@ function enviarDadosFila() {
         filaPendentes.splice(0, filaPendentes.length - MAX_FILA_PENDENTES);
         salvarTudo();
     }
-    enviando = true; var lote = filaPendentes.slice(0, 25); var updates = {};
+    enviando = true; ultimaVezQueComecouEnvio = Date.now(); var lote = filaPendentes.slice(0, 25); var updates = {};
     try {
         lote.forEach(item => {
             var basePath = 'empresas/' + sanitizarChavePath(item.empresaId || EMPRESA_ID) + '/veiculos/' + sanitizarChavePath(item.vID) + '/historico/' + item.id;
@@ -2072,14 +2079,29 @@ function enviarDadosFila() {
                 mostrarAvisoGps("⚠️ " + msgErro2);
             }
         }).finally(() => {
-            enviando = false; atualizarInterfaceEstado();
+            enviando = false; ultimaVezQueComecouEnvio = null; atualizarInterfaceEstado();
             if (filaPendentes.length > 0 && !appSuspenso) {
                 var esperaMs = Math.min(30000, 1000 * Math.pow(2, Math.min(falhasConsecutivasLote, 5)));
                 setTimeout(enviarDadosFila, falhasConsecutivasLote > 0 ? esperaMs : 0);
             }
         });
-    } catch (e) { filaPendentes.shift(); enviando = false; atualizarInterfaceEstado(); }
+    } catch (e) { filaPendentes.shift(); enviando = false; ultimaVezQueComecouEnvio = null; atualizarInterfaceEstado(); }
 }
+
+// VIGIA: se o envio ficar "pendurado" (nem sucesso, nem erro) por mais de 25s — o que só
+// deveria acontecer se até o timeout interno de 18s (comLimiteDeTempo) falhar em disparar
+// — destrava à força e tenta de novo. Roda a cada 10s. É a rede de segurança final contra
+// a fila travar pra sempre em segundo plano.
+setInterval(function() {
+    if (enviando && ultimaVezQueComecouEnvio && (Date.now() - ultimaVezQueComecouEnvio) > 25000) {
+        console.warn("Envio da fila travado há mais de 25s — destravando e tentando de novo.");
+        enviando = false;
+        ultimaVezQueComecouEnvio = null;
+        forcarReconexaoFirebaseSeTravado();
+        mostrarErroSyncPersistente("⏱️ Envio ficou travado por mais de 25s (comum quando a tela fica muito tempo apagada) — destravado automaticamente e tentando de novo.");
+        enviarDadosFila();
+    }
+}, 10000);
 
 function atualizarInterfaceEstado() {
     var barra = document.getElementById('statusConexao'); var totalPendente = filaPendentes.length + filaGeocodificarDepois.length;
