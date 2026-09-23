@@ -331,13 +331,30 @@ function corPorStatusPonto(ponto) {
     return getComputedStyle(document.documentElement).getPropertyValue('--signal-off').trim() || '#ffb020';
 }
 
-function desenharTrechoClicavel(coordsLatLng, cor, pontoDoTrecho) {
+// CORREÇÃO: um "trecho" desenhado no mapa segue a geometria real das ruas entre DOIS
+// pontos gravados (p1 e p2), que podem estar bem distantes um do outro — por exemplo, um
+// trecho inteiro de rodovia entre duas leituras de GPS. Antes, tocar em QUALQUER lugar
+// desse trecho (inclusive perto do início, ainda na rodovia) sempre mostrava os dados do
+// ponto p2 (o fim do trecho) — que pode já estar numa rua de bairro, bem depois de onde o
+// motorista realmente tocou no mapa. Agora, ao tocar, comparamos o ponto exato do toque
+// com p1 e p2 e mostramos o mais próximo dos dois — assim, tocar perto do início do trecho
+// mostra os dados do início (a rodovia), não do fim.
+function desenharTrechoClicavel(coordsLatLng, cor, pontoAnterior, pontoAtual) {
+    function aoTocar(e) {
+        var pontoDoTrecho = pontoAtual;
+        if (pontoAnterior && pontoAnterior.lat != null && e && e.latlng) {
+            var distAnterior = calcularDistanciaMetros(e.latlng.lat, e.latlng.lng, pontoAnterior.lat, pontoAnterior.lon);
+            var distAtual = calcularDistanciaMetros(e.latlng.lat, e.latlng.lng, pontoAtual.lat, pontoAtual.lon);
+            if (distAnterior < distAtual) pontoDoTrecho = pontoAnterior;
+        }
+        mostrarInfoDoPonto(pontoDoTrecho);
+    }
     // Área de toque mais larga e invisível por baixo — facilita tocar numa tela pequena de
     // celular sem precisar acertar o pixel exato da linha fina.
     var areaDeToque = L.polyline(coordsLatLng, { color: '#000000', opacity: 0, weight: 24 }).addTo(camadaRotaAtual);
     var linhaVisivel = L.polyline(coordsLatLng, { color: cor, weight: 6, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(camadaRotaAtual);
-    areaDeToque.on('click', function() { mostrarInfoDoPonto(pontoDoTrecho); });
-    linhaVisivel.on('click', function() { mostrarInfoDoPonto(pontoDoTrecho); });
+    areaDeToque.on('click', aoTocar);
+    linhaVisivel.on('click', aoTocar);
 }
 
 // Reduz a quantidade de pontos mandados pro serviço de rotas — um histórico de um dia
@@ -364,7 +381,7 @@ function fetchComTimeoutAdmin(url, timeoutMs) {
 function desenharSegmentosRetos(pontos) {
     for (var i = 0; i < pontos.length - 1; i++) {
         var p1 = pontos[i], p2 = pontos[i + 1];
-        desenharTrechoClicavel([[p1.lat, p1.lon], [p2.lat, p2.lon]], corPorStatusPonto(p2), p2);
+        desenharTrechoClicavel([[p1.lat, p1.lon], [p2.lat, p2.lon]], corPorStatusPonto(p2), p1, p2);
     }
 }
 
@@ -388,11 +405,11 @@ function desenharRotaEncaixadaNasRuas(pontos, meuIdDesenho) {
                     step.geometry.coordinates.forEach(function(c) { coordsLatLng.push([c[1], c[0]]); });
                 }
             });
-            var p2 = pontos[i + 1];
+            var p1 = pontos[i], p2 = pontos[i + 1];
             if (coordsLatLng.length < 2) {
-                coordsLatLng = [[pontos[i].lat, pontos[i].lon], [p2.lat, p2.lon]];
+                coordsLatLng = [[p1.lat, p1.lon], [p2.lat, p2.lon]];
             }
-            desenharTrechoClicavel(coordsLatLng, corPorStatusPonto(p2), p2);
+            desenharTrechoClicavel(coordsLatLng, corPorStatusPonto(p2), p1, p2);
         }
     }).catch(function(e) {
         if (meuIdDesenho !== idDesenhoRotaAtual) return;
